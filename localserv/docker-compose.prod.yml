@@ -1,0 +1,73 @@
+# Production-like stack for local testing of the full deployment
+# topology (app + nginx + Postgres + Redis) -- NOT a substitute for
+# your actual cloud deployment (managed Postgres with automated
+# backups, a real load balancer/CDN in front of nginx, secrets from a
+# secrets manager rather than a .env file, etc). See DEPLOYMENT.md.
+#
+# Usage:
+#   docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+#   docker compose -f docker-compose.prod.yml exec app python manage.py migrate
+#   docker compose -f docker-compose.prod.yml exec app python manage.py collectstatic --noinput
+#
+# A Celery worker service is deliberately NOT included here yet --
+# there is nothing for it to consume. Transactional email still sends
+# synchronously (see README's Known Gaps); add a `worker:` service
+# here once that migration actually happens, rather than running an
+# idle worker with no tasks.
+
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - static_files:/app/staticfiles
+      - media_files:/app/media
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/app.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_files:/app/staticfiles:ro
+      - media_files:/app/media:ro
+    depends_on:
+      - app
+    restart: unless-stopped
+
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-localserv}
+      POSTGRES_USER: ${POSTGRES_USER:-localserv}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-localserv}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  static_files:
+  media_files:

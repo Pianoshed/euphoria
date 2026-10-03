@@ -1,0 +1,237 @@
+/* Video call UI. Uses the same palette as the chat page. */
+
+.vc-screen,
+.vc-backdrop,
+.vc-toast,
+.cv-call-btn {
+  --vc-ink: #1f1d3d;
+  --vc-accent: #e2394a;
+  --vc-warm: #f2740f;
+  --vc-green: #1f9d6a;
+  font-family: inherit;
+}
+
+/* ---------- Header button ---------- */
+
+.cv-call-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border: 1.5px solid var(--vc-ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--vc-ink);
+  font: inherit;
+  font-size: 0.88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms;
+}
+.cv-call-btn:hover:not(:disabled) { background: rgba(31, 29, 61, 0.08); }
+.cv-call-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.cv-call-btn:focus-visible { outline: 3px solid rgba(61, 59, 148, 0.6); outline-offset: 2px; }
+
+/* ---------- Incoming call prompt ---------- */
+
+.vc-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(20, 18, 40, 0.6);
+  backdrop-filter: blur(6px);
+}
+.vc-ring {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: min(340px, 100%);
+  padding: 28px 24px 22px;
+  border-radius: 28px;
+  background: #fffdfa;
+  text-align: center;
+  box-shadow: 0 30px 60px -20px rgba(0, 0, 0, 0.6);
+}
+.vc-ring h2 { margin: 12px 0 0; font-size: 1.4rem; overflow-wrap: anywhere; }
+.vc-ring p { margin: 0 0 14px; color: #5f5d7a; }
+.vc-ring small { margin-top: 14px; color: #5f5d7a; font-size: 0.8rem; }
+.vc-ring__actions { display: flex; gap: 12px; width: 100%; }
+
+.vc-btn {
+  flex: 1;
+  padding: 12px 0;
+  border: 0;
+  border-radius: 999px;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.vc-btn--decline { background: var(--vc-accent); }
+.vc-btn--accept { background: var(--vc-green); }
+.vc-btn:focus-visible { outline: 3px solid rgba(61, 59, 148, 0.7); outline-offset: 3px; }
+
+.vc-face {
+  display: grid;
+  place-items: center;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: linear-gradient(135deg, var(--vc-warm), var(--vc-accent));
+  color: #fff;
+  font-size: 2.4rem;
+  font-weight: 700;
+}
+.vc-face--big { width: 132px; height: 132px; font-size: 3.2rem; }
+.vc-face--pulse { animation: vc-pulse 1.8s ease-out infinite; }
+@keyframes vc-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(242, 116, 15, 0.55); }
+  100% { box-shadow: 0 0 0 26px rgba(242, 116, 15, 0); }
+}
+
+/* ---------- Call screen ---------- */
+
+.vc-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  background: #14122b;
+  color: #fff;
+  overflow: hidden;
+}
+
+.vc-remote {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #14122b;
+}
+
+.vc-waiting {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  font-size: 1.15rem;
+}
+.vc-waiting p { margin: 0; }
+
+.vc-top {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 28px;
+  background: linear-gradient(rgba(0, 0, 0, 0.55), transparent);
+}
+.vc-top strong { font-size: 1.05rem; overflow-wrap: anywhere; }
+.vc-timer { font-variant-numeric: tabular-nums; opacity: 0.9; }
+.vc-note { flex-basis: 100%; font-size: 0.78rem; opacity: 0.75; }
+
+/* Your own camera, picture-in-picture */
+.vc-self {
+  position: absolute;
+  right: 16px;
+  bottom: calc(112px + env(safe-area-inset-bottom, 0px));
+  width: clamp(96px, 24vw, 200px);
+  aspect-ratio: 3 / 4;
+  overflow: hidden;
+  border-radius: 18px;
+  background: #2a2750;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35), 0 14px 30px -12px rgba(0, 0, 0, 0.7);
+}
+.vc-self__video { width: 100%; height: 100%; object-fit: cover; }
+.vc-self__video.is-mirrored { transform: scaleX(-1); }
+.vc-self.is-off .vc-self__video { visibility: hidden; }
+.vc-self__off {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.vc-controls {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  padding: 28px 16px calc(24px + env(safe-area-inset-bottom, 0px));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.6));
+}
+.vc-round {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 140ms, transform 140ms;
+}
+.vc-round:hover { background: rgba(255, 255, 255, 0.32); transform: scale(1.06); }
+.vc-round.is-off { background: #fff; color: var(--vc-ink); }
+.vc-round--end { background: var(--vc-accent); }
+.vc-round--end:hover { background: #c92f3f; }
+.vc-round:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+/* ---------- After-call message ---------- */
+
+.vc-toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(440px, calc(100vw - 32px));
+  padding: 12px 14px 12px 18px;
+  border-radius: 16px;
+  background: var(--vc-ink);
+  color: #fff;
+  font-size: 0.92rem;
+  line-height: 1.4;
+  transform: translateX(-50%);
+  box-shadow: 0 16px 34px -12px rgba(0, 0, 0, 0.6);
+}
+.vc-toast button {
+  flex: none;
+  padding: 6px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vc-face--pulse { animation: none; }
+  .vc-round { transition: none; }
+}
+
+@media (max-width: 520px) {
+  .cv-call-btn span { display: none; } /* icon only on small screens */
+}

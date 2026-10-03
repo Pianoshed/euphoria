@@ -1,0 +1,262 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap');
+
+/* Find people page. Scoped under .dp so nothing else is affected. */
+
+.page.dp {
+  --dp-ink: #1f1d3d;
+  --dp-muted: #5f5d7a;
+  --dp-line: rgba(31, 29, 61, 0.14);
+  --dp-accent: #e2394a;
+  --dp-indigo: #3d3b94;
+  --dp-green: #1f9d6a;
+  --dp-display: 'Bricolage Grotesque', system-ui, sans-serif;
+
+  max-width: 1120px;
+  color: var(--dp-ink);
+}
+
+/* ---------- Header ---------- */
+
+.dp-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 14px 24px;
+  margin-bottom: 14px;
+}
+.dp-title {
+  margin: 0;
+  font-family: var(--dp-display);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 700;
+  line-height: 1.05;
+}
+.dp-sub { margin: 6px 0 0; color: var(--dp-muted); }
+
+.dp-actions { display: flex; gap: 8px; }
+.dp-btn {
+  padding: 9px 18px;
+  border: 1.5px solid var(--dp-ink);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dp-ink);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 140ms, background 140ms;
+}
+.dp-btn:hover:not(:disabled) { transform: rotate(-2deg) translateY(-1px); background: rgba(255, 255, 255, 0.6); }
+.dp-btn--solid { background: var(--dp-ink); color: #fff; }
+.dp-btn--solid:hover:not(:disabled) { background: var(--dp-indigo); }
+.dp-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* ---------- Safety and privacy callouts ---------- */
+
+.dp-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin: 18px 0 34px;
+}
+
+.dp-note {
+  padding: 4px 18px 14px;
+  border: 1px solid var(--dp-line);
+  border-left-width: 6px;
+  border-radius: 14px 22px 22px 14px;
+  background: rgba(255, 253, 250, 0.92);
+}
+.dp-note--safety { border-left-color: var(--dp-accent); }
+.dp-note--privacy { border-left-color: var(--dp-indigo); }
+
+.dp-note summary {
+  padding: 12px 0 8px;
+  font-family: var(--dp-display);
+  font-size: 1.05rem;
+  font-weight: 700;
+  cursor: pointer;
+  list-style-position: outside;
+}
+.dp-note__short { display: none; }
+
+.dp-note ul { margin: 0; padding-left: 1.15rem; display: grid; gap: 6px; }
+.dp-note li { font-size: 0.9rem; line-height: 1.45; color: var(--dp-muted); }
+
+.dp-note__link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--dp-indigo);
+}
+
+/* ---------- Scattered field of people ---------- */
+
+.dp-field {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 26px 22px;
+  padding: 8px 0 56px;
+}
+
+.dp-card {
+  --pad-y: 30px;
+  --pad-x: 34px;
+
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 0 1 var(--w);
+  min-width: 0;
+  margin-top: var(--drop);
+  padding: var(--pad-y) var(--pad-x);
+  border-radius: var(--shape);
+  background: var(--tint);
+  color: var(--dp-ink);
+  text-decoration: none;
+  box-shadow: 0 16px 28px -18px rgba(31, 29, 61, 0.55);
+  transform: rotate(var(--rot));
+  transition: transform 220ms ease, box-shadow 220ms ease;
+}
+.dp-card:hover,
+.dp-card:focus-visible {
+  transform: rotate(0deg) translateY(-4px);
+  box-shadow: 0 22px 34px -18px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--ring);
+}
+
+.dp-card--row-reverse { flex-direction: row-reverse; text-align: right; }
+.dp-card--stack {
+  flex-direction: column;
+  text-align: center;
+  --pad-y: 34px;
+  --pad-x: 30px;
+}
+
+.dp-avatar {
+  position: relative;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  overflow: visible;
+  border-radius: var(--avatar-shape);
+  background: rgba(255, 255, 255, 0.7);
+  font-family: var(--dp-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.dp-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: inherit;
+}
+.dp-card--stack .dp-avatar { width: 96px; height: 96px; font-size: 2.2rem; }
+
+.dp-online {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--dp-green);
+  box-shadow: 0 0 0 3px #fff;
+}
+
+.dp-card__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dp-card__name {
+  font-family: var(--dp-display);
+  font-size: 1.15rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.dp-card__line { font-size: 0.86rem; overflow-wrap: anywhere; }
+.dp-card__line--soft { color: var(--dp-muted); }
+.dp-card__bio {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--dp-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Focus, motion, small screens ---------- */
+
+.page.dp a:focus-visible,
+.page.dp button:focus-visible,
+.page.dp summary:focus-visible {
+  outline: 3px solid rgba(61, 59, 148, 0.6);
+  outline-offset: 3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dp-card, .dp-btn { transition: none; }
+  .dp-card:hover, .dp-card:focus-visible { transform: rotate(var(--rot)); }
+}
+
+@media (max-width: 720px) {
+  .page.dp { padding-top: var(--space-4); }
+
+  /* header: title and the two buttons share the top, subtitle goes */
+  .dp-head { flex-wrap: nowrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .dp-title { font-size: 1.55rem; white-space: nowrap; }
+  .dp-sub { display: none; }
+  .dp-actions { flex: none; gap: 6px; }
+  .dp-btn { padding: 7px 12px; font-size: 0.82rem; white-space: nowrap; }
+
+  .page.dp .e-browse-filters { margin-bottom: 10px; }
+
+  /* the two notes become a pair of small folded pills; an opened one takes the full row */
+  .dp-notes { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; align-items: start; }
+  .dp-note { padding: 0 12px; border-left-width: 4px; border-radius: 12px 16px 16px 12px; }
+  .dp-note[open] { grid-column: 1 / -1; padding-bottom: 10px; }
+  .dp-note summary {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 9px 0; font-size: 0.9rem; list-style: none;
+  }
+  .dp-note summary::-webkit-details-marker { display: none; }
+  .dp-note summary::after { content: '+'; flex: none; font-size: 1.15rem; line-height: 1; color: var(--dp-muted); }
+  .dp-note[open] summary::after { content: '\2212'; }
+  .dp-note__long, .dp-note__short { margin-right: auto; }
+  .dp-note__long { display: none; }
+  .dp-note__short { display: inline; }
+  .dp-note[open] .dp-note__long { display: inline; }
+  .dp-note[open] .dp-note__short { display: none; }
+  .dp-note ul { gap: 4px; }
+  .dp-note li { font-size: 0.86rem; line-height: 1.4; }
+
+  /* people: one tight row each, whatever look they were dealt */
+  .dp-field { gap: 12px; padding-bottom: 32px; }
+  .dp-card,
+  .dp-card--row-reverse,
+  .dp-card--stack {
+    flex-basis: 100%;
+    flex-direction: row;
+    text-align: left;
+    gap: 12px;
+    margin-top: 0;
+    --pad-x: 22px;
+    --pad-y: 16px;
+    transform: rotate(calc(var(--rot) / 2));
+  }
+  .dp-avatar,
+  .dp-card--stack .dp-avatar { width: 52px; height: 52px; font-size: 1.3rem; }
+  .dp-card__bio { -webkit-line-clamp: 1; }
+}
+
+@media (max-width: 380px) {
+  .dp-head > div:first-child { min-width: 0; }
+  .dp-title { font-size: 1.35rem; }
+  .dp-actions { gap: 4px; }
+  .dp-btn { padding: 6px 9px; font-size: 0.76rem; }
+}

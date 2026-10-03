@@ -1,0 +1,123 @@
+import '../../styles/index.css';
+import { useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import * as accountsApi from '../../api/accounts';
+import { useAuth } from '../../context/AuthContext';
+import { ErrorAlert } from '../../components/ui';
+import AuthCard from './AuthCard';
+import AuthShowcase from './AuthShowcase';
+import GoogleButton from './GoogleButton';
+import RoleChoice from './RoleChoice';
+
+export default function Register() {
+  const { loginWithGoogle } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: '', username: '', password: '', role: 'CUSTOMER' });
+  const [error, setError] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  const [done, setDone] = useState(false);
+
+  const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSubmitting(true);
+    try {
+      await accountsApi.register(form.email, form.username, form.password, form.role);
+      setDone(true);
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    setError(null);
+    setGoogleSubmitting(true);
+    try {
+      const result = await loginWithGoogle(credentialResponse.credential);
+      navigate(result.is_new_user ? '/onboarding' : '/services', { replace: true });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setGoogleSubmitting(false);
+    }
+  };
+
+  if (done) {
+    return (
+      <AuthCard>
+        <h1>Check your email</h1>
+        <p className="auth-sub">
+          We've sent a verification link to <strong className="break">{form.email}</strong>. Follow it to
+          activate your account, then <Link to="/login">log in</Link> and start planning your
+          next hangout.
+        </p>
+      </AuthCard>
+    );
+  }
+
+  return (
+    <div className="auth-shell">
+      <AuthShowcase
+        variant="couples"
+        title="Find your people, find your plans"
+        text="Join to discover meetups happening nearby, or start hosting your own — board games, hikes, dinners, whatever your thing is."
+        event={{ title: 'Trivia night', meta: 'Fri, 8pm · 6 spots left' }}
+        quote={{ name: 'Damola O.', text: 'Count me in for Saturday!' }}
+      />
+
+      <div className="auth-panel">
+        <div className="auth-form-wrap">
+          <h1>Create your account</h1>
+          <p className="auth-sub">Sign up to start meeting up.</p>
+
+          <GoogleButton
+            busy={googleSubmitting}
+            text="signup_with"
+            onSuccess={handleGoogleSuccess}
+            onError={() => setError({ message: 'Google sign-up failed. Please try again.' })}
+          />
+
+          <div className="auth-divider">or</div>
+
+          <form onSubmit={handleSubmit} className="stack">
+            <ErrorAlert error={error} />
+
+            <RoleChoice value={form.role} onChange={(role) => setForm((f) => ({ ...f, role }))} />
+
+            <div className="field">
+              <label htmlFor="email">Email</label>
+              <input id="email" type="email" className="input" required autoComplete="email" inputMode="email"
+                autoCapitalize="none" spellCheck={false}
+                value={form.email} onChange={update('email')} />
+            </div>
+            <div className="field">
+              <label htmlFor="username">Username</label>
+              <input id="username" type="text" className="input" required minLength={3} maxLength={30}
+                autoComplete="username" autoCapitalize="none" spellCheck={false}
+                value={form.username} onChange={update('username')} />
+            </div>
+            <div className="field">
+              <label htmlFor="password">Password</label>
+              <input id="password" type="password" className="input" required minLength={10}
+                autoComplete="new-password"
+                value={form.password} onChange={update('password')} />
+              <span className="hint">At least 10 characters.</span>
+            </div>
+            <button className="btn-primary-full" disabled={submitting} type="submit">
+              {submitting ? 'Creating account…' : 'Create account'}
+            </button>
+          </form>
+
+          <p className="auth-footer-note">
+            Already have an account? <Link to="/login">Log in</Link>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,372 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { API_BASE } from '../api/client';
+import { getIceServers } from '../api/chat';
+
+/*
+ * One-to-one video calling over WebRTC.
+ *
+ * The server only relays signaling (offers, answers, ICE candidates) over
+ * /ws/call/<conversation_id>/. Video and audio go straight between the two
+ * browsers, or through a TURN relay when a direct path isn't possible.
+ *
+ * status: 'idle' | 'calling' | 'incoming' | 'connecting' | 'active' | 'ended'
+ */
+
+const RING_TIMEOUT_MS = 45_000;
+const RECONNECT_DELAY_MS = 2_000;
+
+function callSocketUrl(conversationId) {
+  const base = API_BASE || window.location.origin;
+  return `${base.replace(/^http/, 'ws')}/ws/call/${conversationId}/`;
+}
+
+// ICE servers come from the backend (/api/chat/ice-servers/): a STUN entry plus a TURN
+// entry with short-lived credentials, so no TURN secret ever ships in the JS bundle.
+// If that request fails we fall back to public STUN, which works on most home networks.
+const FALLBACK_ICE = [{ urls: import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302' }];
+let iceCache = null; // { servers, expiresAt }
+
+async function loadIceServers() {
+  if (iceCache && iceCache.expiresAt > Date.now() + 60_000) return iceCache.servers;
+  try {
+    const data = await getIceServers();
+    if (Array.isArray(data?.ice_servers) && data.ice_servers.length) {
+      iceCache = {
+        servers: data.ice_servers,
+        expiresAt: Date.now() + (data.ttl || 3600) * 1000,
+      };
+      return iceCache.servers;
+    }
+  } catch { /* fall through to STUN-only */ }
+  return FALLBACK_ICE;
+}
+
+function friendlyMediaError(err) {
+  switch (err?.name) {
+    case 'NotAllowedError':
+    case 'SecurityError':
+      return 'Camera or microphone access is blocked. Allow it in your browser\u2019s address bar, then try again.';
+    case 'NotFoundError':
+    case 'OverconstrainedError':
+      return 'No camera or microphone was found on this device.';
+    case 'NotReadableError':
+      return 'Your camera or microphone is being used by another app. Close it and try again.';
+    default:
+      return 'Could not start your camera. Please try again.';
+  }
+}
+
+export function useVideoCall({ conversationId, myId, enabled = true }) {
+  const [status, setStatus] = useState('idle');
+  const [localStream, setLocalStream] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [facing, setFacing] = useState('user');
+  const [notice, setNotice] = useState('');
+  const [signalReady, setSignalReady] = useState(false);
+
+  const statusRef = useRef('idle');
+  const wsRef = useRef(null);
+  const pcRef = useRef(null);
+  const localRef = useRef(null);
+  const pendingOfferRef = useRef(null);
+  const pendingIceRef = useRef([]);
+  const ringTimerRef = useRef(null);
+  const closedRef = useRef(false);
+
+  const setStatusBoth = useCallback((next) => {
+    statusRef.current = next;
+    setStatus(next);
+  }, []);
+
+  const send = useCallback((payload) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(payload));
+      return true;
+    }
+    return false;
+  }, []);
+
+  /* ---------- teardown ---------- */
+
+  const cleanup = useCallback(() => {
+    clearTimeout(ringTimerRef.current);
+    if (pcRef.current) {
+      pcRef.current.ontrack = null;
+      pcRef.current.onicecandidate = null;
+      pcRef.current.onconnectionstatechange = null;
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+    localRef.current?.getTracks().forEach((t) => t.stop());
+    localRef.current = null;
+    pendingOfferRef.current = null;
+    pendingIceRef.current = [];
+    setLocalStream(null);
+    setRemoteStream(null);
+    setMicOn(true);
+    setCamOn(true);
+  }, []);
+
+  const finish = useCallback((message = '') => {
+    cleanup();
+    setNotice(message);
+    setStatusBoth(message ? 'ended' : 'idle');
+  }, [cleanup, setStatusBoth]);
+
+  /* ---------- peer connection ---------- */
+
+  const createPeer = useCallback(async () => {
+    const pc = new RTCPeerConnection({ iceServers: await loadIceServers() });
+    pc.onicecandidate = (e) => send({ type: 'ice', candidate: e.candidate ? e.candidate.toJSON() : null });
+    pc.ontrack = (e) => setRemoteStream(e.streams[0] || new MediaStream([e.track]));
+    pc.onconnectionstatechange = () => {
+      if (pc !== pcRef.current) return;
+      if (pc.connectionState === 'connected') {
+        clearTimeout(ringTimerRef.current);
+        setStatusBoth('active');
+      } else if (pc.connectionState === 'failed') {
+        send({ type: 'hangup' });
+        finish('The connection failed. Check your network and try again.');
+      }
+    };
+    pcRef.current = pc;
+    return pc;
+  }, [finish, send, setStatusBoth]);
+
+  const openCamera = useCallback(async (facingMode = 'user') => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true },
+      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    });
+    localRef.current = stream;
+    setLocalStream(stream);
+    return stream;
+  }, []);
+
+  const flushPendingIce = useCallback(async () => {
+    const pc = pcRef.current;
+    const queued = pendingIceRef.current;
+    pendingIceRef.current = [];
+    for (const candidate of queued) {
+      try { await pc.addIceCandidate(candidate); } catch { /* stale candidate; ignore */ }
+    }
+  }, []);
+
+  /* ---------- actions ---------- */
+
+  const startCall = useCallback(async () => {
+    if (statusRef.current !== 'idle' && statusRef.current !== 'ended') return;
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setNotice('Video calls need a secure (https) connection and a supported browser.');
+      setStatusBoth('ended');
+      return;
+    }
+    setNotice('');
+    setStatusBoth('calling');
+    try {
+      const stream = await openCamera(facing);
+      const pc = await createPeer();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      if (!send({ type: 'offer', sdp: offer.sdp })) throw new Error('signal');
+      ringTimerRef.current = setTimeout(() => {
+        send({ type: 'hangup' });
+        finish('No answer.');
+      }, RING_TIMEOUT_MS);
+    } catch (err) {
+      cleanup();
+      setNotice(err?.message === 'signal'
+        ? 'Not connected yet. Wait a moment and try again.'
+        : friendlyMediaError(err));
+      setStatusBoth('ended');
+    }
+  }, [cleanup, createPeer, facing, finish, openCamera, send, setStatusBoth]);
+
+  const acceptCall = useCallback(async () => {
+    const offer = pendingOfferRef.current;
+    if (statusRef.current !== 'incoming' || !offer) return;
+    setStatusBoth('connecting');
+    try {
+      const stream = await openCamera(facing);
+      const pc = await createPeer();
+      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
+      await flushPendingIce();
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      send({ type: 'answer', sdp: answer.sdp });
+    } catch (err) {
+      send({ type: 'reject' });
+      cleanup();
+      setNotice(friendlyMediaError(err));
+      setStatusBoth('ended');
+    }
+  }, [cleanup, createPeer, facing, flushPendingIce, openCamera, send, setStatusBoth]);
+
+  const declineCall = useCallback(() => {
+    send({ type: 'reject' });
+    finish('');
+  }, [finish, send]);
+
+  const hangUp = useCallback(() => {
+    send({ type: 'hangup' });
+    finish('');
+  }, [finish, send]);
+
+  const dismiss = useCallback(() => {
+    setNotice('');
+    setStatusBoth('idle');
+  }, [setStatusBoth]);
+
+  const toggleMic = useCallback(() => {
+    const next = !micOn;
+    localRef.current?.getAudioTracks().forEach((t) => { t.enabled = next; });
+    setMicOn(next);
+  }, [micOn]);
+
+  const toggleCam = useCallback(() => {
+    const next = !camOn;
+    localRef.current?.getVideoTracks().forEach((t) => { t.enabled = next; });
+    setCamOn(next);
+  }, [camOn]);
+
+  // Swap between front and back cameras (phones/tablets) without dropping the call.
+  const flipCamera = useCallback(async () => {
+    const nextFacing = facing === 'user' ? 'environment' : 'user';
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: nextFacing } });
+      const track = fresh.getVideoTracks()[0];
+      track.enabled = camOn;
+      const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === 'video');
+      if (sender) await sender.replaceTrack(track);
+      const old = localRef.current;
+      old?.getVideoTracks().forEach((t) => { old.removeTrack(t); t.stop(); });
+      old?.addTrack(track);
+      setLocalStream(new MediaStream(old ? old.getTracks() : [track]));
+      setFacing(nextFacing);
+    } catch {
+      setNotice('Could not switch cameras on this device.');
+    }
+  }, [camOn, facing]);
+
+  /* ---------- incoming signals ---------- */
+
+  const handleSignal = useCallback(async (data) => {
+    const fromMe = data.from === String(myId);
+
+    // Another tab or device of mine: only react by dismissing a ringing call.
+    if (fromMe) {
+      if (statusRef.current === 'incoming' && ['answer', 'reject', 'hangup'].includes(data.type)) {
+        finish(data.type === 'answer' ? 'Answered on another device.' : '');
+      }
+      return;
+    }
+
+    switch (data.type) {
+      case 'offer':
+        if (statusRef.current !== 'idle' && statusRef.current !== 'ended') {
+          send({ type: 'busy' });
+          return;
+        }
+        pendingOfferRef.current = data;
+        pendingIceRef.current = [];
+        setNotice('');
+        setStatusBoth('incoming');
+        ringTimerRef.current = setTimeout(() => finish('Missed call.'), RING_TIMEOUT_MS);
+        break;
+      case 'answer':
+        if (statusRef.current === 'calling' && pcRef.current) {
+          clearTimeout(ringTimerRef.current);
+          setStatusBoth('connecting');
+          try {
+            await pcRef.current.setRemoteDescription({ type: 'answer', sdp: data.sdp });
+            await flushPendingIce();
+          } catch {
+            send({ type: 'hangup' });
+            finish('Could not connect the call.');
+          }
+        }
+        break;
+      case 'ice': {
+        const candidate = data.candidate;
+        if (!candidate) break;
+        if (pcRef.current?.remoteDescription) {
+          try { await pcRef.current.addIceCandidate(candidate); } catch { /* ignore */ }
+        } else {
+          pendingIceRef.current.push(candidate);
+        }
+        break;
+      }
+      case 'reject':
+        if (statusRef.current === 'calling') finish('Call declined.');
+        break;
+      case 'busy':
+        if (statusRef.current === 'calling') finish('They are on another call.');
+        break;
+      case 'hangup':
+        if (statusRef.current !== 'idle') finish(statusRef.current === 'incoming' ? 'Missed call.' : 'Call ended.');
+        break;
+      default:
+        break;
+    }
+  }, [finish, flushPendingIce, myId, send, setStatusBoth]);
+
+  /* ---------- signaling socket ---------- */
+
+  const handleSignalRef = useRef(handleSignal);
+  useEffect(() => { handleSignalRef.current = handleSignal; }, [handleSignal]);
+
+  useEffect(() => {
+    if (!enabled || !conversationId) return undefined;
+    closedRef.current = false;
+    let reconnectTimer;
+
+    const connect = () => {
+      const ws = new WebSocket(callSocketUrl(conversationId));
+      wsRef.current = ws;
+      ws.onopen = () => setSignalReady(true);
+      ws.onmessage = (e) => {
+        try {
+          const data = JSON.parse(e.data);
+          if (data.type === 'error') setNotice(data.detail);
+          else handleSignalRef.current(data);
+        } catch { /* ignore malformed frames */ }
+      };
+      ws.onclose = (e) => {
+        setSignalReady(false);
+        if (closedRef.current || e.code === 4401 || e.code === 4403 || e.code === 4404) return;
+        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+      };
+    };
+    connect();
+
+    // Closing the tab mid-call should end it for the other person right away.
+    const onUnload = () => {
+      if (statusRef.current !== 'idle' && statusRef.current !== 'ended') send({ type: 'hangup' });
+    };
+    window.addEventListener('pagehide', onUnload);
+
+    return () => {
+      closedRef.current = true;
+      clearTimeout(reconnectTimer);
+      window.removeEventListener('pagehide', onUnload);
+      onUnload();
+      wsRef.current?.close();
+      wsRef.current = null;
+      cleanup();
+      statusRef.current = 'idle';
+    };
+  }, [cleanup, conversationId, enabled, send]);
+
+  return {
+    status, notice, signalReady,
+    localStream, remoteStream,
+    micOn, camOn, facing,
+    startCall, acceptCall, declineCall, hangUp, dismiss,
+    toggleMic, toggleCam, flipCamera,
+  };
+}
