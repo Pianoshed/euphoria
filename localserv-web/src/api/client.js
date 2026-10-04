@@ -27,6 +27,21 @@ export class ApiError extends Error {
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
+// Make sure the first write request waits for the CSRF token instead of racing
+// the startup bootstrapCsrf() call (which showed up as a 403 followed by a retry).
+let csrfPromise = null;
+function ensureCsrf() {
+  if (csrfToken) return Promise.resolve();
+  if (!csrfPromise) {
+    csrfPromise = bootstrapCsrf()
+      .catch(() => {})
+      .finally(() => {
+        csrfPromise = null;
+      });
+  }
+  return csrfPromise;
+}
+
 // When the frontend and API are on different domains, JS cannot read the API's
 // csrftoken cookie via document.cookie. The /csrf/ endpoint returns the token in
 // its JSON body instead, and we keep it here and send it as X-CSRFToken.
@@ -57,6 +72,8 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
     const qs = new URLSearchParams(cleaned).toString();
     if (qs) url += `?${qs}`;
   }
+
+  if (UNSAFE_METHODS.has(method) && !csrfToken) await ensureCsrf();
 
   const headers = {};
   const isFormData = body instanceof FormData;
