@@ -1,6 +1,6 @@
 import './call.css';
 import { useEffect, useRef, useState } from 'react';
-import { startRingtone, stopRingtone } from '../../utils/notifySound';
+import { startRingback, startRingtone, stopRingback, stopRingtone } from '../../utils/notifySound';
 
 function VideoTile({ stream, muted = false, mirrored = false, className = '' }) {
   const ref = useRef(null);
@@ -92,6 +92,13 @@ export default function VideoCallPanel({ call, name, avatar }) {
     if (status !== 'incoming') return undefined;
     startRingtone();
     return stopRingtone;
+  }, [status]);
+
+  // The caller hears a ringback tone until the other person answers, declines or the call times out.
+  useEffect(() => {
+    if (status !== 'calling') return undefined;
+    startRingback();
+    return stopRingback;
   }, [status]);
 
   if (status === 'idle') return null;

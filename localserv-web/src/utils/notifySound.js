@@ -120,3 +120,42 @@ export function stopRingtone() {
   ringTimer = null;
   try { navigator.vibrate?.(0); } catch { /* not supported */ }
 }
+
+/* ---- Ringback: what the CALLER hears while the other phone rings ------------------------- */
+
+let ringbackTimer = null;
+
+// One long soft tone (2s), then 4s of silence, repeating: the standard ringback cadence.
+function ringbackTone(c) {
+  const t0 = c.currentTime;
+  [440, 480].forEach((freq) => {
+    const osc = c.createOscillator();
+    const gain = c.createGain();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.1, t0 + 0.05);
+    gain.gain.setValueAtTime(0.1, t0 + 1.9);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 2);
+    osc.connect(gain).connect(c.destination);
+    osc.start(t0);
+    osc.stop(t0 + 2.05);
+  });
+}
+
+export function startRingback() {
+  if (ringbackTimer) return;
+  const c = getContext();
+  if (!c) return;
+  const go = () => {
+    if (c.state === 'suspended') c.resume().then(() => ringbackTone(c)).catch(() => {});
+    else ringbackTone(c);
+  };
+  go();
+  ringbackTimer = setInterval(go, 6000);
+}
+
+export function stopRingback() {
+  clearInterval(ringbackTimer);
+  ringbackTimer = null;
+}
