@@ -1,17 +1,21 @@
 import '../../styles/index.css';
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert } from '../../components/ui';
 import AuthCard from './AuthCard';
 import AuthShowcase from './AuthShowcase';
 import GoogleButton from './GoogleButton';
+import GoogleSignupStep from './GoogleSignupStep';
 import RoleChoice from './RoleChoice';
 
 export default function Register() {
   const { loginWithGoogle } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  // Set when a Google email has no account yet (arrives from Login, or from the button below).
+  const [google, setGoogle] = useState(location.state?.google ?? null);
   const [form, setForm] = useState({ email: '', username: '', password: '', role: 'CUSTOMER' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -38,8 +42,20 @@ export default function Register() {
     setError(null);
     setGoogleSubmitting(true);
     try {
-      const result = await loginWithGoogle(credentialResponse.credential);
-      navigate(result.is_new_user ? '/onboarding' : '/services', { replace: true });
+      const credential = credentialResponse.credential;
+      const result = await loginWithGoogle(credential);
+      if (result.needs_signup) {
+        // New email: show the finish-signup step (nothing has been created yet).
+        setGoogle({
+          token: credential,
+          email: result.email,
+          name: result.name,
+          suggestedUsername: result.suggested_username,
+        });
+        return;
+      }
+      // This Google email already had an account, so they're now logged in.
+      navigate('/services', { replace: true });
     } catch (err) {
       setError(err);
     } finally {
@@ -72,6 +88,10 @@ export default function Register() {
 
       <div className="auth-panel">
         <div className="auth-form-wrap">
+          {google ? (
+            <GoogleSignupStep google={google} onCancel={() => setGoogle(null)} />
+          ) : (
+          <>
           <h1>Create your account</h1>
           <p className="auth-sub">Sign up to start meeting up.</p>
 
@@ -116,6 +136,8 @@ export default function Register() {
           <p className="auth-footer-note">
             Already have an account? <Link to="/login">Log in</Link>
           </p>
+          </>
+          )}
         </div>
       </div>
     </div>

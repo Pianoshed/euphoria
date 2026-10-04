@@ -12,6 +12,7 @@ export default function Login() {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
@@ -21,6 +22,7 @@ export default function Login() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    setNotice(null);
     setSubmitting(true);
     try {
       const result = await login(form.email, form.password);
@@ -38,9 +40,31 @@ export default function Login() {
 
   const handleGoogleSuccess = async (credentialResponse) => {
     setError(null);
+    setNotice(null);
     setGoogleSubmitting(true);
     try {
-      await loginWithGoogle(credentialResponse.credential);
+      const credential = credentialResponse.credential;
+      const result = await loginWithGoogle(credential);
+
+      if (result.needs_signup) {
+        // Unregistered email: nobody was logged in or created. Tell the person,
+        // then send them to the register page with the Google details.
+        setNotice(`No account found for ${result.email}. Taking you to create one…`);
+        setTimeout(() => {
+          navigate('/register', {
+            state: {
+              google: {
+                token: credential,
+                email: result.email,
+                name: result.name,
+                suggestedUsername: result.suggested_username,
+              },
+            },
+          });
+        }, 900);
+        return;
+      }
+
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err);
@@ -65,6 +89,11 @@ export default function Login() {
           <p className="auth-sub">Sign in to keep the plans going.</p>
 
           <ErrorAlert error={error} />
+          {notice && (
+            <p role="status" className="auth-sub" style={{ color: '#1d4ed8', fontWeight: 500 }}>
+              {notice}
+            </p>
+          )}
 
           <form onSubmit={handleSubmit}>
             <div className="field">

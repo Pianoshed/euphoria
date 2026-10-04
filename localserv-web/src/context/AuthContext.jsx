@@ -8,6 +8,7 @@ import {
   login as apiLogin,
   verifyLoginMfa,
   googleLogin,
+  googleRegister,
   logout as apiLogout,
   getMyProfile,
 } from '../api/accounts';
@@ -50,8 +51,18 @@ export function AuthProvider({ children }) {
     return finishLogin(data);
   }, [finishLogin]);
 
-  const loginWithGoogle = useCallback(
-    async (credential) => finishLogin(await googleLogin(credential)),
+  // Returns the raw response. For an unregistered email the server answers
+  // { needs_signup: true, email, name, suggested_username } and logs NOBODY in,
+  // so we must not touch the user state in that case.
+  const loginWithGoogle = useCallback(async (credential) => {
+    const data = await googleLogin(credential);
+    if (data?.needs_signup) return data;
+    return finishLogin(data);
+  }, [finishLogin]);
+
+  // Step 2 of Google signup: creates the account and logs the person in.
+  const registerWithGoogle = useCallback(
+    async (credential, username, role) => finishLogin(await googleRegister(credential, username, role)),
     [finishLogin],
   );
 
@@ -66,8 +77,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, checkingSession, login, loginWithGoogle, completeMfaLogin, logout, refreshSession,
-  }), [user, checkingSession, login, loginWithGoogle, completeMfaLogin, logout, refreshSession]);
+    user, checkingSession, login, loginWithGoogle, registerWithGoogle,
+    completeMfaLogin, logout, refreshSession,
+  }), [user, checkingSession, login, loginWithGoogle, registerWithGoogle,
+    completeMfaLogin, logout, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

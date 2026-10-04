@@ -77,3 +77,9 @@ export const googleLogin = (idToken) =>
 
 export const completeOnboarding = (role) =>
   apiFetch('/api/accounts/profile/onboarding/complete/', { method: 'POST', body: { role } });
+
+export const googleRegister = (idToken, username, role) =>
+  apiFetch('/api/accounts/google/register/', {
+    method: 'POST',
+    body: { id_token: idToken, username, role },
+  });
