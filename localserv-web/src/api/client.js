@@ -22,6 +22,7 @@ const TOKEN_ROTATING_PATHS = [
   '/api/accounts/login/',
   '/api/accounts/login/verify-2fa/',
   '/api/accounts/google/',
+  '/api/accounts/google/register/',
   '/api/accounts/logout/',
 ];
 

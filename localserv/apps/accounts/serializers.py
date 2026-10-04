@@ -129,6 +129,20 @@ class GoogleLoginSerializer(serializers.Serializer):
     id_token = serializers.CharField()
 
 
+class GoogleRegisterSerializer(serializers.Serializer):
+    """Second step of Google signup. The email is deliberately NOT a field:
+    the server takes it from the verified id_token."""
+
+    id_token = serializers.CharField()
+    username = serializers.CharField(min_length=3, max_length=30)
+    # Same allowed roles as RegisterSerializer: never admin/moderator.
+    role = serializers.ChoiceField(
+        choices=[AccountRole.CUSTOMER.value, AccountRole.PROVIDER.value],
+        default=AccountRole.CUSTOMER.value,
+        required=False,
+    )
+
+
 class OnboardingCompleteSerializer(serializers.Serializer):
     role = serializers.ChoiceField(
         choices=[AccountRole.CUSTOMER.value, AccountRole.PROVIDER.value]

@@ -17,6 +17,7 @@ from .serializers import (
     DiscoverQuerySerializer,
     EmailVerifySerializer,
     GoogleLoginSerializer,
+    GoogleRegisterSerializer,
     LoginMFASerializer,
     LoginSerializer,
     OnboardingCompleteSerializer,
@@ -348,6 +349,9 @@ class BlockDeleteView(APIView):
 # --- Google sign-in --------------------------------------------------------------
 
 class GoogleLoginView(APIView):
+    """Login only. An unknown email is NOT logged in or created: the
+    response tells the frontend to send the person to create-account."""
+
     permission_classes = [AllowAny]
     # The signed Google ID token is the proof of identity here, and a stale
     # session cookie must not cause a CSRF 403 on login.
@@ -358,11 +362,33 @@ class GoogleLoginView(APIView):
     def post(self, request):
         serializer = GoogleLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user, created = services.authenticate_google_login(request, **serializer.validated_data)
-        return Response({
-            "user": UserPublicSerializer(user).data,
-            "is_new_user": created,
-        })
+        result = services.authenticate_google_login(request, **serializer.validated_data)
+        if result["needs_signup"]:
+            return Response({
+                "needs_signup": True,
+                "email": result["email"],
+                "name": result["name"],
+                "suggested_username": result["suggested_username"],
+            })
+        return Response({"needs_signup": False, "user": UserPublicSerializer(result["user"]).data})
+
+
+class GoogleRegisterView(APIView):
+    """Second step: create the account from a freshly verified Google token."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "registration"
+
+    def post(self, request):
+        serializer = GoogleRegisterSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = services.register_google_user(request, **serializer.validated_data)
+        return Response(
+            {"user": UserPublicSerializer(user).data, "is_new_user": True},
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class CompleteOnboardingView(APIView):

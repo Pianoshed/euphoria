@@ -25,10 +25,12 @@ urlpatterns = [
     path("profile/me/", views.MyProfileView.as_view(), name="my-profile"),
     path("profile/privacy/", views.MyPrivacyView.as_view(), name="my-privacy"),
     path("profile/avatar/", views.AvatarUploadView.as_view(), name="avatar-upload"),
+    path("profile/onboarding/complete/", views.CompleteOnboardingView.as_view(), name="onboarding-complete"),
     path("profile/<uuid:user_id>/", views.PublicProfileView.as_view(), name="public-profile"),
     path("discover/", views.DiscoverProfilesView.as_view(), name="discover"),
     path("presence/ping/", views.PresencePingView.as_view(), name="presence-ping"),
     path("google/", views.GoogleLoginView.as_view(), name="google-login"),
+    path("google/register/", views.GoogleRegisterView.as_view(), name="google-register"),
     path("blocks/", views.BlockListCreateView.as_view(), name="blocks"),
     path("blocks/<uuid:user_id>/", views.BlockDeleteView.as_view(), name="block-delete"),
 ]

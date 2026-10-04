@@ -1,5 +1,9 @@
 from datetime import timedelta
 
+
+import re
+from django.db import IntegrityError, transaction
+from google.auth.exceptions import GoogleAuthError
 from django.contrib.auth import authenticate
 from django.contrib.auth import login as django_login
 from django.contrib.auth.password_validation import validate_password
@@ -585,51 +589,125 @@ def reinstate_account(staff_user, target_user_id, *, reason: str = "") -> User:
 
 # --- Google sign-in ---------------------------------------------------------------
 
-def authenticate_google_login(request, id_token):
+# =====================================================================
+# Replace everything from "# --- Google sign-in ---" to the END of
+# apps/accounts/services.py with this block.
+#
+# Also update these imports at the top of services.py:
+#   import re
+#   from django.db import IntegrityError, transaction
+#   from google.auth.exceptions import GoogleAuthError
+# =====================================================================
+
+# --- Google sign-in ---------------------------------------------------------------
+
+def _verify_google_token(raw_token: str) -> dict:
+    """Verify a Google ID token server-side. Returns the verified claims.
+    Everything we trust (email, name) must come from here, never from
+    the request body."""
+    if not settings.GOOGLE_CLIENT_ID:
+        raise DomainError("Google sign-in is not configured.")
     try:
         idinfo = google_id_token.verify_oauth2_token(
-            id_token, google_requests.Request(), settings.GOOGLE_CLIENT_ID
+            raw_token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+            clock_skew_in_seconds=10,
         )
-    except ValueError as exc:
+    except (ValueError, GoogleAuthError) as exc:
         raise ValidationError({"id_token": ["Invalid Google token."]}) from exc
 
     email = idinfo.get("email")
     if not email or not idinfo.get("email_verified", False):
         raise ValidationError({"id_token": ["Google email missing or unverified."]})
 
-    email = User.objects.normalize_email(email).lower()
+    idinfo["email"] = User.objects.normalize_email(email).lower()
+    return idinfo
 
-    created = False
+
+def _google_full_name(idinfo: dict) -> str:
+    parts = [idinfo.get("given_name", ""), idinfo.get("family_name", "")]
+    return " ".join(p for p in parts if p).strip() or idinfo.get("name", "")
+
+
+def _suggest_username(email: str) -> str:
+    base = re.sub(r"[^A-Za-z0-9_.]", "", email.split("@")[0])[:25] or "user"
+    username, suffix = base, 1
+    while User.objects.filter(username__iexact=username).exists():
+        username = f"{base}{suffix}"
+        suffix += 1
+    return username
+
+
+def authenticate_google_login(request, id_token: str) -> dict:
+    """LOGIN ONLY. Never creates an account.
+
+    Returns one of:
+      {"needs_signup": False, "user": user}   -- existing account, now logged in
+      {"needs_signup": True, "email": ..., "name": ..., "suggested_username": ...}
+                                              -- no account yet; nobody is logged in
+    """
+    idinfo = _verify_google_token(id_token)
+    email = idinfo["email"]
+
     try:
         user = User.objects.get(email=email)
     except User.DoesNotExist:
-        base_username = email.split("@")[0]
-        username = base_username
-        suffix = 1
-        while User.objects.filter(username=username).exists():
-            username = f"{base_username}{suffix}"
-            suffix += 1
+        return {
+            "needs_signup": True,
+            "email": email,
+            "name": _google_full_name(idinfo),
+            "suggested_username": _suggest_username(email),
+        }
 
-        user = User.objects.create_user(
-            email=email,
-            username=username,
-            password=None,
-            email_verified=True,
-            status=AccountStatus.ACTIVE,
-        )
-        created = True  # was never set before, so callers always saw created=False
+    # Google just proved ownership of this email. If the existing account
+    # was never verified, anyone could have pre-registered it with a
+    # password they chose, so drop that password before trusting the login.
+    if not user.email_verified:
+        user.set_unusable_password()
+        user.save(update_fields=["password"])
+        user.mark_email_verified()
+        user.refresh_from_db()
 
-        # Ensure a Profile row exists, whether or not a signal already made one.
-        full_name = " ".join(
-            p for p in [idinfo.get("given_name", ""), idinfo.get("family_name", "")] if p
-        ).strip()
-        profile, _created = Profile.objects.get_or_create(user=user)
-        if full_name and not profile.display_name:
-            profile.display_name = full_name[:50]  # matches max_length=50
-            profile.save(update_fields=["display_name"])
+    _check_account_usable(user)
+    _finish_login(request, user)
+    return {"needs_signup": False, "user": user}
 
-    if not created:
-        _check_account_usable(user)
+
+@transaction.atomic
+def register_google_user(request, *, id_token: str, username: str, role: str = AccountRole.CUSTOMER) -> User:
+    """Create an account from a Google identity, then log it in.
+
+    The Google token is verified AGAIN here: the email comes from the
+    token, never from the client, so nobody can register someone else's
+    address by editing the request."""
+    idinfo = _verify_google_token(id_token)
+    email = idinfo["email"]
+
+    if User.objects.filter(email=email).exists():
+        raise ValidationError({"id_token": ["An account with this email already exists. Please log in."]})
+    if User.objects.filter(username__iexact=username).exists():
+        raise ValidationError({"username": ["This username is already taken."]})
+
+    try:
+        with transaction.atomic():  # savepoint, so a race doesn't poison the outer transaction
+            user = User.objects.create_user(
+                email=email,
+                username=username,
+                password=None,  # Google-only; they can set a password via reset later
+                role=role,
+                email_verified=True,  # Google already verified the address
+                status=AccountStatus.ACTIVE,
+            )
+    except IntegrityError as exc:
+        raise ValidationError({"username": ["This username or email is already taken."]}) from exc
+
+    profile, _ = Profile.objects.get_or_create(user=user)
+    ProfilePrivacy.objects.get_or_create(user=user)
+    full_name = _google_full_name(idinfo)
+    if full_name and not profile.display_name:
+        profile.display_name = full_name[:50]  # matches max_length=50
+        profile.save(update_fields=["display_name"])
 
     _finish_login(request, user)
-    return user, created
+    return user
