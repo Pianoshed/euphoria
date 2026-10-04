@@ -79,5 +79,8 @@ export const disable2fa = (password) =>
 export const googleLogin = (idToken) =>
   apiFetch('/api/accounts/google/', { method: 'POST', body: { id_token: idToken } });
 
+export const googleRegister = (idToken, role) =>
+  apiFetch('/api/accounts/google/register/', { method: 'POST', body: { id_token: idToken, role } });
+
 export const completeOnboarding = (role) =>
   apiFetch('/api/accounts/profile/onboarding/complete/', { method: 'POST', body: { role } });
