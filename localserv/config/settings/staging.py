@@ -33,3 +33,8 @@ EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"  # or smtp if y
 
 LOGGING["formatters"]["json"] = {"()": "apps.common.log_formatters.JSONFormatter"}
 LOGGING["handlers"]["console"]["formatter"] = "json"
+
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
+}
