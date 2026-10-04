@@ -1,3 +1,4 @@
+from django.http import HttpResponse
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
@@ -118,4 +119,32 @@ class MessageDetailView(APIView):
     def delete(self, request, message_id):
         message = self._get_message_or_404(request, message_id)
         services.delete_message(message, request.user)
+        services.broadcast_event(
+            message.conversation,
+            {"type": "message_deleted", "id": str(message.id), "conversation_id": str(message.conversation_id)},
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MessageViewOnceView(APIView):
+    """POST /api/chat/messages/<id>/view-once/ -- returns the photo's bytes once,
+    then deletes it. POST (not GET) because it changes state."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def post(self, request, message_id):
+        try:
+            message, data = services.consume_view_once(message_id, request.user)
+        except Message.DoesNotExist:
+            raise NotFound("Message not found.") from None
+        services.broadcast_event(
+            message.conversation,
+            {
+                "type": "attachment_viewed",
+                "message_id": str(message.id),
+                "conversation_id": str(message.conversation_id),
+            },
+        )
+        response = HttpResponse(data, content_type="image/jpeg")
+        response["Cache-Control"] = "no-store"
+        return response

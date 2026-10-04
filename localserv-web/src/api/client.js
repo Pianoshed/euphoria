@@ -130,3 +130,23 @@ export async function bootstrapCsrf() {
   const data = await apiFetch('/api/accounts/csrf/');
   csrfToken = data?.csrfToken || null;
 }
+
+/**
+ * Like apiFetch but returns the response body as a Blob (for images).
+ * Sends the session cookie and CSRF header the same way.
+ */
+export async function apiBlob(path, { method = 'POST' } = {}) {
+  if (UNSAFE_METHODS.has(method) && !csrfToken) await ensureCsrf();
+  const headers = {};
+  if (UNSAFE_METHODS.has(method)) {
+    const token = csrfToken || getCookie('csrftoken');
+    if (token) headers['X-CSRFToken'] = token;
+  }
+  const resp = await fetch(`${API_BASE}${path}`, { method, headers, credentials: 'include' });
+  if (!resp.ok) {
+    const contentType = resp.headers.get('content-type') || '';
+    const data = contentType.includes('application/json') ? await resp.json().catch(() => null) : null;
+    throw new ApiError(resp.status, data);
+  }
+  return resp.blob();
+}

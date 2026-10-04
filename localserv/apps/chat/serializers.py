@@ -6,18 +6,34 @@ from .models import Conversation, Message
 
 class MessageSerializer(serializers.ModelSerializer):
     attachment_url = serializers.SerializerMethodField()
+    attachment_view_once = serializers.SerializerMethodField()
+    attachment_viewed = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
-        fields = ["id", "conversation", "sender", "body", "attachment_url", "created_at", "edited_at", "is_deleted"]
+        fields = [
+            "id", "conversation", "sender", "body",
+            "attachment_url", "attachment_view_once", "attachment_viewed",
+            "created_at", "edited_at", "is_deleted",
+        ]
         read_only_fields = fields
 
     def get_attachment_url(self, obj):
-        if not obj.has_attachment:
+        attachment = services.get_message_attachment(obj)
+        # View-once photos never expose a direct URL (see /view-once/ endpoint).
+        if attachment is None or attachment.view_once or not attachment.file:
             return None
         request = self.context.get("request")
-        url = obj.attachment.file.url
+        url = attachment.file.url
         return request.build_absolute_uri(url) if request else url
+
+    def get_attachment_view_once(self, obj):
+        attachment = services.get_message_attachment(obj)
+        return bool(attachment and attachment.view_once)
+
+    def get_attachment_viewed(self, obj):
+        attachment = services.get_message_attachment(obj)
+        return bool(attachment and attachment.viewed_at)
 
 
 class SendMessageSerializer(serializers.Serializer):
@@ -26,6 +42,7 @@ class SendMessageSerializer(serializers.Serializer):
     # cross-field rule more naturally expressed there than here.
     body = serializers.CharField(max_length=services.MAX_MESSAGE_LENGTH, required=False, allow_blank=True)
     attachment = serializers.ImageField(required=False)
+    view_once = serializers.BooleanField(required=False, default=False)
 
 
 class EditMessageSerializer(serializers.Serializer):

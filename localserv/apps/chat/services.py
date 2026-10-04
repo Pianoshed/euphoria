@@ -1,4 +1,5 @@
 from django.core.cache import cache
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -82,7 +83,9 @@ def get_conversation_for_user(conversation_id, user) -> Conversation | None:
 # ---------------------------------------------------------------------------
 @transaction.atomic
 @transaction.atomic
-def send_message(conversation: Conversation, sender: User, *, body: str = "", attachment=None) -> Message:
+def send_message(
+    conversation: Conversation, sender: User, *, body: str = "", attachment=None, view_once: bool = False
+) -> Message:
     if not conversation.is_participant(sender):
         raise DomainError("You are not a participant in this conversation.")
 
@@ -105,6 +108,7 @@ def send_message(conversation: Conversation, sender: User, *, body: str = "", at
             message=message,
             original_filename=(attachment.name or "")[:255],
             size_bytes=attachment.size,
+            view_once=bool(view_once),
         )
         message_attachment.file.save("attachment.jpg", processed, save=True)
     conversation.save(update_fields=["updated_at"])  # bumps conversation list ordering
@@ -133,11 +137,78 @@ def delete_message(message: Message, user: User) -> Message:
     if message.sender_id != user.id:
         raise AccountNotEligibleError("You can only delete your own messages.")
 
+    _purge_attachment(message)  # remove the image file too, not just hide it
+
     message.is_deleted = True
     message.deleted_at = timezone.now()
     message.body = ""  # don't retain deleted content at rest
-    message.save(update_fields=["is_deleted", "deleted_at", "body", "updated_at"])
+    message.has_attachment = False
+    message.save(update_fields=["is_deleted", "deleted_at", "body", "has_attachment", "updated_at"])
     return message
+
+
+def get_message_attachment(message: Message):
+    """The message's MessageAttachment, or None."""
+    if not message.has_attachment:
+        return None
+    try:
+        return message.attachment
+    except ObjectDoesNotExist:
+        return None
+
+
+def _purge_attachment(message: Message) -> None:
+    try:
+        attachment = message.attachment
+    except ObjectDoesNotExist:
+        return
+    if attachment.file:
+        try:
+            attachment.file.delete(save=False)
+        except OSError:
+            pass  # file already gone (e.g. wiped by a redeploy); still drop the row
+    attachment.delete()
+
+
+def consume_view_once(message_id, user):
+    """Returns (message, image_bytes) for a view-once photo -- exactly once.
+
+    Only the recipient can open it. The file is deleted from storage in the same
+    transaction that records viewed_at, so a second open always fails."""
+    with transaction.atomic():
+        message = Message.objects.select_related("conversation").filter(id=message_id).first()
+        if message is None or message.is_deleted or not message.conversation.is_participant(user):
+            raise Message.DoesNotExist
+        try:
+            attachment = MessageAttachment.objects.select_for_update().get(message=message, view_once=True)
+        except MessageAttachment.DoesNotExist:
+            raise Message.DoesNotExist from None
+
+        if message.sender_id == user.id:
+            raise DomainError("You can't open a view-once photo you sent.")
+        if attachment.viewed_at is not None or not attachment.file:
+            raise DomainError("This photo has already been opened.")
+
+        try:
+            attachment.file.open("rb")
+            try:
+                data = attachment.file.read()
+            finally:
+                attachment.file.close()
+        except OSError:
+            data = None
+
+        try:
+            attachment.file.delete(save=False)
+        except OSError:
+            pass
+        attachment.file = ""
+        attachment.viewed_at = timezone.now()
+        attachment.save(update_fields=["file", "viewed_at", "updated_at"])
+
+    if data is None:
+        raise DomainError("This photo is no longer available.")
+    return message, data
 
 
 def list_messages(conversation: Conversation, *, page_size=None):
@@ -186,9 +257,13 @@ def check_and_increment_ws_rate_limit(user) -> bool:
 
 
 def serialize_message_for_broadcast(conversation: Conversation, message: Message) -> dict:
+    attachment = get_message_attachment(message)
+    view_once = bool(attachment and attachment.view_once)
     attachment_url = None
-    if message.has_attachment:
-        attachment_url = message.attachment.file.url
+    # View-once photos never expose a direct URL; they're fetched through the
+    # authenticated /view-once/ endpoint instead.
+    if attachment and attachment.file and not view_once:
+        attachment_url = attachment.file.url
     return {
         "type": "message",
         "id": str(message.id),
@@ -196,8 +271,28 @@ def serialize_message_for_broadcast(conversation: Conversation, message: Message
         "sender_id": str(message.sender_id),
         "body": message.body,
         "attachment_url": attachment_url,
+        "attachment_view_once": view_once,
+        "attachment_viewed": bool(attachment and attachment.viewed_at),
         "created_at": message.created_at.isoformat(),
     }
+
+
+def broadcast_event(conversation: Conversation, payload: dict) -> None:
+    """Best-effort live push of a non-message event (deleted / viewed)."""
+    import logging
+
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    channel_layer = get_channel_layer()
+    if channel_layer is None:
+        return
+    try:
+        async_to_sync(channel_layer.group_send)(
+            f"conversation_{conversation.id}", {"type": "chat.message", "payload": payload}
+        )
+    except Exception:
+        logging.getLogger("apps").warning("Failed to broadcast event %s", payload.get("type"), exc_info=True)
 
 
 def broadcast_message(conversation: Conversation, message: Message) -> None:

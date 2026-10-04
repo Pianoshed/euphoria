@@ -125,9 +125,13 @@ class MessageAttachment(BaseModel):
     type is a reasonable follow-up but isn't built here."""
 
     message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="attachment")
-    file = models.ImageField(upload_to=message_attachment_upload_path)
+    # blank=True: the file is removed once a view-once photo has been opened.
+    file = models.ImageField(upload_to=message_attachment_upload_path, blank=True)
     original_filename = models.CharField(max_length=255, blank=True)
     size_bytes = models.PositiveIntegerField()
+    # View-once: the recipient can open it a single time, then the file is deleted.
+    view_once = models.BooleanField(default=False)
+    viewed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta(BaseModel.Meta):
         db_table = "chat_message_attachment"

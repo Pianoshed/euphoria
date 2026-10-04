@@ -16,4 +16,5 @@ urlpatterns = [
     path("conversations/<uuid:conversation_id>/read/", views.ConversationMarkReadView.as_view(), name="conversation-read"),
     path("ice-servers/", IceServersView.as_view(), name="ice-servers"),
     path("messages/<uuid:message_id>/", views.MessageDetailView.as_view(), name="message-detail"),
+    path("messages/<uuid:message_id>/view-once/", views.MessageViewOnceView.as_view(), name="message-view-once"),
 ]

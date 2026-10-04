@@ -5,7 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
-import { API_BASE } from '../../api/client';
+import { API_BASE, apiFetch, apiBlob } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useChatSocket } from '../../hooks/useChatSocket';
 import { useVideoCall } from '../../hooks/useVideoCall';
@@ -77,7 +77,7 @@ const sortOldestFirst = (list) => [...list].sort(byTime);
 
 // Keep whatever is already on screen, add what's new, and pick up edits and deletes.
 // Returns the SAME array when nothing changed so a quiet poll never re-renders or moves the scroll.
-const msgSig = (m) => `${m.id}|${m.edited_at ?? ''}|${m.is_deleted ? 1 : 0}|${m.body ?? ''}`;
+const msgSig = (m) => `${m.id}|${m.edited_at ?? ''}|${m.is_deleted ? 1 : 0}|${m.body ?? ''}|${m.attachment_viewed ? 1 : 0}`;
 function mergeMessages(prev, fresh) {
   if (!prev) return sortOldestFirst(fresh);
   const byId = new Map(prev.map((m) => [m.id, m]));
@@ -199,6 +199,8 @@ export default function ConversationView() {
   const [draft, setDraft] = useState('');
   const [attachment, setAttachment] = useState(null);
   const [attachmentPreview, setAttachmentPreview] = useState(null);
+  const [viewOnce, setViewOnce] = useState(false); // send the pending photo as view-once
+  const [viewer, setViewer] = useState(null); // { id, url, loading, error } for an open view-once photo
   const [sending, setSending] = useState(false);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -298,8 +300,16 @@ export default function ConversationView() {
         setMessages((prev) => (prev?.some((m) => m.id === data.id) ? prev : [...(prev || []), {
           id: data.id, conversation: data.conversation_id, sender: data.sender_id,
           body: data.body, attachment_url: data.attachment_url ?? null,
+          attachment_view_once: data.attachment_view_once ?? false,
+          attachment_viewed: data.attachment_viewed ?? false,
           created_at: data.created_at, is_deleted: false, edited_at: null,
         }]));
+      } else if (data.type === 'message_deleted') {
+        setMessages((prev) => prev?.map((m) => (m.id === data.id
+          ? { ...m, is_deleted: true, body: '', attachment_url: null, attachment_view_once: false }
+          : m)));
+      } else if (data.type === 'attachment_viewed') {
+        setMessages((prev) => prev?.map((m) => (m.id === data.message_id ? { ...m, attachment_viewed: true } : m)));
       } else if (data.type === 'error') {
         setError(new Error(data.detail));
       }
@@ -333,6 +343,7 @@ export default function ConversationView() {
   const clearAttachment = () => {
     setAttachment(null);
     setAttachmentPreview(null);
+    setViewOnce(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -344,13 +355,18 @@ export default function ConversationView() {
     setError(null);
     setPaletteOpen(false);
     const pendingAttachment = attachment;
+    const pendingViewOnce = viewOnce;
     setDraft('');
     clearAttachment();
     try {
       if (pendingAttachment) {
         // File uploads can't go over the plain-text WS protocol this
         // app uses -- always REST for these.
-        const message = await chatApi.sendMessage(id, body, pendingAttachment);
+        const form = new FormData();
+        form.append('attachment', pendingAttachment);
+        if (body) form.append('body', body);
+        if (pendingViewOnce) form.append('view_once', 'true');
+        const message = await apiFetch(`/api/chat/conversations/${id}/messages/`, { method: 'POST', body: form });
         setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
       } else if (!sendOverSocket(body)) {
         // Prefer the live socket for plain text (near-instant echo to
@@ -364,6 +380,37 @@ export default function ConversationView() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleDelete = async (m) => {
+    if (!window.confirm('Delete this message for everyone?')) return;
+    try {
+      await apiFetch(`/api/chat/messages/${m.id}/`, { method: 'DELETE' });
+      setMessages((prev) => prev?.map((x) => (x.id === m.id
+        ? { ...x, is_deleted: true, body: '', attachment_url: null, attachment_view_once: false }
+        : x)));
+    } catch (err) {
+      setError(err);
+    }
+  };
+
+  const openViewOnce = async (m) => {
+    setViewer({ id: m.id, url: null, loading: true, error: null });
+    try {
+      const blob = await apiBlob(`/api/chat/messages/${m.id}/view-once/`);
+      setViewer({ id: m.id, url: URL.createObjectURL(blob), loading: false, error: null });
+      setMessages((prev) => prev?.map((x) => (x.id === m.id ? { ...x, attachment_viewed: true } : x)));
+    } catch (err) {
+      setViewer({ id: m.id, url: null, loading: false, error: err.message || 'Could not open this photo.' });
+      refreshMessages();
+    }
+  };
+
+  const closeViewer = () => {
+    setViewer((v) => {
+      if (v?.url) URL.revokeObjectURL(v.url); // the photo is gone for good
+      return null;
+    });
   };
 
   const rememberEmoji = (emoji) => {
@@ -483,12 +530,26 @@ export default function ConversationView() {
                           <p><em>Message deleted</em></p>
                         ) : (
                           <>
-                            {m.attachment_url && (
+                            {m.attachment_view_once ? (
+                              mine ? (
+                                <p className="cv-once cv-once--mine">
+                                  📷 Photo · View once <span>{m.attachment_viewed ? 'Opened' : 'Not opened yet'}</span>
+                                </p>
+                              ) : m.attachment_viewed ? (
+                                <p className="cv-once cv-once--done">📷 Photo opened</p>
+                              ) : (
+                                <button type="button" className="cv-once cv-once--open" onClick={() => openViewOnce(m)}>
+                                  📷 Tap to view photo <span>(once)</span>
+                                </button>
+                              )
+                            ) : m.attachment_url && (
                               <a href={mediaUrl(m.attachment_url)} target="_blank" rel="noreferrer">
                                 <img className="cv-bubble__img" src={mediaUrl(m.attachment_url)} alt="Photo" loading="lazy" />
                               </a>
                             )}
-                            {m.body && <p className={m.attachment_url ? 'cv-bubble__caption' : undefined}>{m.body}</p>}
+                            {m.body && (
+                              <p className={m.attachment_url || m.attachment_view_once ? 'cv-bubble__caption' : undefined}>{m.body}</p>
+                            )}
                           </>
                         )}
                       </div>
@@ -522,6 +583,10 @@ export default function ConversationView() {
                           )}
                         </div>
                       )}
+                      {mine && !m.is_deleted && (
+                        <button type="button" className="cv-del" aria-label="Delete this message" title="Delete"
+                          onClick={() => handleDelete(m)}>🗑</button>
+                      )}
                     </div>
 
                     {mineReactions.length > 0 && (
@@ -549,6 +614,10 @@ export default function ConversationView() {
           {attachmentPreview && (
             <div className="cv-attach">
               <img src={attachmentPreview} alt="" />
+              <label className="cv-once-toggle">
+                <input type="checkbox" checked={viewOnce} onChange={(e) => setViewOnce(e.target.checked)} />
+                View once
+              </label>
               <button type="button" className="btn btn--ghost btn--sm" onClick={clearAttachment}>Remove</button>
             </div>
           )}
@@ -589,6 +658,19 @@ export default function ConversationView() {
 
         <PortraitCanvas profile={otherProfile} otherUserId={otherUserId} presence={presence} />
       </div>
+      {viewer && (
+        <div className="cv-viewer" role="dialog" aria-modal="true" aria-label="View-once photo" onClick={closeViewer}>
+          <div className="cv-viewer__box" onClick={(e) => e.stopPropagation()}>
+            {viewer.loading && <Spinner />}
+            {viewer.error && <p className="cv-viewer__err">{viewer.error}</p>}
+            {viewer.url && (
+              <img src={viewer.url} alt="View-once photo" draggable={false} onContextMenu={(e) => e.preventDefault()} />
+            )}
+            {viewer.url && <p className="cv-viewer__note">This photo disappears when you close it.</p>}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={closeViewer}>Close</button>
+          </div>
+        </div>
+      )}
       <VideoCallPanel call={call} name={displayName} avatar={otherProfile?.avatar} />
     </div>
   );
