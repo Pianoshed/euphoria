@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { API_BASE } from '../api/client';
+import { WS_BASE } from '../api/client';
 import { getIceServers } from '../api/chat';
 
 /*
@@ -10,15 +10,17 @@ import { getIceServers } from '../api/chat';
  * browsers, or through a TURN relay when a direct path isn't possible.
  *
  * status: 'idle' | 'calling' | 'incoming' | 'connecting' | 'active' | 'ended'
+ * mode:   'video' | 'voice'
  */
 
 const RING_TIMEOUT_MS = 45_000;
 const RECONNECT_DELAY_MS = 2_000;
 
-function callSocketUrl(conversationId) {
-  const base = API_BASE || window.location.origin;
-  return `${base.replace(/^http/, 'ws')}/ws/call/${conversationId}/`;
-}
+const callSocketUrl = (conversationId) => `${WS_BASE}/ws/call/${conversationId}/`;
+
+// A voice call is the same WebRTC call without a video track, so the callee can tell
+// from the offer itself (no m=video line) which kind it is. Nothing new for the server to relay.
+const offerIsVoice = (sdp) => !/^m=video/m.test(sdp || '');
 
 // ICE servers come from the backend (/api/chat/ice-servers/): a STUN entry plus a TURN
 // entry with short-lived credentials, so no TURN secret ever ships in the JS bundle.
@@ -65,8 +67,10 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
   const [facing, setFacing] = useState('user');
   const [notice, setNotice] = useState('');
   const [signalReady, setSignalReady] = useState(false);
+  const [mode, setMode] = useState('video');
 
   const statusRef = useRef('idle');
+  const modeRef = useRef('video');
   const wsRef = useRef(null);
   const pcRef = useRef(null);
   const localRef = useRef(null);
@@ -78,6 +82,11 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
   const setStatusBoth = useCallback((next) => {
     statusRef.current = next;
     setStatus(next);
+  }, []);
+
+  const setModeBoth = useCallback((next) => {
+    modeRef.current = next;
+    setMode(next);
   }, []);
 
   const send = useCallback((payload) => {
@@ -136,10 +145,10 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
     return pc;
   }, [finish, send, setStatusBoth]);
 
-  const openCamera = useCallback(async (facingMode = 'user') => {
+  const openMedia = useCallback(async (facingMode = 'user', withVideo = true) => {
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true },
-      video: { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+      video: withVideo ? { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
     });
     localRef.current = stream;
     setLocalStream(stream);
@@ -155,19 +164,35 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
     }
   }, []);
 
+  // The call socket may still be connecting (or reconnecting after a dropped signal),
+  // so give it a few seconds before telling the person it can't be reached.
+  const waitForSignal = useCallback(async (ms = 5000) => {
+    const until = Date.now() + ms;
+    while (Date.now() < until) {
+      if (wsRef.current?.readyState === WebSocket.OPEN) return true;
+      await new Promise((resolve) => { setTimeout(resolve, 200); });
+    }
+    return wsRef.current?.readyState === WebSocket.OPEN;
+  }, []);
+
   /* ---------- actions ---------- */
 
-  const startCall = useCallback(async () => {
+  const startCall = useCallback(async (kind = 'video') => {
     if (statusRef.current !== 'idle' && statusRef.current !== 'ended') return;
+    const voice = kind === 'voice';
     if (!navigator.mediaDevices?.getUserMedia) {
-      setNotice('Video calls need a secure (https) connection and a supported browser.');
+      setNotice(window.isSecureContext === false
+        ? 'Calls only work on a secure (https) page. Open this site with https and try again.'
+        : 'This browser can\u2019t make calls. Try the latest Chrome or Safari.');
       setStatusBoth('ended');
       return;
     }
     setNotice('');
+    setModeBoth(voice ? 'voice' : 'video');
     setStatusBoth('calling');
     try {
-      const stream = await openCamera(facing);
+      if (!(await waitForSignal())) throw new Error('signal');
+      const stream = await openMedia(facing, !voice);
       const pc = await createPeer();
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
       const offer = await pc.createOffer();
@@ -180,18 +205,18 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
     } catch (err) {
       cleanup();
       setNotice(err?.message === 'signal'
-        ? 'Not connected yet. Wait a moment and try again.'
+        ? 'Can\u2019t reach the call service right now. Check your connection and try again.'
         : friendlyMediaError(err));
       setStatusBoth('ended');
     }
-  }, [cleanup, createPeer, facing, finish, openCamera, send, setStatusBoth]);
+  }, [cleanup, createPeer, facing, finish, openMedia, send, setModeBoth, setStatusBoth, waitForSignal]);
 
   const acceptCall = useCallback(async () => {
     const offer = pendingOfferRef.current;
     if (statusRef.current !== 'incoming' || !offer) return;
     setStatusBoth('connecting');
     try {
-      const stream = await openCamera(facing);
+      const stream = await openMedia(facing, modeRef.current === 'video');
       const pc = await createPeer();
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
       await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
@@ -205,7 +230,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       setNotice(friendlyMediaError(err));
       setStatusBoth('ended');
     }
-  }, [cleanup, createPeer, facing, flushPendingIce, openCamera, send, setStatusBoth]);
+  }, [cleanup, createPeer, facing, flushPendingIce, openMedia, send, setStatusBoth]);
 
   const declineCall = useCallback(() => {
     send({ type: 'reject' });
@@ -274,6 +299,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
         }
         pendingOfferRef.current = data;
         pendingIceRef.current = [];
+        setModeBoth(offerIsVoice(data.sdp) ? 'voice' : 'video');
         setNotice('');
         setStatusBoth('incoming');
         ringTimerRef.current = setTimeout(() => finish('Missed call.'), RING_TIMEOUT_MS);
@@ -313,7 +339,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       default:
         break;
     }
-  }, [finish, flushPendingIce, myId, send, setStatusBoth]);
+  }, [finish, flushPendingIce, myId, send, setModeBoth, setStatusBoth]);
 
   /* ---------- signaling socket ---------- */
 
@@ -363,7 +389,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
   }, [cleanup, conversationId, enabled, send]);
 
   return {
-    status, notice, signalReady,
+    status, mode, notice, signalReady,
     localStream, remoteStream,
     micOn, camOn, facing,
     startCall, acceptCall, declineCall, hangUp, dismiss,

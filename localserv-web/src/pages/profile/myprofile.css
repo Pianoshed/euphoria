@@ -429,6 +429,24 @@ html:has(.mp) { scroll-behavior: smooth; }
 .mp-secure__icon { font-size: 1.6rem; line-height: 1; }
 .mp-secure__card span:last-child { font-size: 0.85rem; line-height: 1.4; color: var(--mp-muted); }
 
+/* Set / change password */
+.mp-pass {
+  display: grid;
+  gap: 12px;
+  max-width: 520px;
+  margin-top: 18px;
+  padding: 20px;
+  border: 1px solid var(--mp-line);
+  border-radius: 20px;
+  background: #fff;
+  scroll-margin-top: 80px;
+}
+.mp-pass .mp-h3 { margin: 0; }
+.mp-pass__lede { margin: 0; font-size: 0.9rem; line-height: 1.5; color: var(--mp-muted); }
+.mp-pass__show { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; }
+.mp-pass__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.mp-pass__forgot { font-size: 0.9rem; }
+
 .mp-habits { margin: 0; padding-left: 1.2rem; display: grid; gap: 6px; color: var(--mp-muted); }
 
 /* ---------- Focus + motion ---------- */

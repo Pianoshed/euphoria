@@ -2,6 +2,7 @@ import { Route, BrowserRouter as Router, Routes } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
 
 import Register from './pages/auth/Register';
@@ -39,10 +40,10 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Home />} />
 
-      <Route path="/register" element={<Register />} />
+      <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
       <Route path="/verify-email" element={<VerifyEmail />} />
-      <Route path="/login" element={<Login />} />
-      <Route path="/login/2fa" element={<LoginTwoFactor />} />
+      <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
+      <Route path="/login/2fa" element={<GuestRoute><LoginTwoFactor /></GuestRoute>} />
       <Route path="/password-reset" element={<PasswordResetRequest />} />
       <Route path="/password-reset/confirm" element={<PasswordResetConfirm />} />
 

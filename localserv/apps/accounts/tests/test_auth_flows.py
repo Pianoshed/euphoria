@@ -267,6 +267,81 @@ def test_password_change_success(client):
     assert user.check_password("a-new-strong-password-2")
 
 
+def test_password_change_without_old_password_rejected_when_account_has_one(client):
+    make_verified_user()
+    client.post(reverse("accounts:login"), {"email": "user@example.com", "password": "a-strong-password-1"}, content_type="application/json")
+    resp = client.post(
+        reverse("accounts:password-change"),
+        {"new_password": "a-new-strong-password-2"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    assert User.objects.get(email="user@example.com").check_password("a-strong-password-1")
+
+
+# --- Google accounts: setting a first password ---------------------------------
+
+def make_google_user(**kwargs):
+    defaults = dict(email="g@example.com", username="googler")  # no password => unusable, like Google sign-up
+    defaults.update(kwargs)
+    user = User.objects.create_user(**defaults)
+    user.mark_email_verified()
+    return user
+
+
+def test_profile_me_reports_password_state_and_email(client):
+    google_user = make_google_user()
+    client.force_login(google_user)
+    data = client.get(reverse("accounts:my-profile")).json()
+    assert data["has_usable_password"] is False
+    assert data["email"] == "g@example.com"
+
+    client.logout()
+    client.force_login(make_verified_user())
+    assert client.get(reverse("accounts:my-profile")).json()["has_usable_password"] is True
+
+
+def test_google_account_can_set_first_password_without_old_one(client):
+    user = make_google_user()
+    client.force_login(user)
+    resp = client.post(
+        reverse("accounts:password-change"),
+        {"new_password": "a-new-strong-password-2"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 200
+    user.refresh_from_db()
+    assert user.has_usable_password()
+    assert user.check_password("a-new-strong-password-2")
+
+    # and from now on the normal rule applies
+    resp = client.post(
+        reverse("accounts:password-change"),
+        {"new_password": "another-strong-password-3"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+
+
+def test_google_account_first_password_still_validated(client):
+    user = make_google_user()
+    client.force_login(user)
+    resp = client.post(reverse("accounts:password-change"), {"new_password": "short"}, content_type="application/json")
+    assert resp.status_code == 400
+    user.refresh_from_db()
+    assert not user.has_usable_password()
+
+
+def test_2fa_disable_for_account_without_password_explains_next_step(client):
+    user = make_google_user(two_factor_enabled=True, two_factor_secret=pyotp.random_base32())
+    client.force_login(user)
+    resp = client.post(reverse("accounts:2fa-disable"), {"password": "anything"}, content_type="application/json")
+    assert resp.status_code == 400
+    assert "Set a password" in str(resp.json())
+    user.refresh_from_db()
+    assert user.two_factor_enabled is True
+
+
 # --- 2FA setup/disable ----------------------------------------------------------
 
 def test_2fa_setup_and_confirm(client):

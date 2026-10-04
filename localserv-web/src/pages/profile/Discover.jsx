@@ -186,6 +186,7 @@ export default function Discover() {
               key={p.id}
               to={`/profile/${p.id}`}
               className={`dp-card dp-card--${look.layout}`}
+              data-size={look.width >= 348 ? 'wide' : 'small'}
               style={{
                 '--shape': look.shape,
                 '--avatar-shape': look.avatarShape,

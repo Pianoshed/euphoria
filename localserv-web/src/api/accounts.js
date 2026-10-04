@@ -23,8 +23,12 @@ export const requestPasswordReset = (email) =>
 export const confirmPasswordReset = (token, new_password) =>
   apiFetch('/api/accounts/password/reset/confirm/', { method: 'POST', body: { token, new_password } });
 
+// Accounts created with Google have no password yet, so old_password is only sent when there is one.
 export const changePassword = (old_password, new_password) =>
-  apiFetch('/api/accounts/password/change/', { method: 'POST', body: { old_password, new_password } });
+  apiFetch('/api/accounts/password/change/', {
+    method: 'POST',
+    body: old_password ? { old_password, new_password } : { new_password },
+  });
 
 export const getMyProfile = () => apiFetch('/api/accounts/profile/me/');
 
@@ -77,9 +81,3 @@ export const googleLogin = (idToken) =>
 
 export const completeOnboarding = (role) =>
   apiFetch('/api/accounts/profile/onboarding/complete/', { method: 'POST', body: { role } });
-
-export const googleRegister = (idToken, username, role) =>
-  apiFetch('/api/accounts/google/register/', {
-    method: 'POST',
-    body: { id_token: idToken, username, role },
-  });

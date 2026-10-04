@@ -1,5 +1,6 @@
 import '../../styles/index.css';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import * as accountsApi from '../../api/accounts';
 import { useAuth } from '../../context/AuthContext';
@@ -72,18 +73,28 @@ export default function TwoFactorSettings() {
       {user.two_factor_enabled ? (
         <div className="stack">
           <p className="alert alert--success">Two-factor authentication is enabled on your account.</p>
-          <form onSubmit={handleDisable} className="card stack">
-            <h3>Disable it</h3>
-            <p className="text-sm muted">Confirm your password to turn this off.</p>
-            <div className="field">
-              <label htmlFor="disable-password">Password</label>
-              <input id="disable-password" type="password" className="input" required
-                value={disablePassword} onChange={(e) => setDisablePassword(e.target.value)} />
+          {user.has_usable_password === false ? (
+            <div className="card stack">
+              <h3>Disable it</h3>
+              <p className="text-sm muted">
+                Turning this off asks for your password, and your account signs in with Google so it
+                has none yet. <Link to="/profile/me#password">Set a password</Link> first, then come back.
+              </p>
             </div>
-            <button className="btn btn--danger" disabled={busy} type="submit" style={{ alignSelf: 'start' }}>
-              {busy ? 'Disabling…' : 'Disable two-factor authentication'}
-            </button>
-          </form>
+          ) : (
+            <form onSubmit={handleDisable} className="card stack">
+              <h3>Disable it</h3>
+              <p className="text-sm muted">Confirm your password to turn this off.</p>
+              <div className="field">
+                <label htmlFor="disable-password">Password</label>
+                <input id="disable-password" type="password" className="input" required
+                  value={disablePassword} onChange={(e) => setDisablePassword(e.target.value)} />
+              </div>
+              <button className="btn btn--danger" disabled={busy} type="submit" style={{ alignSelf: 'start' }}>
+                {busy ? 'Disabling…' : 'Disable two-factor authentication'}
+              </button>
+            </form>
+          )}
         </div>
       ) : setupData ? (
         <div className="card stack">

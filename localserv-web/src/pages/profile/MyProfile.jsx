@@ -6,6 +6,7 @@ import * as accountsApi from '../../api/accounts';
 import { API_BASE } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner } from '../../components/ui';
+import PasswordPanel from './PasswordPanel';
 
 /* ------------------------------------------------------------------ */
 /* Static content                                                      */
@@ -144,6 +145,12 @@ export default function MyProfile() {
   useEffect(() => {
     accountsApi.getMyPrivacy().then(setPrivacy).catch(setError);
   }, []);
+
+  // Links like /profile/me#password should land on that section (the router doesn't scroll to hashes).
+  useEffect(() => {
+    const target = window.location.hash && document.getElementById(window.location.hash.slice(1));
+    if (target && form) target.scrollIntoView();
+  }, [form]);
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
@@ -474,12 +481,9 @@ export default function MyProfile() {
                 <strong>Active sessions</strong>
                 <span>See the devices that are signed in and end any you do not recognise.</span>
               </Link>
-              <Link to="/password-reset" className="mp-secure__card">
-                <span className="mp-secure__icon" aria-hidden="true">🔑</span>
-                <strong>Change your password</strong>
-                <span>We will email you a link to set a new one.</span>
-              </Link>
             </div>
+
+            <PasswordPanel />
 
             <h3 className="mp-h3">Good habits</h3>
             <ul className="mp-habits">

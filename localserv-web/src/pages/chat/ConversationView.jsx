@@ -64,6 +64,41 @@ function dayLabel(iso) {
 
 const GROUP_GAP_MS = 5 * 60 * 1000;
 
+// The messages endpoint returns NEWEST first (page 1 = the latest 30). The page shows oldest at the
+// top, so everything that enters state goes through sortOldestFirst.
+const byTime = (a, b) => new Date(a.created_at) - new Date(b.created_at)
+  || String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
+const sortOldestFirst = (list) => [...list].sort(byTime);
+
+// Keep whatever is already on screen, add what's new, and pick up edits and deletes.
+// Returns the SAME array when nothing changed so a quiet poll never re-renders or moves the scroll.
+const msgSig = (m) => `${m.id}|${m.edited_at ?? ''}|${m.is_deleted ? 1 : 0}|${m.body ?? ''}`;
+function mergeMessages(prev, fresh) {
+  if (!prev) return sortOldestFirst(fresh);
+  const byId = new Map(prev.map((m) => [m.id, m]));
+  let changed = false;
+  for (const m of fresh) {
+    const old = byId.get(m.id);
+    if (!old || msgSig(old) !== msgSig(m)) {
+      byId.set(m.id, m);
+      changed = true;
+    }
+  }
+  return changed ? sortOldestFirst([...byId.values()]) : prev;
+}
+
+const PhoneIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
+  </svg>
+);
+const VideoIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect x="3" y="6" width="12" height="12" rx="2" />
+    <path d="M15 10l6-3v10l-6-3" />
+  </svg>
+);
+
 function initialOf(profile) {
   return (profile?.display_name || profile?.username || '?')[0].toUpperCase();
 }
@@ -168,6 +203,8 @@ export default function ConversationView() {
   const [reactions, setReactions] = useState({});
 
   const logRef = useRef(null);
+  const stickRef = useRef(true);      // is the reader at the bottom of the log?
+  const incomingRef = useRef(0);      // how many messages from the other person we've seen
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -180,17 +217,37 @@ export default function ConversationView() {
       .then(setOtherProfile)
       .catch(() => setOtherProfile({ username: 'Unknown user' }));
 
-    chatApi.listMessages(id).then((data) => setMessages(data.results ?? data)).catch(setError);
+    incomingRef.current = 0;
+    stickRef.current = true;
+    chatApi.listMessages(id).then((data) => setMessages(sortOldestFirst(data.results ?? data))).catch(setError);
     chatApi.markConversationRead(id).catch(() => {});
     setReactions(readJSON(reactionsKey(id), {}));
   }, [id]);
 
   // Scroll the message list itself. scrollIntoView() also scrolled the whole page,
   // which on a phone yanked the header out of view every time a message arrived.
+  // Only follow new messages if the reader is already at the bottom (or sent them),
+  // so a message arriving doesn't throw someone out of the history they're reading.
+  const onLogScroll = () => {
+    const log = logRef.current;
+    if (log) stickRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+  };
   useEffect(() => {
     const log = logRef.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [messages]);
+    if (!log || !messages) return;
+    const last = messages[messages.length - 1];
+    if (stickRef.current || last?.sender === user.id) log.scrollTop = log.scrollHeight;
+  }, [messages, user.id]);
+
+  // New messages from the other person while the page is open count as read.
+  useEffect(() => {
+    if (!messages) return;
+    const incoming = messages.reduce((n, m) => n + (m.sender !== user.id ? 1 : 0), 0);
+    if (incoming > incomingRef.current && document.visibilityState === 'visible') {
+      chatApi.markConversationRead(id).catch(() => {});
+    }
+    incomingRef.current = incoming;
+  }, [messages, id, user.id]);
 
   // Free the preview blob when it's replaced or the page closes.
   useEffect(() => () => { if (attachmentPreview) URL.revokeObjectURL(attachmentPreview); }, [attachmentPreview]);
@@ -222,7 +279,15 @@ export default function ConversationView() {
   // upload, but the resulting message still broadcasts over the
   // socket to the OTHER participant just the same -- both transports
   // funnel through the same broadcast_message() server-side.
+  const refreshMessages = useCallback(
+    () => chatApi.listMessages(id)
+      .then((data) => setMessages((prev) => mergeMessages(prev, data.results ?? data)))
+      .catch(() => {}),
+    [id]
+  );
+
   const { connected, sendOverSocket } = useChatSocket(id, {
+    onOpen: refreshMessages, // catch up on anything missed while the socket was down
     onMessage: (data) => {
       if (data.type === 'message') {
         setMessages((prev) => (prev?.some((m) => m.id === data.id) ? prev : [...(prev || []), {
@@ -235,6 +300,24 @@ export default function ConversationView() {
       }
     },
   });
+
+  // Safety net under the socket: poll while the page is visible (every 4s if the socket is
+  // down, every 20s if it's up) and refresh the moment the tab regains focus or the network
+  // returns. If websockets are blocked or flaky on someone's network, chats still arrive.
+  useEffect(() => {
+    if (!id) return undefined;
+    const run = () => { if (document.visibilityState === 'visible') refreshMessages(); };
+    const timer = setInterval(run, connected ? 20000 : 4000);
+    document.addEventListener('visibilitychange', run);
+    window.addEventListener('focus', run);
+    window.addEventListener('online', run);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', run);
+      window.removeEventListener('focus', run);
+      window.removeEventListener('online', run);
+    };
+  }, [id, connected, refreshMessages]);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -317,6 +400,7 @@ export default function ConversationView() {
   const presence = presenceLabel(otherProfile);
   const online = Boolean(presence?.online);
   const displayName = otherProfile?.display_name || otherProfile?.username || '…';
+  const callBusy = call.status !== 'idle' && call.status !== 'ended';
 
   return (
     <div className="page cv">
@@ -331,29 +415,40 @@ export default function ConversationView() {
               </Link>
             ) : null}
             <div className="cv-head__text">
-              <h1 className="cv-head__name break">{displayName}</h1>
+              <h1 className="cv-head__name" title={displayName}>{displayName}</h1>
               <p className="cv-status cv-status--small">
                 <span className={`cv-dot${online ? ' cv-dot--on' : ''}`} aria-hidden="true" />
                 {online ? 'Online now' : (presence?.text || 'Offline')}
               </p>
             </div>
-            <button
-              type="button"
-              className="cv-call-btn"
-              onClick={call.startCall}
-              disabled={!call.signalReady || call.status !== 'idle'}
-              aria-label={`Start a video call with ${displayName}`}
-            >
-              📹 Video
-            </button>
-            <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
-              {connected ? 'Live' : 'Reconnecting…'}
-            </span>
+            <div className="cv-head__actions">
+              <button
+                type="button"
+                className="cv-call-btn"
+                onClick={() => call.startCall('voice')}
+                disabled={callBusy}
+                aria-label={`Start a voice call with ${displayName}`}
+              >
+                <PhoneIcon /><span className="cv-call-btn__text">Voice</span>
+              </button>
+              <button
+                type="button"
+                className="cv-call-btn"
+                onClick={() => call.startCall('video')}
+                disabled={callBusy}
+                aria-label={`Start a video call with ${displayName}`}
+              >
+                <VideoIcon /><span className="cv-call-btn__text">Video</span>
+              </button>
+              <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
+                <span className="cv-live__text">{connected ? 'Live' : 'Reconnecting…'}</span>
+              </span>
+            </div>
           </header>
 
           <ErrorAlert error={error} />
 
-          <div className="cv-log" ref={logRef}>
+          <div className="cv-log" ref={logRef} onScroll={onLogScroll}>
             {messages.length === 0 && (
               <p className="cv-empty">No messages yet. Say hi to {displayName}.</p>
             )}

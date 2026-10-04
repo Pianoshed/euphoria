@@ -68,7 +68,14 @@
   font-size: 1.15rem;
   font-weight: 700;
   line-height: 1.2;
+  /* One line with an ellipsis. It used to wrap letter by letter when the buttons
+     took the width, which is what drew the name as a vertical line on phones. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.cv-head__actions { flex: none; display: flex; align-items: center; gap: 8px; }
 
 .cv-live {
   flex: none;
@@ -505,6 +512,18 @@
   .cv-shell { grid-template-columns: minmax(0, 1fr); }
   .cv-canvas { display: none; }
   .cv-head__avatar { display: inline-flex; }
+
+  .cv-head { gap: 10px; padding: 12px 14px; }
+  .cv-head__name { font-size: 1.05rem; }
+  .cv-head__actions { gap: 6px; }
+
+  /* the Live pill shrinks to a dot: green when connected, amber while it reconnects */
+  .cv-live { width: 10px; height: 10px; padding: 0; margin-left: 2px; background: #e0a21a; }
+  .cv-live--on { background: var(--cv-green); }
+  .cv-live__text {
+    position: absolute; width: 1px; height: 1px; overflow: hidden;
+    clip: rect(0 0 0 0); white-space: nowrap;
+  }
   .cv-log { height: clamp(360px, calc(100dvh - 15rem), 640px); padding: 14px 12px 6px; }
   .cv-msg__row { max-width: 88%; }
   .cv-composer-pop { right: 8px; left: 8px; }

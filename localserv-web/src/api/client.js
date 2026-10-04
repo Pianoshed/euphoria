@@ -1,5 +1,15 @@
 export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:8000';
 
+// One websocket base for chat and calls. It follows VITE_API_BASE unless VITE_WS_BASE
+// says otherwise, and it upgrades to wss:// on an https page (browsers block ws:// there).
+export const WS_BASE = (() => {
+  let base = (import.meta.env.VITE_WS_BASE || API_BASE).replace(/^http/, 'ws');
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:') {
+    base = base.replace(/^ws:/, 'wss:');
+  }
+  return base.replace(/\/$/, '');
+})();
+
 function getCookie(name) {
   const match = document.cookie.match(new RegExp(`(^|; )${name}=([^;]*)`));
   return match ? decodeURIComponent(match[2]) : null;
@@ -16,36 +26,6 @@ export class ApiError extends Error {
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
-
-// Endpoints after which Django rotates the CSRF token (session changes).
-const TOKEN_ROTATING_PATHS = [
-  '/api/accounts/login/',
-  '/api/accounts/login/verify-2fa/',
-  '/api/accounts/google/',
-  '/api/accounts/google/register/',
-  '/api/accounts/logout/',
-];
-
-// When the frontend and API are on different domains, JS can't read the
-// API's csrftoken cookie, so we keep the token returned in the response
-// body of /api/accounts/csrf/ and send that as X-CSRFToken instead.
-let csrfToken = null;
-
-export function resetCsrf() {
-  csrfToken = null;
-}
-
-async function fetchCsrfToken() {
-  const resp = await fetch(`${API_BASE}/api/accounts/csrf/`, { credentials: 'include' });
-  const data = await resp.json().catch(() => null);
-  csrfToken = data?.csrfToken || null;
-  return csrfToken;
-}
-
-async function getCsrfToken() {
-  // Cached body token first; cookie only works when same-origin (e.g. localhost).
-  return csrfToken || getCookie('csrftoken') || (await fetchCsrfToken());
-}
 
 /**
  * @param {string} path - e.g. '/api/accounts/login/'
@@ -64,32 +44,25 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
     if (qs) url += `?${qs}`;
   }
 
+  const headers = {};
   const isFormData = body instanceof FormData;
-  const unsafe = UNSAFE_METHODS.has(method);
-
-  const send = async (token) => {
-    const headers = {};
-    if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
-    if (unsafe && token) headers['X-CSRFToken'] = token;
-    return fetch(url, {
-      method,
-      headers,
-      credentials: 'include', // send the session + csrftoken cookies
-      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
-    });
-  };
-
-  let resp = await send(unsafe ? await getCsrfToken() : null);
-
-  // Stale or missing token: fetch a fresh one and retry once.
-  if (unsafe && resp.status === 403) {
-    const text = await resp.clone().text();
-    if (text.includes('CSRF')) {
-      resp = await send(await fetchCsrfToken());
-    }
+  if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
+  if (UNSAFE_METHODS.has(method)) {
+    // Django's CSRF cookie is only ever set after something calls
+    // get_token() -- see the app-level bootstrapCsrf() call on
+    // startup (App.jsx). If it's somehow missing, we still send the
+    // request; Django will reject it with a clear 403 rather than us
+    // failing silently here.
+    const csrftoken = getCookie('csrftoken');
+    if (csrftoken) headers['X-CSRFToken'] = csrftoken;
   }
 
-  if (resp.ok && TOKEN_ROTATING_PATHS.includes(path)) resetCsrf();
+  const resp = await fetch(url, {
+    method,
+    headers,
+    credentials: 'include', // send the session + csrftoken cookies
+    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
+  });
 
   if (resp.status === 204) return null;
 
@@ -101,5 +74,5 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
 }
 
 export async function bootstrapCsrf() {
-  await fetchCsrfToken();
+  await apiFetch('/api/accounts/csrf/');
 }

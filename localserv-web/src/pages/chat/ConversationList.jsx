@@ -2,7 +2,7 @@ import '../../styles/index.css';
 import './inbox.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useArchivedChats } from '../../hooks/useArchivedChats';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
@@ -23,23 +23,45 @@ export default function ConversationList() {
   const [undo, setUndo] = useState(null);    // { ids, label } for the "Archived. Undo" line
   const { archived, archive, restore } = useArchivedChats();
 
-  useEffect(() => {
-    chatApi.listConversations()
-      .then(async (data) => {
-        const list = data.results ?? data;
-        setConversations(list);
-        const unknownIds = [...new Set(list.map((c) => c.other_user_id))];
-        const entries = await Promise.all(
-          unknownIds.map((id) =>
-            accountsApi.getPublicProfile(id)
-              .then((p) => [id, p])
-              .catch(() => [id, { username: 'Unknown user' }])
-          )
-        );
-        setProfiles(Object.fromEntries(entries));
-      })
-      .catch(setError);
+  const profilesRef = useRef({});
+
+  // Fetch the list, plus profiles for anyone new. Profiles of the first few people are
+  // refreshed each time so the "Online" dots and "Active 5m ago" don't go stale.
+  const load = useCallback(async () => {
+    const data = await chatApi.listConversations();
+    const list = data.results ?? data;
+    setConversations(list);
+
+    const ids = [...new Set(list.map((c) => c.other_user_id))];
+    const wanted = ids.filter((id, i) => !profilesRef.current[id] || i < 12);
+    if (!wanted.length) return;
+    const entries = await Promise.all(
+      wanted.map((id) =>
+        accountsApi.getPublicProfile(id)
+          .then((p) => [id, p])
+          .catch(() => [id, profilesRef.current[id] ?? { username: 'Unknown user' }])
+      )
+    );
+    profilesRef.current = { ...profilesRef.current, ...Object.fromEntries(entries) };
+    setProfiles(profilesRef.current);
   }, []);
+
+  // Keep the inbox live without a refresh: poll while visible, and refresh the moment
+  // the tab regains focus or the network comes back.
+  useEffect(() => {
+    load().catch(setError);
+    const tick = () => { if (document.visibilityState === 'visible') load().catch(() => {}); };
+    const timer = setInterval(tick, 15000);
+    document.addEventListener('visibilitychange', tick);
+    window.addEventListener('focus', tick);
+    window.addEventListener('online', tick);
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+      window.removeEventListener('focus', tick);
+      window.removeEventListener('online', tick);
+    };
+  }, [load]);
 
   useEffect(() => {
     if (!undo) return undefined;

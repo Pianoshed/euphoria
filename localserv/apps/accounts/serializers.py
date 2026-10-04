@@ -54,7 +54,9 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
 
 
 class PasswordChangeSerializer(serializers.Serializer):
-    old_password = serializers.CharField(write_only=True)
+    # Optional: accounts created with Google have no password yet, so they send only new_password.
+    # The service still requires it (and checks it) for any account that has a password.
+    old_password = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
     new_password = serializers.CharField(write_only=True, min_length=10)
 
 

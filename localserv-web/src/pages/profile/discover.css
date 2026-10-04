@@ -222,7 +222,7 @@
   .dp-note[open] { grid-column: 1 / -1; padding-bottom: 10px; }
   .dp-note summary {
     display: flex; align-items: center; justify-content: space-between; gap: 6px;
-    padding: 9px 0; font-size: 0.9rem; list-style: none;
+    padding: 9px 0; font-size: 0.88rem; list-style: none; white-space: nowrap;
   }
   .dp-note summary::-webkit-details-marker { display: none; }
   .dp-note summary::after { content: '+'; flex: none; font-size: 1.15rem; line-height: 1; color: var(--dp-muted); }
@@ -235,23 +235,39 @@
   .dp-note ul { gap: 4px; }
   .dp-note li { font-size: 0.86rem; line-height: 1.4; }
 
-  /* people: one tight row each, whatever look they were dealt */
-  .dp-field { gap: 12px; padding-bottom: 32px; }
+  /* people: a small scatter of pebbles, two to a row. Each keeps its own colour, shape,
+     tilt and drop, so the field still looks random. A few "wide" pebbles take a whole row. */
+  .dp-field { gap: 10px; padding-bottom: 32px; }
   .dp-card,
   .dp-card--row-reverse,
   .dp-card--stack {
+    flex: 0 0 calc(50% - 5px);
+    flex-direction: column;
+    justify-content: center;
+    text-align: center;
+    gap: 6px;
+    margin-top: calc(var(--drop) * 0.4);
+    --pad-x: 12px;
+    --pad-y: 20px;
+  }
+  .dp-avatar,
+  .dp-card--stack .dp-avatar { width: 54px; height: 54px; font-size: 1.35rem; }
+  .dp-card__name { font-size: 0.95rem; }
+  .dp-card__line { font-size: 0.8rem; }
+  .dp-card:not([data-size='wide']) .dp-card__line--soft,
+  .dp-card:not([data-size='wide']) .dp-card__bio { display: none; }
+
+  .dp-card[data-size='wide'] {
     flex-basis: 100%;
     flex-direction: row;
     text-align: left;
     gap: 12px;
     margin-top: 0;
-    --pad-x: 22px;
+    --pad-x: 26px;
     --pad-y: 16px;
-    transform: rotate(calc(var(--rot) / 2));
   }
-  .dp-avatar,
-  .dp-card--stack .dp-avatar { width: 52px; height: 52px; font-size: 1.3rem; }
-  .dp-card__bio { -webkit-line-clamp: 1; }
+  .dp-card--row-reverse[data-size='wide'] { flex-direction: row-reverse; text-align: right; }
+  .dp-card[data-size='wide'] .dp-card__bio { -webkit-line-clamp: 1; }
 }
 
 @media (max-width: 380px) {

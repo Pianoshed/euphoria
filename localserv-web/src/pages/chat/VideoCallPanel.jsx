@@ -68,7 +68,8 @@ const HangUpIcon = () => (
 export default function VideoCallPanel({ call, name, avatar }) {
   const { status, notice } = call;
   const elapsed = useElapsed(status === 'active');
-  const canFlip = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+  const voice = call.mode === 'voice';
+  const canFlip = !voice && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
 
   if (status === 'idle') return null;
 
@@ -84,25 +85,28 @@ export default function VideoCallPanel({ call, name, avatar }) {
   if (status === 'incoming') {
     return (
       <div className="vc-backdrop">
-        <div className="vc-ring" role="alertdialog" aria-modal="true" aria-label={`Incoming video call from ${name}`}>
+        <div className="vc-ring" role="alertdialog" aria-modal="true" aria-label={`Incoming ${voice ? 'voice' : 'video'} call from ${name}`}>
           <CallerFace name={name} avatar={avatar} className="vc-face--pulse" />
           <h2>{name}</h2>
-          <p>is calling you on video</p>
+          <p>{voice ? 'is calling you' : 'is calling you on video'}</p>
           <div className="vc-ring__actions">
             <button type="button" className="vc-btn vc-btn--decline" onClick={call.declineCall}>Decline</button>
             <button type="button" className="vc-btn vc-btn--accept" onClick={call.acceptCall} autoFocus>Accept</button>
           </div>
-          <small>Your camera and microphone turn on when you accept.</small>
+          <small>{voice ? 'Your microphone turns on when you accept.' : 'Your camera and microphone turn on when you accept.'}</small>
         </div>
       </div>
     );
   }
 
-  const waiting = status !== 'active' || !call.remoteStream;
-  const label = status === 'calling' ? `Calling ${name}…` : status === 'connecting' ? 'Connecting…' : name;
+  // A voice call has no picture to show, so the caller's face stays up for the whole call.
+  const waiting = voice || status !== 'active' || !call.remoteStream;
+  const label = status === 'calling' ? `Calling ${name}…`
+    : status === 'connecting' ? 'Connecting…'
+    : voice ? 'Voice call' : name;
 
   return (
-    <div className="vc-screen" role="dialog" aria-modal="true" aria-label={`Video call with ${name}`}>
+    <div className={`vc-screen${voice ? ' vc-screen--voice' : ''}`} role="dialog" aria-modal="true" aria-label={`${voice ? 'Voice' : 'Video'} call with ${name}`}>
       {call.remoteStream && <VideoTile stream={call.remoteStream} className="vc-remote" />}
 
       {waiting && (
@@ -118,20 +122,24 @@ export default function VideoCallPanel({ call, name, avatar }) {
         <span className="vc-note">Only the two of you are on this call. We don&rsquo;t record it.</span>
       </div>
 
-      <div className={`vc-self${call.camOn ? '' : ' is-off'}`}>
-        <VideoTile stream={call.localStream} muted mirrored={call.facing === 'user'} className="vc-self__video" />
-        {!call.camOn && <span className="vc-self__off">Camera off</span>}
-      </div>
+      {!voice && (
+        <div className={`vc-self${call.camOn ? '' : ' is-off'}`}>
+          <VideoTile stream={call.localStream} muted mirrored={call.facing === 'user'} className="vc-self__video" />
+          {!call.camOn && <span className="vc-self__off">Camera off</span>}
+        </div>
+      )}
 
       <div className="vc-controls">
         <button type="button" className={`vc-round${call.micOn ? '' : ' is-off'}`} onClick={call.toggleMic}
           aria-pressed={!call.micOn} aria-label={call.micOn ? 'Mute microphone' : 'Unmute microphone'}>
           <MicIcon off={!call.micOn} />
         </button>
-        <button type="button" className={`vc-round${call.camOn ? '' : ' is-off'}`} onClick={call.toggleCam}
-          aria-pressed={!call.camOn} aria-label={call.camOn ? 'Turn camera off' : 'Turn camera on'}>
-          <CamIcon off={!call.camOn} />
-        </button>
+        {!voice && (
+          <button type="button" className={`vc-round${call.camOn ? '' : ' is-off'}`} onClick={call.toggleCam}
+            aria-pressed={!call.camOn} aria-label={call.camOn ? 'Turn camera off' : 'Turn camera on'}>
+            <CamIcon off={!call.camOn} />
+          </button>
+        )}
         {canFlip && (
           <button type="button" className="vc-round" onClick={call.flipCamera} aria-label="Switch camera">
             <FlipIcon />

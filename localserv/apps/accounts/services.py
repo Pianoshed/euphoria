@@ -253,8 +253,17 @@ def confirm_password_reset(*, raw_token: str, new_password: str) -> User:
     return user
 
 
-def change_password(user: User, *, old_password: str, new_password: str, keep_session_key: str | None = None) -> None:
-    if not user.check_password(old_password):
+def change_password(
+    user: User, *, new_password: str, old_password: str = "", keep_session_key: str | None = None
+) -> None:
+    """Change the password, or set the FIRST one for an account that has none.
+
+    Accounts created through Google sign-in have an unusable password, so there is no current
+    password to ask for. Anyone who already has a password must still prove they know it.
+    Either way every other session is signed out and an alert email goes to the owner.
+    """
+    had_password = user.has_usable_password()
+    if had_password and not user.check_password(old_password):
         raise DomainError("Current password is incorrect.")
     try:
         validate_password(new_password, user=user)
@@ -264,11 +273,19 @@ def change_password(user: User, *, old_password: str, new_password: str, keep_se
     user.set_password(new_password)
     user.save(update_fields=["password"])
     _revoke_all_sessions(user, except_session_key=keep_session_key)
-    emails.send_security_alert_email(
-        user,
-        subject="Your password was changed",
-        body="Your password was just changed. If this wasn't you, contact support immediately.",
-    )
+    if had_password:
+        emails.send_security_alert_email(
+            user,
+            subject="Your password was changed",
+            body="Your password was just changed. If this wasn't you, contact support immediately.",
+        )
+    else:
+        emails.send_security_alert_email(
+            user,
+            subject="A password was added to your account",
+            body="A password was just set on your account, so you can now also log in with your email. "
+            "If this wasn't you, contact support immediately.",
+        )
 
 
 # --- Session management -------------------------------------------------------
@@ -338,6 +355,9 @@ def confirm_2fa_setup(user: User, *, code: str) -> None:
 def disable_2fa(user: User, *, password: str) -> None:
     # Sensitive action: require the current password again even though
     # the request is already authenticated (recent-reauth pattern).
+    if not user.has_usable_password():
+        # Google sign-ups have no password to confirm with until they set one.
+        raise DomainError("Set a password in your profile first, then you can turn two-factor off.")
     if not user.check_password(password):
         raise DomainError("Current password is incorrect.")
     user.two_factor_enabled = False
@@ -454,6 +474,10 @@ def get_public_profile(viewer, target_user: User) -> dict | None:
         # never included for any other viewer.
         data["is_staff"] = target_user.is_staff
         data["two_factor_enabled"] = target_user.two_factor_enabled
+        # Self-only: lets the profile page offer "Set a password" to Google sign-ups
+        # (who have none) and "Change your password" to everyone else.
+        data["email"] = target_user.email
+        data["has_usable_password"] = target_user.has_usable_password()
     return data
 
 

@@ -29,6 +29,7 @@
   cursor: pointer;
   transition: background 140ms;
 }
+.cv-call-btn svg { flex: none; }
 .cv-call-btn:hover:not(:disabled) { background: rgba(31, 29, 61, 0.08); }
 .cv-call-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .cv-call-btn:focus-visible { outline: 3px solid rgba(61, 59, 148, 0.6); outline-offset: 2px; }
@@ -234,4 +235,9 @@
 
 @media (max-width: 520px) {
   .cv-call-btn span { display: none; } /* icon only on small screens */
+}
+
+@media (max-width: 860px) {
+  .cv-call-btn { justify-content: center; width: 42px; height: 42px; padding: 0; }
+  .cv-call-btn__text { display: none; }
 }
