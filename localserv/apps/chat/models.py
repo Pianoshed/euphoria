@@ -2,6 +2,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from apps.common.models import BaseModel
 
@@ -138,3 +139,61 @@ class MessageAttachment(BaseModel):
 
     def __str__(self):
         return f"Attachment for message {self.message_id}"
+
+
+class CallLog(BaseModel):
+    """
+    One row per voice/video call, written by the SERVER from the call signaling
+    (apps.chat.call_consumers -> apps.chat.call_logs), never by a browser, so the times
+    can't be edited by a client. It holds metadata only: who, when, how long. No audio or
+    video ever touches the server.
+
+    A row is "open" (ended_at is NULL) while it rings or is in progress. At most one open
+    row per conversation (see the constraint), so a call can't be logged twice.
+    `duration_seconds` is talk time: answered_at -> ended_at. Calls that were never
+    answered have 0.
+    """
+
+    class Mode(models.TextChoices):
+        VOICE = "voice", "Voice"
+        VIDEO = "video", "Video"
+
+    class Outcome(models.TextChoices):
+        RINGING = "ringing", "Ringing"
+        IN_PROGRESS = "in_progress", "In progress"
+        COMPLETED = "completed", "Answered"
+        NO_ANSWER = "no_answer", "No answer"
+        DECLINED = "declined", "Declined"
+        BUSY = "busy", "Busy"
+        CANCELLED = "cancelled", "Cancelled"
+        FAILED = "failed", "Failed"
+
+    # SET_NULL: the audit row outlives a deleted conversation. PROTECT on the people, same
+    # as Message.sender, so history can't vanish with a user.
+    conversation = models.ForeignKey(Conversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="calls")
+    caller = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    callee = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    mode = models.CharField(max_length=5, choices=Mode.choices)
+    outcome = models.CharField(max_length=12, choices=Outcome.choices, default=Outcome.RINGING)
+    started_at = models.DateTimeField(default=timezone.now)
+    answered_at = models.DateTimeField(null=True, blank=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    duration_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta(BaseModel.Meta):
+        db_table = "chat_call_log"
+        indexes = [
+            models.Index(fields=["caller", "-started_at"], name="chat_call_caller_idx"),
+            models.Index(fields=["callee", "-started_at"], name="chat_call_callee_idx"),
+            models.Index(fields=["-started_at"], name="chat_call_started_idx"),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation"],
+                condition=models.Q(ended_at__isnull=True),
+                name="one_open_call_per_conversation",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Call({self.caller_id} -> {self.callee_id}, {self.outcome})"

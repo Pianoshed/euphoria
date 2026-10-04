@@ -1,3 +1,4 @@
+import logging
 import time
 from collections import deque
 
@@ -6,7 +7,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from apps.common.constants import AccountStatus
 
-from . import services
+from . import call_logs, services
 from .consumers import (
     CLOSE_ACCOUNT_NOT_ACTIVE,
     CLOSE_BLOCKED,
@@ -14,8 +15,9 @@ from .consumers import (
     CLOSE_UNAUTHENTICATED,
 )
 
-# Signal types a client may send. The server never looks inside an SDP or an ICE
-# candidate; it only checks shape and size, then relays to the other participant.
+# Signal types a client may send. The server only checks shape and size, then relays to the
+# other participant. It does not interpret ICE candidates, and reads an SDP for just one thing:
+# whether it has a video line, which tells a voice call from a video call (see call_logs).
 SDP_TYPES = {"offer", "answer"}
 BARE_TYPES = {"reject", "hangup", "busy"}
 ALLOWED_TYPES = SDP_TYPES | BARE_TYPES | {"ice"}
@@ -38,6 +40,10 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
     The connect checks are the same as ChatConsumer's (authenticated, active,
     participant, not blocked). A block is also re-checked on every new offer,
     because a block can be created while the socket is open.
+
+    Every call is also written to the call log (apps.chat.call_logs) from the signals that pass
+    through here. That is the audit trail: the server sees the offer, the answer and the hangup
+    itself, so nobody's browser can change who called whom, when, or for how long.
     """
 
     async def connect(self):
@@ -96,6 +102,8 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_BLOCKED)
             return
 
+        await self._log_signal(kind, payload)
+
         payload["from"] = str(self.user.id)
         await self.channel_layer.group_send(
             self.group_name,
@@ -109,6 +117,21 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(event["payload"])
 
     # --- helpers -------------------------------------------------------------------
+
+    async def _log_signal(self, kind, payload):
+        """Keep the call log in step with the signaling. Never raises: a logging problem must
+        not stop a call (the call_logs functions also catch and log their own errors)."""
+        try:
+            if kind == "offer":
+                await database_sync_to_async(call_logs.start_call)(
+                    self.conversation, self.user.id, self.other_id, payload["sdp"]
+                )
+            elif kind == "answer":
+                await database_sync_to_async(call_logs.record_answer)(self.conversation.id, self.user.id)
+            elif kind in BARE_TYPES:
+                await database_sync_to_async(call_logs.record_end)(self.conversation.id, self.user.id, kind)
+        except Exception:
+            logging.getLogger("apps").warning("Call log update failed", exc_info=True)
 
     async def _error(self, detail):
         await self.send_json({"type": "error", "detail": detail})

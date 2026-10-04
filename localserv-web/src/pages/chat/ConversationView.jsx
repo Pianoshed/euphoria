@@ -13,6 +13,7 @@ import VideoCallPanel from './VideoCallPanel';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import { PaperclipIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
+import { playMessageSound } from '../../utils/notifySound';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
 // Resolve against the API host so the image loads from the backend, not the frontend.
@@ -212,6 +213,7 @@ export default function ConversationView() {
   const logRef = useRef(null);
   const stickRef = useRef(true);      // is the reader at the bottom of the log?
   const incomingRef = useRef(0);      // how many messages from the other person we've seen
+  const seededRef = useRef(false);    // false until the first load of this conversation has been counted
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
 
@@ -225,7 +227,9 @@ export default function ConversationView() {
       .catch(() => setOtherProfile({ username: 'Unknown user' }));
 
     incomingRef.current = 0;
+    seededRef.current = false;
     stickRef.current = true;
+    setMessages(null); // never count the previous conversation's messages as new here
     chatApi.listMessages(id).then((data) => setMessages(sortOldestFirst(data.results ?? data))).catch(setError);
     chatApi.markConversationRead(id).catch(() => {});
     setReactions(readJSON(reactionsKey(id), {}));
@@ -246,12 +250,24 @@ export default function ConversationView() {
     if (stickRef.current || last?.sender === user.id) log.scrollTop = log.scrollHeight;
   }, [messages, user.id]);
 
-  // New messages from the other person while the page is open count as read.
+  // New messages from the other person while the page is open: beep, and count them as read
+  // if the tab is in view. The first load of a conversation only sets the starting count, so
+  // opening a chat never beeps for old messages. This sees messages from the socket and from
+  // the polling fallback alike.
   useEffect(() => {
-    if (!messages) return;
+    if (!messages) {
+      seededRef.current = false;
+      return;
+    }
     const incoming = messages.reduce((n, m) => n + (m.sender !== user.id ? 1 : 0), 0);
-    if (incoming > incomingRef.current && document.visibilityState === 'visible') {
-      chatApi.markConversationRead(id).catch(() => {});
+    if (!seededRef.current) {
+      seededRef.current = true;
+      incomingRef.current = incoming;
+      return;
+    }
+    if (incoming > incomingRef.current) {
+      playMessageSound();
+      if (document.visibilityState === 'visible') chatApi.markConversationRead(id).catch(() => {});
     }
     incomingRef.current = incoming;
   }, [messages, id, user.id]);

@@ -1,0 +1,71 @@
+/* Call log page. Uses the shared card / pill / tabs styles. */
+
+.calllog__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.calllog__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.calllog__stats .card { display: flex; flex-direction: column; gap: 2px; }
+.calllog__stats strong { font-size: 1.4rem; }
+.calllog__stats span { font-size: 0.85rem; opacity: 0.75; }
+
+.calllog__empty { text-align: center; }
+.calllog__empty p { margin-left: auto; margin-right: auto; }
+
+.calllog__scroll { overflow-x: auto; }
+.calllog__table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.calllog__table th,
+.calllog__table td {
+  padding: var(--space-3) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-line);
+  vertical-align: middle;
+}
+.calllog__table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; white-space: nowrap; }
+.calllog__table td { overflow-wrap: anywhere; }
+.calllog__num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calllog__dir { display: inline-block; width: 1.2em; font-weight: 700; }
+.calllog__more { margin: var(--space-4) auto 0; display: block; }
+
+/* Phones: each call becomes a small card instead of a squeezed table row. */
+@media (max-width: 640px) {
+  .calllog__table thead { display: none; }
+  .calllog__table,
+  .calllog__table tbody,
+  .calllog__table tr,
+  .calllog__table td { display: block; width: 100%; }
+  .calllog__table tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: var(--color-surface, #fff);
+  }
+  .calllog__table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 0;
+    text-align: right;
+  }
+  .calllog__table td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.65;
+    text-align: left;
+  }
+  .calllog__num { text-align: right !important; }
+}

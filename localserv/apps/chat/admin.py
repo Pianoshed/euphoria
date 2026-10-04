@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Conversation, ConversationParticipantState, Message, MessageAttachment
+from .models import CallLog, Conversation, ConversationParticipantState, Message, MessageAttachment
 
 
 @admin.register(Conversation)
@@ -53,4 +53,29 @@ class MessageAttachmentAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(CallLog)
+class CallLogAdmin(admin.ModelAdmin):
+    """Read-only audit view. Calls are written by the server only."""
+
+    list_display = ["started_at", "caller", "callee", "mode", "outcome", "duration_minutes"]
+    list_filter = ["mode", "outcome"]
+    search_fields = ["caller__username", "callee__username"]
+    date_hierarchy = "started_at"
+    ordering = ["-started_at"]
+    readonly_fields = [f.name for f in CallLog._meta.fields]
+
+    @admin.display(description="Minutes")
+    def duration_minutes(self, obj):
+        return round(obj.duration_seconds / 60, 1)
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False

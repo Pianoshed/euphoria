@@ -1,6 +1,7 @@
+from django.db.models import Q
 from django.http import HttpResponse
 from rest_framework import status
-from rest_framework.exceptions import NotFound
+from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -9,9 +10,10 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsActiveAccount
 
-from . import services
-from .models import Message
+from . import call_logs, services
+from .models import CallLog, Message
 from .serializers import (
+    CallLogSerializer,
     ConversationSerializer,
     EditMessageSerializer,
     MessageSerializer,
@@ -148,3 +150,29 @@ class MessageViewOnceView(APIView):
         response = HttpResponse(data, content_type="image/jpeg")
         response["Cache-Control"] = "no-store"
         return response
+
+
+class CallLogListView(APIView):
+    """
+    GET /api/chat/calls/?scope=mine|all&page=N
+
+    scope=mine (default): calls the signed-in user made or received.
+    scope=all: every call on the site, for the audit trail. Staff only.
+
+    Read-only on purpose: calls are written by the server from the call signaling
+    (see call_logs.py), so there is no way to create or edit one over the API.
+    """
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def get(self, request):
+        call_logs.reap_stale_calls()  # close calls that ended without a hangup
+        qs = CallLog.objects.select_related("caller", "callee").order_by("-started_at", "-id")
+        if request.query_params.get("scope") == "all":
+            if not call_logs.can_audit(request.user):
+                raise PermissionDenied("Only staff can view every call.")
+        else:
+            qs = qs.filter(Q(caller=request.user) | Q(callee=request.user))
+        paginator = ChatPagination()
+        page = paginator.paginate_queryset(qs, request)
+        return paginator.get_paginated_response(CallLogSerializer(page, many=True).data)

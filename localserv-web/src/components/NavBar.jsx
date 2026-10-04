@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../api/client';
 import { isStaff } from '../utils/permissions';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
+import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
 
 // Keep in step with the breakpoint in components.css (.navbar mobile sheet).
@@ -14,10 +15,18 @@ export function NavBar() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [soundOn, setSoundOnState] = useState(isSoundOn);
 
   usePresenceHeartbeat();
 
   const closeMenu = () => setMenuOpen(false);
+
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundOnState(next);
+    if (next) playMessageSound(); // a click is a gesture, so this also unlocks audio and previews the beep
+  };
 
   const handleLogout = async () => {
     closeMenu();
@@ -75,6 +84,7 @@ export function NavBar() {
               <NavLink to="/services/mine" onClick={closeMenu}>Things you're hosting</NavLink>
               <NavLink to="/bookings" onClick={closeMenu}>Your plans</NavLink>
               <NavLink to="/chat" onClick={closeMenu}>Messages</NavLink>
+              <NavLink to="/calls" onClick={closeMenu}>Call log</NavLink>
               <NavLink to="/wallet" onClick={closeMenu}>Wallet</NavLink>
               <NavLink to="/providers" onClick={closeMenu}>Find people</NavLink>
               {isStaff(user) && <NavLink to="/moderation" onClick={closeMenu}>Moderation</NavLink>}
@@ -86,6 +96,15 @@ export function NavBar() {
                     : <span className="avatar avatar--sm" aria-hidden="true">{initial}</span>}
                   <span className="truncate">{user.username}</span>
                 </NavLink>
+                <button
+                  type="button"
+                  className="btn btn--ghost btn--sm"
+                  onClick={toggleSound}
+                  aria-pressed={soundOn}
+                  title="Beep when a new message arrives"
+                >
+                  {soundOn ? '\u{1F514} Sound on' : '\u{1F515} Sound off'}
+                </button>
                 <button type="button" className="btn btn--ghost btn--sm" onClick={handleLogout}>Log out</button>
               </div>
             </nav>

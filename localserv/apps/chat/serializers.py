@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from . import services
-from .models import Conversation, Message
+from .models import CallLog, Conversation, Message
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -84,3 +84,16 @@ class ConversationSerializer(serializers.ModelSerializer):
             "sender_id": str(last.sender_id),
             "created_at": last.created_at,
         }
+
+
+class CallLogSerializer(serializers.ModelSerializer):
+    caller_username = serializers.CharField(source="caller.username", read_only=True)
+    callee_username = serializers.CharField(source="callee.username", read_only=True)
+
+    class Meta:
+        model = CallLog
+        fields = [
+            "id", "conversation", "caller", "caller_username", "callee", "callee_username",
+            "mode", "outcome", "started_at", "answered_at", "ended_at", "duration_seconds",
+        ]
+        read_only_fields = fields

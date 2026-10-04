@@ -55,6 +55,11 @@ const FlipIcon = () => (
     <path d="M4 8h12l-3-3M20 16H8l3 3" />
   </svg>
 );
+const SwapIcon = ({ size = 22 }) => (
+  <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M7 4v13M3.5 13.5 7 17l3.5-3.5M17 20V7M13.5 10.5 17 7l3.5 3.5" />
+  </svg>
+);
 const HangUpIcon = () => (
   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 14c4-4 14-4 18 0l-2.5 2.5-3-1.5v-2.2c-2-.6-4-.6-6 0V15l-3 1.5z" />
@@ -64,12 +69,22 @@ const HangUpIcon = () => (
 /**
  * Renders everything about a call: the "ringing" prompt, the full-screen call,
  * and the short message after a call ends. `call` is the object returned by useVideoCall.
+ *
+ * Both video tiles stay mounted the whole call and only swap size/position, so swapping
+ * never restarts a stream or cuts the other person's audio. Tap the small picture (or the
+ * swap button) to put yourself on the big screen, and tap again to swap back.
  */
 export default function VideoCallPanel({ call, name, avatar }) {
   const { status, notice } = call;
   const elapsed = useElapsed(status === 'active');
+  const [swapped, setSwapped] = useState(false); // true = my camera is the big picture
   const voice = call.mode === 'voice';
   const canFlip = !voice && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+
+  // Every new call starts with the other person on the big screen.
+  useEffect(() => {
+    if (status === 'idle' || status === 'ended' || status === 'incoming') setSwapped(false);
+  }, [status]);
 
   if (status === 'idle') return null;
 
@@ -99,15 +114,32 @@ export default function VideoCallPanel({ call, name, avatar }) {
     );
   }
 
-  // A voice call has no picture to show, so the caller's face stays up for the whole call.
-  const waiting = voice || status !== 'active' || !call.remoteStream;
-  const label = status === 'calling' ? `Calling ${name}…`
-    : status === 'connecting' ? 'Connecting…'
+  const selfBig = swapped && !voice;
+  const toggleSwap = () => setSwapped((v) => !v);
+  const smallProps = {
+    role: 'button',
+    tabIndex: 0,
+    onClick: toggleSwap,
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSwap(); } },
+  };
+
+  // The caller's face and "Calling…" text only cover the big screen while the other person is on it.
+  const waiting = voice || (!selfBig && (status !== 'active' || !call.remoteStream));
+  const label = status === 'calling' ? `Calling ${name}\u2026`
+    : status === 'connecting' ? 'Connecting\u2026'
     : voice ? 'Voice call' : name;
 
   return (
     <div className={`vc-screen${voice ? ' vc-screen--voice' : ''}`} role="dialog" aria-modal="true" aria-label={`${voice ? 'Voice' : 'Video'} call with ${name}`}>
-      {call.remoteStream && <VideoTile stream={call.remoteStream} className="vc-remote" />}
+      {/* Other person */}
+      <div
+        className={`vc-tile vc-tile--remote ${selfBig ? 'vc-tile--small' : 'vc-tile--big'}`}
+        {...(selfBig ? { ...smallProps, 'aria-label': 'Swap: put your camera back in the small picture' } : {})}
+      >
+        <VideoTile stream={call.remoteStream} className="vc-tile__video" />
+        {selfBig && !call.remoteStream && <CallerFace name={name} avatar={avatar} className="vc-tile__face" />}
+        {selfBig && <span className="vc-tile__badge"><SwapIcon size={14} /></span>}
+      </div>
 
       {waiting && (
         <div className="vc-waiting">
@@ -122,10 +154,15 @@ export default function VideoCallPanel({ call, name, avatar }) {
         <span className="vc-note">Only the two of you are on this call. We don&rsquo;t record it.</span>
       </div>
 
+      {/* Me */}
       {!voice && (
-        <div className={`vc-self${call.camOn ? '' : ' is-off'}`}>
-          <VideoTile stream={call.localStream} muted mirrored={call.facing === 'user'} className="vc-self__video" />
-          {!call.camOn && <span className="vc-self__off">Camera off</span>}
+        <div
+          className={`vc-tile vc-tile--self ${selfBig ? 'vc-tile--big' : 'vc-tile--small'}${call.camOn ? '' : ' is-off'}`}
+          {...(!selfBig ? { ...smallProps, 'aria-label': 'Swap: put your camera on the big screen' } : {})}
+        >
+          <VideoTile stream={call.localStream} muted mirrored={call.facing === 'user'} className="vc-tile__video" />
+          {!call.camOn && <span className="vc-tile__off">Camera off</span>}
+          {!selfBig && <span className="vc-tile__badge"><SwapIcon size={14} /></span>}
         </div>
       )}
 
@@ -138,6 +175,12 @@ export default function VideoCallPanel({ call, name, avatar }) {
           <button type="button" className={`vc-round${call.camOn ? '' : ' is-off'}`} onClick={call.toggleCam}
             aria-pressed={!call.camOn} aria-label={call.camOn ? 'Turn camera off' : 'Turn camera on'}>
             <CamIcon off={!call.camOn} />
+          </button>
+        )}
+        {!voice && (
+          <button type="button" className={`vc-round${selfBig ? ' is-off' : ''}`} onClick={toggleSwap}
+            aria-pressed={selfBig} aria-label="Swap big and small pictures">
+            <SwapIcon />
           </button>
         )}
         {canFlip && (

@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
+import MessageNotifier from './components/MessageNotifier';
 
 import Register from './pages/auth/Register';
 import VerifyEmail from './pages/auth/VerifyEmail';
@@ -24,6 +25,7 @@ import WalletPage from './pages/wallet/Wallet';
 
 import ConversationList from './pages/chat/ConversationList';
 import ConversationView from './pages/chat/ConversationView';
+import CallLog from './pages/chat/CallLog';
 
 import MyProfile from './pages/profile/MyProfile';
 import PublicProfile from './pages/profile/PublicProfile';
@@ -60,6 +62,7 @@ function AppRoutes() {
 
       <Route path="/chat" element={<ProtectedRoute><ConversationList /></ProtectedRoute>} />
       <Route path="/chat/:id" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
+      <Route path="/calls" element={<ProtectedRoute><CallLog /></ProtectedRoute>} />
 
       <Route path="/providers" element={<ProtectedRoute><Discover /></ProtectedRoute>} />
       <Route path="/profile/me" element={<ProtectedRoute><MyProfile /></ProtectedRoute>} />
@@ -80,6 +83,7 @@ export default function App() {
       <Router>
         <AuthProvider>
           <NavBar />
+          <MessageNotifier />
           <AppRoutes />
         </AuthProvider>
       </Router>
