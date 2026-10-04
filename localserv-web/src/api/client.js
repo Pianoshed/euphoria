@@ -113,7 +113,7 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
 
   if (!resp.ok) {
     // Diagnostic: shows the server's reason in the console. Safe to remove later.
-    console.error('[api]', method, path, resp.status, data, {
+    console.error('[api]', method, path, resp.status, JSON.stringify(data), {
       sentCsrfHeader: !!headers['X-CSRFToken'],
     });
     throw new ApiError(resp.status, data);
