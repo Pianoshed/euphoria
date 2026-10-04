@@ -1,4 +1,6 @@
 from django.middleware.csrf import get_token
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import ensure_csrf_cookie
 from rest_framework import status
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -6,11 +8,6 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from django.conf import settings
-from .serializers import GoogleLoginSerializer
-
 
 from . import services
 from .models import User
@@ -19,6 +16,7 @@ from .serializers import (
     BlockedUserSerializer,
     DiscoverQuerySerializer,
     EmailVerifySerializer,
+    GoogleLoginSerializer,
     LoginMFASerializer,
     LoginSerializer,
     OnboardingCompleteSerializer,
@@ -37,24 +35,25 @@ from .serializers import (
 
 
 class CSRFBootstrapView(APIView):
-    """GET /api/accounts/csrf/ -- forces Django to set the csrftoken
-    cookie (via get_token) so a JS client can read it and echo it back
-    as the X-CSRFToken header on subsequent POST/PATCH/DELETE
-    requests. Only needed by browser-based clients using cookie
-    session auth (e.g. a React SPA) -- a mobile app or server-to-
-    server caller using a different auth scheme wouldn't need this at
-    all. Safe to call repeatedly; GET requests are never subject to
-    CSRF checks themselves."""
+    """GET /api/accounts/csrf/ -- sets the csrftoken cookie AND returns the
+    token in the JSON body. The body is needed when the frontend and API
+    are on different domains: JS can't read another domain's cookies, so
+    it echoes this value back as the X-CSRFToken header on unsafe requests.
+    Safe to call repeatedly; GET requests are never subject to CSRF checks.
+    """
 
     permission_classes = [AllowAny]
+    authentication_classes = []
 
+    @method_decorator(ensure_csrf_cookie)
     def get(self, request):
-        get_token(request)
-        return Response({"detail": "CSRF cookie set."})
+        return Response({"detail": "CSRF cookie set.", "csrfToken": get_token(request)})
 
 
 class RegisterView(APIView):
     permission_classes = [AllowAny]
+    # Skip session auth so a stale session can't trigger CSRF on signup.
+    authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "registration"
 
@@ -90,6 +89,8 @@ class ResendVerificationView(APIView):
 
 
 class LoginView(APIView):
+    # Session auth stays ON here, so CSRF is enforced for password login.
+    # The frontend must send X-CSRFToken (see CSRFBootstrapView).
     permission_classes = [AllowAny]
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
@@ -105,6 +106,7 @@ class LoginView(APIView):
 
 class LoginMFAView(APIView):
     permission_classes = [AllowAny]
+    authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "two_factor"
 
@@ -343,8 +345,13 @@ class BlockDeleteView(APIView):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+# --- Google sign-in --------------------------------------------------------------
+
 class GoogleLoginView(APIView):
     permission_classes = [AllowAny]
+    # The signed Google ID token is the proof of identity here, and a stale
+    # session cookie must not cause a CSRF 403 on login.
+    authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
     throttle_scope = "login"
 

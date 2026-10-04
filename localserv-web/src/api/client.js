@@ -17,6 +17,35 @@ export class ApiError extends Error {
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
+// Endpoints after which Django rotates the CSRF token (session changes).
+const TOKEN_ROTATING_PATHS = [
+  '/api/accounts/login/',
+  '/api/accounts/login/verify-2fa/',
+  '/api/accounts/google/',
+  '/api/accounts/logout/',
+];
+
+// When the frontend and API are on different domains, JS can't read the
+// API's csrftoken cookie, so we keep the token returned in the response
+// body of /api/accounts/csrf/ and send that as X-CSRFToken instead.
+let csrfToken = null;
+
+export function resetCsrf() {
+  csrfToken = null;
+}
+
+async function fetchCsrfToken() {
+  const resp = await fetch(`${API_BASE}/api/accounts/csrf/`, { credentials: 'include' });
+  const data = await resp.json().catch(() => null);
+  csrfToken = data?.csrfToken || null;
+  return csrfToken;
+}
+
+async function getCsrfToken() {
+  // Cached body token first; cookie only works when same-origin (e.g. localhost).
+  return csrfToken || getCookie('csrftoken') || (await fetchCsrfToken());
+}
+
 /**
  * @param {string} path - e.g. '/api/accounts/login/'
  * @param {object} [options]
@@ -34,25 +63,32 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
     if (qs) url += `?${qs}`;
   }
 
-  const headers = {};
   const isFormData = body instanceof FormData;
-  if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
-  if (UNSAFE_METHODS.has(method)) {
-    // Django's CSRF cookie is only ever set after something calls
-    // get_token() -- see the app-level bootstrapCsrf() call on
-    // startup (App.jsx). If it's somehow missing, we still send the
-    // request; Django will reject it with a clear 403 rather than us
-    // failing silently here.
-    const csrftoken = getCookie('csrftoken');
-    if (csrftoken) headers['X-CSRFToken'] = csrftoken;
+  const unsafe = UNSAFE_METHODS.has(method);
+
+  const send = async (token) => {
+    const headers = {};
+    if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
+    if (unsafe && token) headers['X-CSRFToken'] = token;
+    return fetch(url, {
+      method,
+      headers,
+      credentials: 'include', // send the session + csrftoken cookies
+      body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
+    });
+  };
+
+  let resp = await send(unsafe ? await getCsrfToken() : null);
+
+  // Stale or missing token: fetch a fresh one and retry once.
+  if (unsafe && resp.status === 403) {
+    const text = await resp.clone().text();
+    if (text.includes('CSRF')) {
+      resp = await send(await fetchCsrfToken());
+    }
   }
 
-  const resp = await fetch(url, {
-    method,
-    headers,
-    credentials: 'include', // send the session + csrftoken cookies
-    body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
-  });
+  if (resp.ok && TOKEN_ROTATING_PATHS.includes(path)) resetCsrf();
 
   if (resp.status === 204) return null;
 
@@ -64,5 +100,5 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
 }
 
 export async function bootstrapCsrf() {
-  await apiFetch('/api/accounts/csrf/');
+  await fetchCsrfToken();
 }
