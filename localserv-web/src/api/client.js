@@ -27,6 +27,20 @@ export class ApiError extends Error {
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
+// When the frontend and API are on different domains, JS cannot read the API's
+// csrftoken cookie via document.cookie. The /csrf/ endpoint returns the token in
+// its JSON body instead, and we keep it here and send it as X-CSRFToken.
+let csrfToken = null;
+
+// Django rotates the CSRF token whenever a user logs in, so after any of these
+// succeed we fetch a fresh one.
+const LOGIN_PATHS = new Set([
+  '/api/accounts/login/',
+  '/api/accounts/login/verify-2fa/',
+  '/api/accounts/google/',
+  '/api/accounts/google/register/',
+]);
+
 /**
  * @param {string} path - e.g. '/api/accounts/login/'
  * @param {object} [options]
@@ -34,7 +48,7 @@ const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
  * @param {object|FormData} [options.body] - plain object is JSON-encoded; FormData is sent as-is (for file uploads)
  * @param {URLSearchParams|object} [options.query]
  */
-export async function apiFetch(path, { method = 'GET', body, query } = {}) {
+export async function apiFetch(path, { method = 'GET', body, query } = {}, _retried = false) {
   let url = `${API_BASE}${path}`;
   if (query) {
     const cleaned = Object.fromEntries(
@@ -48,13 +62,11 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
   const isFormData = body instanceof FormData;
   if (body !== undefined && !isFormData) headers['Content-Type'] = 'application/json';
   if (UNSAFE_METHODS.has(method)) {
-    // Django's CSRF cookie is only ever set after something calls
-    // get_token() -- see the app-level bootstrapCsrf() call on
-    // startup (App.jsx). If it's somehow missing, we still send the
-    // request; Django will reject it with a clear 403 rather than us
-    // failing silently here.
-    const csrftoken = getCookie('csrftoken');
-    if (csrftoken) headers['X-CSRFToken'] = csrftoken;
+    // Prefer the token we stored from /csrf/ (works cross-domain). Fall back to
+    // the cookie, which only works when frontend and API share a domain
+    // (e.g. localhost in development).
+    const token = csrfToken || getCookie('csrftoken');
+    if (token) headers['X-CSRFToken'] = token;
   }
 
   const resp = await fetch(url, {
@@ -69,10 +81,29 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}) {
   const contentType = resp.headers.get('content-type') || '';
   const data = contentType.includes('application/json') ? await resp.json().catch(() => null) : null;
 
+  // A 403 whose message mentions CSRF usually means our token is stale or was
+  // never fetched. Refresh it and retry once.
+  if (
+    resp.status === 403 &&
+    !_retried &&
+    UNSAFE_METHODS.has(method) &&
+    typeof data?.detail === 'string' &&
+    data.detail.toLowerCase().includes('csrf')
+  ) {
+    await bootstrapCsrf();
+    return apiFetch(path, { method, body, query }, true);
+  }
+
   if (!resp.ok) throw new ApiError(resp.status, data);
+
+  if (method === 'POST' && LOGIN_PATHS.has(path)) {
+    await bootstrapCsrf().catch(() => {});
+  }
+
   return data;
 }
 
 export async function bootstrapCsrf() {
-  await apiFetch('/api/accounts/csrf/');
+  const data = await apiFetch('/api/accounts/csrf/');
+  csrfToken = data?.csrfToken || null;
 }
