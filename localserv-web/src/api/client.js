@@ -94,7 +94,13 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
     return apiFetch(path, { method, body, query }, true);
   }
 
-  if (!resp.ok) throw new ApiError(resp.status, data);
+  if (!resp.ok) {
+    // Diagnostic: shows the server's reason in the console. Safe to remove later.
+    console.error('[api]', method, path, resp.status, data, {
+      sentCsrfHeader: !!headers['X-CSRFToken'],
+    });
+    throw new ApiError(resp.status, data);
+  }
 
   if (method === 'POST' && LOGIN_PATHS.has(path)) {
     await bootstrapCsrf().catch(() => {});
