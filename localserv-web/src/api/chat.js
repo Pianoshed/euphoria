@@ -32,6 +32,9 @@ export const deleteMessage = (messageId) =>
 // Short-lived STUN/TURN credentials for video calls.
 export const getIceServers = () => apiFetch('/api/chat/ice-servers/');
 
+// Calls ringing for me right now. Fallback for the site-wide call socket (see IncomingCallNotifier).
+export const listIncomingCalls = () => apiFetch('/api/chat/calls/incoming/');
+
 // Call log (audit trail). The server records every call itself from the call signaling, so the
 // browser only reads it. Staff can pass scope='all' to see every call on the site.
 export const listCallLogs = ({ scope = 'mine', page = 1 } = {}) =>

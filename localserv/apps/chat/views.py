@@ -176,3 +176,24 @@ class CallLogListView(APIView):
         paginator = ChatPagination()
         page = paginator.paginate_queryset(qs, request)
         return paginator.get_paginated_response(CallLogSerializer(page, many=True).data)
+
+
+class CallIncomingView(APIView):
+    """
+    GET /api/chat/calls/incoming/
+
+    Calls ringing for the signed-in user right now. The site-wide inbox socket normally
+    delivers these; this is the fallback the browser polls while that socket is down.
+    """
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def get(self, request):
+        calls = call_logs.ringing_for(request.user.id)
+        return Response([
+            {
+                "conversation_id": str(c.conversation_id), "caller_id": str(c.caller_id),
+                "mode": c.mode, "started_at": c.started_at,
+            }
+            for c in calls if c.conversation_id
+        ])

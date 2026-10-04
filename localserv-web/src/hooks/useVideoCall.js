@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_BASE } from '../api/client';
 import { getIceServers } from '../api/chat';
+import { setInCall } from '../utils/callActivity';
 
 /*
  * One-to-one video calling over WebRTC.
@@ -81,6 +82,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
 
   const setStatusBoth = useCallback((next) => {
     statusRef.current = next;
+    setInCall(next !== 'idle' && next !== 'ended');
     setStatus(next);
   }, []);
 
@@ -293,6 +295,8 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
 
     switch (data.type) {
       case 'offer':
+        // The server replays a ringing offer whenever this socket reconnects. Same offer, same call.
+        if (statusRef.current === 'incoming' && pendingOfferRef.current?.sdp === data.sdp) return;
         if (statusRef.current !== 'idle' && statusRef.current !== 'ended') {
           send({ type: 'busy' });
           return;
@@ -385,6 +389,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       wsRef.current = null;
       cleanup();
       statusRef.current = 'idle';
+      setInCall(false);
     };
   }, [cleanup, conversationId, enabled, send]);
 

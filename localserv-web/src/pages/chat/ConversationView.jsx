@@ -2,7 +2,7 @@ import '../../styles/index.css';
 import './chat.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
 import { API_BASE, apiFetch, apiBlob } from '../../api/client';
@@ -193,6 +193,22 @@ export default function ConversationView() {
   const { id } = useParams();
   const { user } = useAuth();
   const call = useVideoCall({ conversationId: id, myId: user.id });
+  const location = useLocation();
+  const navigate = useNavigate();
+  // Accepted from the site-wide ring: this page's call socket opens, the server replays the
+  // offer, status becomes 'incoming', and we answer. The 15s stamp stops a stale flag from
+  // auto-answering some later call.
+  const acceptStamp = location.state?.acceptCall;
+  const { status: callStatus, acceptCall } = call;
+  useEffect(() => {
+    if (!acceptStamp) return;
+    if (Date.now() - acceptStamp > 15_000) {
+      navigate(location.pathname, { replace: true, state: null });
+    } else if (callStatus === 'incoming') {
+      navigate(location.pathname, { replace: true, state: null });
+      acceptCall();
+    }
+  }, [acceptStamp, callStatus, acceptCall, location.pathname, navigate]);
   const [messages, setMessages] = useState(null);
   const [otherProfile, setOtherProfile] = useState(null);
   const [otherUserId, setOtherUserId] = useState(null);

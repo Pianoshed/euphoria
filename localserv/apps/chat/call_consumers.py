@@ -28,6 +28,11 @@ MAX_SIGNALS_PER_MINUTE = 240  # a call needs a few dozen; this only stops abuse
 RATE_WINDOW_SECONDS = 60
 
 
+def inbox_group(user_id) -> str:
+    """Every socket a user has open anywhere on the site joins this group."""
+    return f"call_inbox_{user_id}"
+
+
 class CallConsumer(AsyncJsonWebsocketConsumer):
     """
     WebRTC signaling for one-to-one video calls inside a conversation.
@@ -74,6 +79,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         self._sent_at = deque()
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        await self._replay_ringing_offer()
 
     async def disconnect(self, code):
         if hasattr(self, "group_name"):
@@ -103,6 +109,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
             return
 
         await self._log_signal(kind, payload)
+        await self._notify_inboxes(kind, payload)
 
         payload["from"] = str(self.user.id)
         await self.channel_layer.group_send(
@@ -132,6 +139,38 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
                 await database_sync_to_async(call_logs.record_end)(self.conversation.id, self.user.id, kind)
         except Exception:
             logging.getLogger("apps").warning("Call log update failed", exc_info=True)
+
+    async def _replay_ringing_offer(self):
+        """The callee may open this socket after the offer was sent (they were on another page
+        and accepted from the site-wide ring). The offer is stored on the call row, so hand it
+        over now, exactly as if it had just arrived."""
+        try:
+            calls = await database_sync_to_async(call_logs.ringing_for)(self.user.id, self.conversation.id)
+        except Exception:
+            logging.getLogger("apps").warning("Could not look up a ringing call", exc_info=True)
+            return
+        if calls and calls[0].offer_sdp:
+            await self.send_json({"type": "offer", "sdp": calls[0].offer_sdp, "from": str(calls[0].caller_id)})
+
+    async def _notify_inboxes(self, kind, payload):
+        """Tell the callee's site-wide inbox socket to start ringing, and every inbox of both
+        people to stop once the call is answered or ends."""
+        try:
+            conversation_id = str(self.conversation.id)
+            if kind == "offer":
+                await self.channel_layer.group_send(inbox_group(self.other_id), {
+                    "type": "call.incoming",
+                    "conversation_id": conversation_id,
+                    "caller_id": str(self.user.id),
+                    "mode": call_logs.mode_from_sdp(payload["sdp"]).value,
+                })
+            elif kind in ("answer", "reject", "hangup", "busy"):
+                for user_id in (self.user.id, self.other_id):
+                    await self.channel_layer.group_send(
+                        inbox_group(user_id), {"type": "call.ended", "conversation_id": conversation_id}
+                    )
+        except Exception:
+            logging.getLogger("apps").warning("Call inbox notify failed", exc_info=True)
 
     async def _error(self, detail):
         await self.send_json({"type": "error", "detail": detail})
@@ -196,3 +235,51 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         from apps.accounts.services import is_blocked_between
 
         return is_blocked_between(user_id, other_id)
+
+
+class CallInboxConsumer(AsyncJsonWebsocketConsumer):
+    """
+    One socket per open tab, on every page of the site. It carries no signaling: it only says
+    "someone is calling you in conversation X" (so the site can ring) and "that call is over"
+    (so it stops). Accepting takes the person to the conversation, whose own call socket does
+    the actual WebRTC signaling. Receive-only: anything a client sends here is ignored.
+    """
+
+    async def connect(self):
+        user = self.scope["user"]
+        if user is None or not user.is_authenticated:
+            await self.close(code=CLOSE_UNAUTHENTICATED)
+            return
+        if getattr(user, "status", None) != AccountStatus.ACTIVE:
+            await self.close(code=CLOSE_ACCOUNT_NOT_ACTIVE)
+            return
+        self.user = user
+        self.group_name = inbox_group(user.id)
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.accept()
+        # Catch up: a call may have started while this socket was (re)connecting.
+        try:
+            for call in await database_sync_to_async(call_logs.ringing_for)(user.id):
+                if call.conversation_id:
+                    await self.send_json({
+                        "type": "incoming", "conversation_id": str(call.conversation_id),
+                        "caller_id": str(call.caller_id), "mode": call.mode,
+                    })
+        except Exception:
+            logging.getLogger("apps").warning("Could not catch up the call inbox", exc_info=True)
+
+    async def disconnect(self, code):
+        if hasattr(self, "group_name"):
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
+
+    async def receive_json(self, content, **kwargs):
+        return  # one-way channel
+
+    async def call_incoming(self, event):
+        await self.send_json({
+            "type": "incoming", "conversation_id": event["conversation_id"],
+            "caller_id": event["caller_id"], "mode": event["mode"],
+        })
+
+    async def call_ended(self, event):
+        await self.send_json({"type": "ended", "conversation_id": event["conversation_id"]})

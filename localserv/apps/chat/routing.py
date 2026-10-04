@@ -11,4 +11,5 @@ websocket_urlpatterns = [
         r"^ws/call/(?P<conversation_id>[0-9a-fA-F-]{36})/$",
         call_consumers.CallConsumer.as_asgi(),
     ),
+    re_path(r"^ws/calls/inbox/$", call_consumers.CallInboxConsumer.as_asgi()),
 ]

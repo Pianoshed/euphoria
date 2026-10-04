@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
 import MessageNotifier from './components/MessageNotifier';
+import IncomingCallNotifier from './components/IncomingCallNotifier';
 
 import Register from './pages/auth/Register';
 import VerifyEmail from './pages/auth/VerifyEmail';
@@ -84,6 +85,7 @@ export default function App() {
         <AuthProvider>
           <NavBar />
           <MessageNotifier />
+          <IncomingCallNotifier />
           <AppRoutes />
         </AuthProvider>
       </Router>

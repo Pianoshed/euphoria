@@ -179,6 +179,9 @@ class CallLog(BaseModel):
     answered_at = models.DateTimeField(null=True, blank=True)
     ended_at = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.PositiveIntegerField(default=0)
+    # The caller's SDP offer, kept only while the call is ringing so a callee who is not on the
+    # chat page yet can still receive it. Cleared the moment the call is answered or ends.
+    offer_sdp = models.TextField(blank=True, default="")
 
     class Meta(BaseModel.Meta):
         db_table = "chat_call_log"

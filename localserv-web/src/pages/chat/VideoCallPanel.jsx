@@ -1,5 +1,6 @@
 import './call.css';
 import { useEffect, useRef, useState } from 'react';
+import { startRingtone, stopRingtone } from '../../utils/notifySound';
 
 function VideoTile({ stream, muted = false, mirrored = false, className = '' }) {
   const ref = useRef(null);
@@ -84,6 +85,13 @@ export default function VideoCallPanel({ call, name, avatar }) {
   // Every new call starts with the other person on the big screen.
   useEffect(() => {
     if (status === 'idle' || status === 'ended' || status === 'incoming') setSwapped(false);
+  }, [status]);
+
+  // Ring while a call is waiting to be answered.
+  useEffect(() => {
+    if (status !== 'incoming') return undefined;
+    startRingtone();
+    return stopRingtone;
   }, [status]);
 
   if (status === 'idle') return null;

@@ -51,7 +51,8 @@ def _close(call: CallLog, outcome: str, ended_at=None) -> None:
     call.ended_at = ended_at
     if outcome == CallLog.Outcome.COMPLETED and call.answered_at:
         call.duration_seconds = max(0, int((ended_at - call.answered_at).total_seconds()))
-    call.save(update_fields=["outcome", "ended_at", "duration_seconds", "updated_at"])
+    call.offer_sdp = ""
+    call.save(update_fields=["outcome", "ended_at", "duration_seconds", "offer_sdp", "updated_at"])
 
 
 def _open_calls(conversation_id=None):
@@ -86,7 +87,7 @@ def start_call(conversation, caller_id, callee_id, sdp) -> None:
             live = _open_calls(conversation.id).select_for_update().first()
             row = dict(
                 conversation=conversation, caller_id=caller_id, callee_id=callee_id,
-                mode=mode_from_sdp(sdp), started_at=timezone.now(),
+                mode=mode_from_sdp(sdp), started_at=timezone.now(), offer_sdp=sdp,
             )
             if live is None:
                 CallLog.objects.create(**row)
@@ -97,9 +98,22 @@ def start_call(conversation, caller_id, callee_id, sdp) -> None:
             else:
                 # Someone calls while a call is live (second tab, or both ring at once). The
                 # live call is untouched; this attempt is logged as busy.
-                CallLog.objects.create(**row, outcome=CallLog.Outcome.BUSY, ended_at=row["started_at"])
+                CallLog.objects.create(
+                    **{**row, "offer_sdp": ""}, outcome=CallLog.Outcome.BUSY, ended_at=row["started_at"]
+                )
     except Exception:
         logger.warning("Could not log call start for conversation %s", getattr(conversation, "id", None), exc_info=True)
+
+
+def ringing_for(user_id, conversation_id=None) -> list:
+    """Calls ringing for this user right now (newest first). Used to catch a callee up when they
+    connect after the offer was sent, and by the polling fallback. Past the ring time limit a
+    call is no longer ringing, whatever its row still says."""
+    cutoff = timezone.now() - timedelta(seconds=RING_TIMEOUT_SECONDS)
+    qs = _open_calls(conversation_id).filter(
+        callee_id=user_id, outcome=CallLog.Outcome.RINGING, started_at__gte=cutoff,
+    )
+    return list(qs.order_by("-started_at"))
 
 
 def record_answer(conversation_id, user_id) -> None:
@@ -107,7 +121,7 @@ def record_answer(conversation_id, user_id) -> None:
     try:
         now = timezone.now()
         _open_calls(conversation_id).filter(outcome=CallLog.Outcome.RINGING).exclude(caller_id=user_id).update(
-            outcome=CallLog.Outcome.IN_PROGRESS, answered_at=now, updated_at=now,
+            outcome=CallLog.Outcome.IN_PROGRESS, answered_at=now, offer_sdp="", updated_at=now,
         )
     except Exception:
         logger.warning("Could not log call answer for conversation %s", conversation_id, exc_info=True)

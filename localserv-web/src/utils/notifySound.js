@@ -76,3 +76,47 @@ export function playMessageSound() {
   if (c.state === 'suspended') c.resume().then(ding).catch(() => {});
   else ding();
 }
+
+/* ---- Incoming-call ringtone ------------------------------------------------------------ */
+
+let ringTimer = null;
+
+// The classic double ring: two 0.4s bursts of 440+480 Hz, then a pause.
+function ringBurst(c) {
+  const t0 = c.currentTime;
+  [0, 0.5].forEach((offset) => {
+    [440, 480].forEach((freq) => {
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0.0001, t0 + offset);
+      gain.gain.exponentialRampToValueAtTime(0.18, t0 + offset + 0.03);
+      gain.gain.setValueAtTime(0.18, t0 + offset + 0.34);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + offset + 0.42);
+      osc.connect(gain).connect(c.destination);
+      osc.start(t0 + offset);
+      osc.stop(t0 + offset + 0.44);
+    });
+  });
+}
+
+/** Ring until stopRingtone(). Not tied to the message-sound switch: a muted chat must not miss a call. */
+export function startRingtone() {
+  if (ringTimer) return;
+  const c = getContext();
+  if (!c) return;
+  const go = () => {
+    if (c.state === 'suspended') c.resume().then(() => ringBurst(c)).catch(() => {});
+    else ringBurst(c);
+    try { navigator.vibrate?.([400, 200, 400]); } catch { /* not supported */ }
+  };
+  go();
+  ringTimer = setInterval(go, 2500);
+}
+
+export function stopRingtone() {
+  clearInterval(ringTimer);
+  ringTimer = null;
+  try { navigator.vibrate?.(0); } catch { /* not supported */ }
+}
