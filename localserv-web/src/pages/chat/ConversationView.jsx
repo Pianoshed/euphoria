@@ -351,12 +351,12 @@ export default function ConversationView() {
         // File uploads can't go over the plain-text WS protocol this
         // app uses -- always REST for these.
         const message = await chatApi.sendMessage(id, body, pendingAttachment);
-        setMessages((prev) => [...(prev || []), message]);
+        setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
       } else if (!sendOverSocket(body)) {
         // Prefer the live socket for plain text (near-instant echo to
         // both sides); fall back to REST if it isn't connected.
         const message = await chatApi.sendMessage(id, body);
-        setMessages((prev) => [...(prev || []), message]);
+        setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
       }
     } catch (err) {
       setError(err);
