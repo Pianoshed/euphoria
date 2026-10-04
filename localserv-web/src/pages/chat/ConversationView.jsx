@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
+import { API_BASE } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useChatSocket } from '../../hooks/useChatSocket';
 import { useVideoCall } from '../../hooks/useVideoCall';
@@ -12,6 +13,10 @@ import VideoCallPanel from './VideoCallPanel';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import { PaperclipIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
+
+// Live socket pushes send a relative /media/... path (REST sends an absolute URL).
+// Resolve against the API host so the image loads from the backend, not the frontend.
+const mediaUrl = (u) => (u && !/^(https?:|blob:|data:)/.test(u) ? `${API_BASE}${u}` : u);
 
 /* ------------------------------------------------------------------ */
 /* Emoji data                                                          */
@@ -479,8 +484,8 @@ export default function ConversationView() {
                         ) : (
                           <>
                             {m.attachment_url && (
-                              <a href={m.attachment_url} target="_blank" rel="noreferrer">
-                                <img className="cv-bubble__img" src={m.attachment_url} alt="Attachment" loading="lazy" />
+                              <a href={mediaUrl(m.attachment_url)} target="_blank" rel="noreferrer">
+                                <img className="cv-bubble__img" src={mediaUrl(m.attachment_url)} alt="Photo" loading="lazy" />
                               </a>
                             )}
                             {m.body && <p className={m.attachment_url ? 'cv-bubble__caption' : undefined}>{m.body}</p>}
