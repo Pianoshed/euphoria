@@ -1,0 +1,165 @@
+--- a/apps/accounts/serializers.py
++++ b/apps/accounts/serializers.py
+@@ -54,7 +54,9 @@
+ 
+ 
+ class PasswordChangeSerializer(serializers.Serializer):
+-    old_password = serializers.CharField(write_only=True)
++    # Optional: accounts created with Google have no password yet, so they send only new_password.
++    # The service still requires it (and checks it) for any account that has a password.
++    old_password = serializers.CharField(write_only=True, required=False, allow_blank=True, default="")
+     new_password = serializers.CharField(write_only=True, min_length=10)
+ 
+ 
+--- a/apps/accounts/services.py
++++ b/apps/accounts/services.py
+@@ -253,8 +253,17 @@
+     return user
+ 
+ 
+-def change_password(user: User, *, old_password: str, new_password: str, keep_session_key: str | None = None) -> None:
+-    if not user.check_password(old_password):
++def change_password(
++    user: User, *, new_password: str, old_password: str = "", keep_session_key: str | None = None
++) -> None:
++    """Change the password, or set the FIRST one for an account that has none.
++
++    Accounts created through Google sign-in have an unusable password, so there is no current
++    password to ask for. Anyone who already has a password must still prove they know it.
++    Either way every other session is signed out and an alert email goes to the owner.
++    """
++    had_password = user.has_usable_password()
++    if had_password and not user.check_password(old_password):
+         raise DomainError("Current password is incorrect.")
+     try:
+         validate_password(new_password, user=user)
+@@ -264,11 +273,19 @@
+     user.set_password(new_password)
+     user.save(update_fields=["password"])
+     _revoke_all_sessions(user, except_session_key=keep_session_key)
+-    emails.send_security_alert_email(
+-        user,
+-        subject="Your password was changed",
+-        body="Your password was just changed. If this wasn't you, contact support immediately.",
+-    )
++    if had_password:
++        emails.send_security_alert_email(
++            user,
++            subject="Your password was changed",
++            body="Your password was just changed. If this wasn't you, contact support immediately.",
++        )
++    else:
++        emails.send_security_alert_email(
++            user,
++            subject="A password was added to your account",
++            body="A password was just set on your account, so you can now also log in with your email. "
++            "If this wasn't you, contact support immediately.",
++        )
+ 
+ 
+ # --- Session management -------------------------------------------------------
+@@ -338,6 +355,9 @@
+ def disable_2fa(user: User, *, password: str) -> None:
+     # Sensitive action: require the current password again even though
+     # the request is already authenticated (recent-reauth pattern).
++    if not user.has_usable_password():
++        # Google sign-ups have no password to confirm with until they set one.
++        raise DomainError("Set a password in your profile first, then you can turn two-factor off.")
+     if not user.check_password(password):
+         raise DomainError("Current password is incorrect.")
+     user.two_factor_enabled = False
+@@ -454,6 +474,10 @@
+         # never included for any other viewer.
+         data["is_staff"] = target_user.is_staff
+         data["two_factor_enabled"] = target_user.two_factor_enabled
++        # Self-only: lets the profile page offer "Set a password" to Google sign-ups
++        # (who have none) and "Change your password" to everyone else.
++        data["email"] = target_user.email
++        data["has_usable_password"] = target_user.has_usable_password()
+     return data
+ 
+ 
+--- a/apps/accounts/tests/test_auth_flows.py
++++ b/apps/accounts/tests/test_auth_flows.py
+@@ -267,6 +267,81 @@
+     assert user.check_password("a-new-strong-password-2")
+ 
+ 
++def test_password_change_without_old_password_rejected_when_account_has_one(client):
++    make_verified_user()
++    client.post(reverse("accounts:login"), {"email": "user@example.com", "password": "a-strong-password-1"}, content_type="application/json")
++    resp = client.post(
++        reverse("accounts:password-change"),
++        {"new_password": "a-new-strong-password-2"},
++        content_type="application/json",
++    )
++    assert resp.status_code == 400
++    assert User.objects.get(email="user@example.com").check_password("a-strong-password-1")
++
++
++# --- Google accounts: setting a first password ---------------------------------
++
++def make_google_user(**kwargs):
++    defaults = dict(email="g@example.com", username="googler")  # no password => unusable, like Google sign-up
++    defaults.update(kwargs)
++    user = User.objects.create_user(**defaults)
++    user.mark_email_verified()
++    return user
++
++
++def test_profile_me_reports_password_state_and_email(client):
++    google_user = make_google_user()
++    client.force_login(google_user)
++    data = client.get(reverse("accounts:my-profile")).json()
++    assert data["has_usable_password"] is False
++    assert data["email"] == "g@example.com"
++
++    client.logout()
++    client.force_login(make_verified_user())
++    assert client.get(reverse("accounts:my-profile")).json()["has_usable_password"] is True
++
++
++def test_google_account_can_set_first_password_without_old_one(client):
++    user = make_google_user()
++    client.force_login(user)
++    resp = client.post(
++        reverse("accounts:password-change"),
++        {"new_password": "a-new-strong-password-2"},
++        content_type="application/json",
++    )
++    assert resp.status_code == 200
++    user.refresh_from_db()
++    assert user.has_usable_password()
++    assert user.check_password("a-new-strong-password-2")
++
++    # and from now on the normal rule applies
++    resp = client.post(
++        reverse("accounts:password-change"),
++        {"new_password": "another-strong-password-3"},
++        content_type="application/json",
++    )
++    assert resp.status_code == 400
++
++
++def test_google_account_first_password_still_validated(client):
++    user = make_google_user()
++    client.force_login(user)
++    resp = client.post(reverse("accounts:password-change"), {"new_password": "short"}, content_type="application/json")
++    assert resp.status_code == 400
++    user.refresh_from_db()
++    assert not user.has_usable_password()
++
++
++def test_2fa_disable_for_account_without_password_explains_next_step(client):
++    user = make_google_user(two_factor_enabled=True, two_factor_secret=pyotp.random_base32())
++    client.force_login(user)
++    resp = client.post(reverse("accounts:2fa-disable"), {"password": "anything"}, content_type="application/json")
++    assert resp.status_code == 400
++    assert "Set a password" in str(resp.json())
++    user.refresh_from_db()
++    assert user.two_factor_enabled is True
++
++
+ # --- 2FA setup/disable ----------------------------------------------------------
+ 
+ def test_2fa_setup_and_confirm(client):
