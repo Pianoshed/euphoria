@@ -19,3 +19,4 @@ channels==4.1.0
 channels-redis==4.2.0
 daphne==4.2.2
 sentry-sdk==2.19.0
+google-auth
