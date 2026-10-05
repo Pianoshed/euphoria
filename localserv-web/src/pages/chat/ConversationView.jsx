@@ -101,7 +101,7 @@ const PhoneIcon = () => (
 );
 const DataSaverIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M12 4v10M8 10l4 4 4-4M5 19h14" />
+    <path d="M8 20V5M8 5L4.5 8.5M8 5l3.5 3.5M16 4v15M16 19l-3.5-3.5M16 19l3.5-3.5" />
   </svg>
 );
 const VideoIcon = () => (
@@ -556,13 +556,25 @@ export default function ConversationView() {
                 onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
                 aria-label={`Data saver is ${saver.active ? 'on' : 'off'}. Tap to turn it ${saver.active ? 'off' : 'on'}.`}
                 title="Data saver: smaller photos, lower call quality, slower refresh">
-                <DataSaverIcon /><span className="cv-call-btn__text">Data saver {saver.active ? 'on' : 'off'}</span>
+                <DataSaverIcon />
+                {saver.active && <span className="cv-saver-badge" aria-hidden="true">ON</span>}
+                <span className="cv-call-btn__text">Data saver</span>
               </button>
               <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
                 <span className="cv-live__text">{connected ? 'Live' : 'Reconnecting…'}</span>
               </span>
             </div>
           </header>
+
+          {saver.active && (
+            <div className="cv-saver-note" role="status">
+              <DataSaverIcon />
+              <span>
+                <strong>Data saver is on.</strong> Photos load when you tap them and calls use less data.
+              </span>
+              <button type="button" onClick={() => saver.setSetting('off')}>Turn off</button>
+            </div>
+          )}
 
           <ErrorAlert error={error} />
 

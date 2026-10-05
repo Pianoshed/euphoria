@@ -358,6 +358,47 @@
 .vc-mini__btn.is-off { background: #fff; color: #1c1a36; }
 .vc-mini__btn--end { background: var(--vc-accent); }
 
-/* Data saver button: always shows an icon; green when on. */
-.cv-call-btn.is-on { background: var(--vc-green); border-color: var(--vc-green); color: #fff; }
+/* Data saver: green button with an ON badge, plus a one-line explanation while it is active. */
+.cv-call-btn.is-on { position: relative; background: var(--vc-green); border-color: var(--vc-green); color: #fff; }
 .cv-call-btn.is-on:hover:not(:disabled) { background: var(--vc-green); }
+.cv-saver-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--vc-green);
+  border: 1.5px solid var(--vc-green);
+  font-size: 0.62rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+/* The badge is a span: keep it visible on small screens, where other header spans are hidden. */
+@media (max-width: 520px) { .cv-call-btn .cv-saver-badge { display: block; } }
+
+.cv-saver-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px 0;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: #e6f6ee;
+  color: #14513a;
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+.cv-saver-note svg { flex: none; }
+.cv-saver-note span { flex: 1; min-width: 0; }
+.cv-saver-note button {
+  flex: none;
+  padding: 5px 10px;
+  border: 1.5px solid currentColor;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
