@@ -3,7 +3,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework import status
-from rest_framework.exceptions import NotFound, PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -19,6 +19,7 @@ from .serializers import (
     CallLogSerializer,
     ConversationSerializer,
     EditMessageSerializer,
+    JoinRequestSerializer,
     MessageSerializer,
     MoodSerializer,
     RenameGroupSerializer,
@@ -322,3 +323,93 @@ class CallIncomingView(APIView):
             }
             for c in calls if c.conversation_id
         ])
+
+
+# ---------------------------------------------------------------------------
+# Group invite links + join requests
+# ---------------------------------------------------------------------------
+class ConversationInviteView(APIView):
+    """POST /conversations/<id>/invite/ {reset?: bool} -- an admin gets (or replaces) the group's invite code."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def post(self, request, conversation_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        code = services.ensure_invite_code(conversation, request.user, reset=bool(request.data.get("reset")))
+        return Response({"invite_code": code})
+
+
+class GroupJoinPreviewView(APIView):
+    """
+    GET  /groups/join/<code>/ -- what the person sees after opening an invite link:
+         the group's name, how many people are in it, and where their own request stands.
+    POST /groups/join/<code>/ -- ask to join. An admin must approve.
+    An unknown or reset code is a plain 404, so codes can't be guessed or probed.
+    """
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def _group_or_404(self, code):
+        conversation = services.group_for_invite_code(code)
+        if conversation is None:
+            raise NotFound("This invite link is not valid any more.")
+        return conversation
+
+    def _payload(self, conversation, user):
+        status_ = services.join_status(conversation, user)
+        return {
+            "title": conversation.title or "Group chat",
+            "member_count": conversation.members.count(),
+            "status": status_,
+            "conversation_id": str(conversation.id) if status_ == "member" else None,
+        }
+
+    def get(self, request, code):
+        conversation = self._group_or_404(code)
+        return Response(self._payload(conversation, request.user))
+
+    def post(self, request, code):
+        conversation = self._group_or_404(code)
+        req = services.request_to_join(conversation, request.user)
+        if req is not None:
+            # Tell the group's open sockets; only admins act on it (the panel reloads the list).
+            services.broadcast_event(
+                conversation, {"type": "join_requests_changed", "conversation_id": str(conversation.id)}
+            )
+        return Response(self._payload(conversation, request.user), status=status.HTTP_200_OK)
+
+
+class ConversationJoinRequestsView(APIView):
+    """GET /conversations/<id>/join-requests/ -- the people waiting to be let in (admins only)."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def get(self, request, conversation_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        pending = services.list_join_requests(conversation, request.user)
+        return Response(JoinRequestSerializer(pending, many=True).data)
+
+
+class ConversationJoinRequestDecisionView(APIView):
+    """POST /conversations/<id>/join-requests/<request_id>/ {action: "approve" | "decline"} (admins only)."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def post(self, request, conversation_id, request_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        action = request.data.get("action")
+        if action not in ("approve", "decline"):
+            raise ValidationError({"action": "Use \"approve\" or \"decline\"."})
+        services.decide_join_request(conversation, request.user, request_id, approve=(action == "approve"))
+        services.broadcast_event(
+            conversation, {"type": "join_requests_changed", "conversation_id": str(conversation.id)}
+        )
+        if action == "approve":
+            services.broadcast_event(conversation, {"type": "members_changed", "conversation_id": str(conversation.id)})
+        return Response(ConversationSerializer(conversation, context={"request": request}).data)

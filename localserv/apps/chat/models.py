@@ -33,6 +33,9 @@ class Conversation(BaseModel):
     booking = models.ForeignKey(
         "bookings.Booking", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
     )
+    # Groups only: an admin can share a link containing this code. Opening it lets someone ASK to join;
+    # an admin still has to approve. Null until an admin creates a link; resetting it kills the old link.
+    invite_code = models.CharField(max_length=32, null=True, blank=True, unique=True)
 
     class Meta(BaseModel.Meta):
         db_table = "chat_conversation"
@@ -101,6 +104,34 @@ class ConversationMember(BaseModel):
 
     def __str__(self):
         return f"Member({self.conversation_id}, {self.user_id}, {self.role})"
+
+
+class GroupJoinRequest(BaseModel):
+    """Someone who opened a group's invite link and asked to join. A group admin approves or declines.
+    One row per (group, person): asking again after a decline re-opens the same row."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        APPROVED = "approved", "Approved"
+        DECLINED = "declined", "Declined"
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="join_requests")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    status = models.CharField(max_length=8, choices=Status.choices, default=Status.PENDING)
+    decided_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        db_table = "chat_group_join_request"
+        constraints = [
+            models.UniqueConstraint(fields=["conversation", "user"], name="unique_group_join_request"),
+        ]
+        indexes = [models.Index(fields=["conversation", "status"], name="chat_joinreq_conv_status_idx")]
+
+    def __str__(self):
+        return f"JoinRequest({self.conversation_id}, {self.user_id}, {self.status})"
 
 
 class ConversationParticipantState(BaseModel):

@@ -20,6 +20,18 @@ urlpatterns = [
         name="conversation-messages",
     ),
     path("conversations/<uuid:conversation_id>/read/", views.ConversationMarkReadView.as_view(), name="conversation-read"),
+    path("conversations/<uuid:conversation_id>/invite/", views.ConversationInviteView.as_view(), name="conversation-invite"),
+    path(
+        "conversations/<uuid:conversation_id>/join-requests/",
+        views.ConversationJoinRequestsView.as_view(),
+        name="conversation-join-requests",
+    ),
+    path(
+        "conversations/<uuid:conversation_id>/join-requests/<uuid:request_id>/",
+        views.ConversationJoinRequestDecisionView.as_view(),
+        name="conversation-join-request-decision",
+    ),
+    path("groups/join/<str:code>/", views.GroupJoinPreviewView.as_view(), name="group-join"),
     path("conversations/<uuid:conversation_id>/mood/", views.ConversationMoodView.as_view(), name="conversation-mood"),
     path("calls/", views.CallLogListView.as_view(), name="call-log"),
     path("calls/incoming/", views.CallIncomingView.as_view(), name="call-incoming"),

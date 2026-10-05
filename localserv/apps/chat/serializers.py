@@ -89,6 +89,25 @@ class RenameGroupSerializer(serializers.Serializer):
     title = serializers.CharField(max_length=80, allow_blank=True)
 
 
+class JoinRequestSerializer(serializers.Serializer):
+    """A pending request, as an admin sees it."""
+
+    id = serializers.UUIDField()
+    user_id = serializers.SerializerMethodField()
+    display_name = serializers.SerializerMethodField()
+    username = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField()
+
+    def get_user_id(self, obj):
+        return str(obj.user_id)
+
+    def get_display_name(self, obj):
+        return services.member_label(obj.user)["display_name"]
+
+    def get_username(self, obj):
+        return services.member_label(obj.user)["username"]
+
+
 class MoodSerializer(serializers.Serializer):
     # "" clears your mood.
     mood = serializers.ChoiceField(choices=list(ConversationMember.Mood.values), allow_blank=True)
@@ -120,10 +139,13 @@ class ConversationSerializer(serializers.ModelSerializer):
         if not obj.is_group:
             return []
         out = []
-        for m in obj.members.order_by("created_at"):
+        for m in obj.members.select_related("user").order_by("created_at"):
             mood = services.member_mood(m)  # None once it has faded
             out.append({
                 "user_id": str(m.user_id), "role": m.role,
+                # Names ride along so every member sees who is who, even when they may not open
+                # each other's full profiles.
+                **services.member_label(m.user),
                 "mood": mood, "mood_set_at": m.mood_set_at if mood else None,
             })
         return out

@@ -1,3 +1,4 @@
+import secrets
 from datetime import timedelta
 
 from django.core.cache import cache
@@ -13,7 +14,14 @@ from apps.common.exceptions import AccountNotEligibleError, DomainError
 from apps.common.utils import clamp_page_size
 
 from .media_utils import clamp_voice_duration, process_message_attachment, process_voice_upload
-from .models import Conversation, ConversationMember, ConversationParticipantState, Message, MessageAttachment
+from .models import (
+    Conversation,
+    ConversationMember,
+    ConversationParticipantState,
+    GroupJoinRequest,
+    Message,
+    MessageAttachment,
+)
 
 MAX_MESSAGE_LENGTH = 4000
 GROUP_MAX_MEMBERS = 20   # including the creator
@@ -171,6 +179,112 @@ def rename_group(conversation: Conversation, actor: User, title: str) -> Convers
     conversation.title = (title or "").strip()[:80]
     conversation.save(update_fields=["title", "updated_at"])
     return conversation
+
+
+# ---------------------------------------------------------------------------
+# Who is in the group: names every member can see
+# ---------------------------------------------------------------------------
+def member_label(user) -> dict:
+    """The public name of a group member: display name, falling back to the username.
+    Members of a group always see each other's names, so this never depends on whether
+    the viewer is allowed to open that person's full profile. (Never an email or phone.)"""
+    profile = getattr(user, "profile", None)  # reverse one-to-one: None if there is no profile row
+    display = (getattr(profile, "display_name", "") or "").strip() if profile else ""
+    username = (getattr(user, "username", "") or "").strip()
+    return {"display_name": display or username or "Member", "username": username}
+
+
+# ---------------------------------------------------------------------------
+# Invite links + join requests (groups)
+# ---------------------------------------------------------------------------
+def _require_group(conversation: Conversation) -> None:
+    if not conversation.is_group:
+        raise DomainError("This is not a group conversation.")
+
+
+@transaction.atomic
+def ensure_invite_code(conversation: Conversation, actor: User, *, reset: bool = False) -> str:
+    """An admin gets the group's invite code (made on first use). reset=True replaces it,
+    so a link that leaked stops working. Opening a link only lets someone ASK to join."""
+    _require_group_admin(conversation, actor)
+    if reset or not conversation.invite_code:
+        conversation.invite_code = secrets.token_urlsafe(16)
+        conversation.save(update_fields=["invite_code", "updated_at"])
+    return conversation.invite_code
+
+
+def group_for_invite_code(code: str) -> Conversation | None:
+    code = (code or "").strip()
+    if not code or len(code) > 32:
+        return None
+    return Conversation.objects.filter(is_group=True, invite_code=code).first()
+
+
+def join_status(conversation: Conversation, user: User) -> str:
+    """'member' | 'pending' | 'declined' | 'none' for this person and this group."""
+    if conversation.members.filter(user_id=user.id).exists():
+        return "member"
+    req = conversation.join_requests.filter(user_id=user.id).first()
+    # An approved request whose member later left is just history: they would have to ask again.
+    if req is None or req.status == GroupJoinRequest.Status.APPROVED:
+        return "none"
+    return req.status
+
+
+@transaction.atomic
+def request_to_join(conversation: Conversation, user: User) -> GroupJoinRequest | None:
+    """Ask to join. Returns None if the person is already in the group.
+    A declined person (or one who left) may ask again (it re-opens the same row), but a pending one can't pile up requests."""
+    _require_group(conversation)
+    if conversation.members.filter(user_id=user.id).exists():
+        return None
+    # One generic message for every refusal, so this can't reveal who blocked whom.
+    admin_ids = list(conversation.members.filter(role=ConversationMember.Role.ADMIN).values_list("user_id", flat=True))
+    if any(is_blocked_between(user.id, a) for a in admin_ids):
+        raise DomainError("You can't ask to join this group.")
+    if conversation.members.count() >= GROUP_MAX_MEMBERS:
+        raise DomainError("This group is full.")
+    req, created = GroupJoinRequest.objects.get_or_create(conversation=conversation, user=user)
+    if not created and req.status != GroupJoinRequest.Status.PENDING:
+        req.status = GroupJoinRequest.Status.PENDING
+        req.decided_by = None
+        req.decided_at = None
+        req.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+    return req
+
+
+def list_join_requests(conversation: Conversation, actor: User) -> list:
+    _require_group_admin(conversation, actor)
+    return list(
+        conversation.join_requests.filter(status=GroupJoinRequest.Status.PENDING)
+        .select_related("user")
+        .order_by("created_at")
+    )
+
+
+@transaction.atomic
+def decide_join_request(conversation: Conversation, actor: User, request_id, *, approve: bool) -> GroupJoinRequest:
+    _require_group_admin(conversation, actor)
+    req = (
+        GroupJoinRequest.objects.select_for_update()
+        .filter(id=request_id, conversation=conversation, status=GroupJoinRequest.Status.PENDING)
+        .select_related("user")
+        .first()
+    )
+    if req is None:
+        raise DomainError("That request is no longer waiting.")
+    if approve:
+        if conversation.members.count() >= GROUP_MAX_MEMBERS:
+            raise DomainError(f"A group can have at most {GROUP_MAX_MEMBERS} people.")
+        if is_blocked_between(actor.id, req.user_id):
+            raise DomainError("You can't add this person.")
+        ConversationMember.objects.get_or_create(conversation=conversation, user=req.user)
+        conversation.save(update_fields=["updated_at"])
+    req.status = GroupJoinRequest.Status.APPROVED if approve else GroupJoinRequest.Status.DECLINED
+    req.decided_by = actor
+    req.decided_at = timezone.now()
+    req.save(update_fields=["status", "decided_by", "decided_at", "updated_at"])
+    return req
 
 
 # ---------------------------------------------------------------------------
