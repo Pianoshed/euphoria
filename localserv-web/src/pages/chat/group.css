@@ -69,7 +69,6 @@
 .cv-outbox button { border: 0; background: none; padding: 0; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; color: inherit; }
 
 @media (max-width: 860px) {
-  .cv-members-toggle { display: inline-flex; }
   .gp-overlay { align-items: flex-end; padding: 0; }
   .gp-box { width: 100%; border-radius: 18px 18px 0 0; max-height: 88dvh; }
 }
@@ -275,3 +274,62 @@
   .cv-actions__btn { padding: 0 10px; font-size: 0.78rem; }
 }
 @media (prefers-reduced-motion: reduce) { .cv-actions { animation: none; } }
+
+
+/* ======================================================================
+   Group chat on phones: calmer header, one compact strip, one-line pins
+   ====================================================================== */
+
+/* Members button: a proper pill (👥 + count), shown only where the side panel is hidden */
+.cv-members-btn { display: none; }
+
+@media (max-width: 860px) {
+  .cv-head--group { gap: 10px; padding: 10px 12px; }
+  .cv-head--group .cv-head__avatar--group { width: 38px; height: 38px; font-size: 1.1rem; }
+  .cv-head--group .cv-head__actions { gap: 6px; }
+  .cv-head--group .cv-call-btn__text { display: none; }   /* Data saver: icon only, the Members pill leads */
+
+  .cv-members-btn {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 12px; flex: none;
+    font: inherit; font-size: 0.85rem; font-weight: 700; color: #3d3b94;
+    background: #ece7ff; border: 0; border-radius: 999px; cursor: pointer;
+  }
+  .cv-members-btn[aria-expanded="true"] { background: #3d3b94; color: #fff; }
+  .cv-members-btn__icon { font-size: 1rem; line-height: 1; }
+  .cv-members-btn__dot {
+    position: absolute; top: -2px; right: -2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #e2394a; border: 2px solid #fffdfa;
+  }
+
+  /* Mood strip + pins: soft chips with breathing room instead of ruled-off bars */
+  .gx-top {
+    margin: 8px 12px 0; padding: 6px 6px 6px 12px; gap: 10px;
+    border: 0; border-radius: 999px; background: rgba(31, 29, 61, 0.05);
+  }
+  .gx-vibe--empty { font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gx-mood__btn { padding: 4px 10px; font-size: 0.8rem; }
+
+  .gx-pins {
+    align-items: center; gap: 8px; margin: 8px 12px 0; padding: 6px 8px 6px 10px;
+    border: 0; border-radius: 14px;
+  }
+  .gx-pins__icon { padding-top: 0; }
+  .gx-pin { padding: 2px 2px; font-size: 0.82rem; }
+  .gx-pins:not(.is-open) .gx-pins__list > li:nth-child(n+2) { display: none; }   /* phones: latest pin only, '+N' shows the rest */
+  .gx-pins__more {
+    flex: none; padding: 3px 10px; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    color: #3d3b94; background: #fff; border: 1px solid rgba(31, 29, 61, 0.14); border-radius: 999px;
+  }
+
+  /* Data saver notice: one slim line */
+  .cv-chat .cv-saver-note { margin: 8px 12px 0; padding: 6px 10px; font-size: 0.78rem; }
+
+  /* Messages: more air, and sender names clear of the bubble above */
+  .cv-log.cv-log--group { height: clamp(320px, calc(100dvh - 17rem), 640px); padding: 12px 12px 6px; }
+  .cv-log--group .cv-msg { margin-top: 14px; }
+  .cv-log--group .cv-msg--joined { margin-top: 3px; }
+  .cv-sender { margin: 0 0 3px 8px; }
+}
+
+@media (min-width: 861px) { .gx-pins__more { display: none; } }

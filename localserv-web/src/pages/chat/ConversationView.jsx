@@ -341,6 +341,7 @@ export default function ConversationView() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reactTarget, setReactTarget] = useState(null); // { id, full }
+  const [pinsOpen, setPinsOpen] = useState(false);       // pinned bar: one line, or all of them
   const [menuFor, setMenuFor] = useState(null);         // id of the message whose action bar is open
   // Reactions are stored in this browser only (see note in chat.css / README).
   // Shape: { [messageId]: ['❤️', '😂'] } = the emoji *I* reacted with.
@@ -994,7 +995,7 @@ export default function ConversationView() {
     <div className="page cv">
       <div className="cv-shell">
         <section className="cv-chat" aria-label={`Conversation with ${displayName}`}>
-          <header className="cv-head">
+          <header className={`cv-head${isGroup ? ' cv-head--group' : ''}`}>
             {isGroup ? (
               <span className="cv-head__avatar cv-head__avatar--group" aria-hidden="true">👥</span>
             ) : otherUserId ? (
@@ -1039,12 +1040,12 @@ export default function ConversationView() {
                 </>
               )}
               {isGroup && (
-                <button type="button" className="cv-call-btn cv-members-toggle" aria-expanded={showMembers}
+                <button type="button" className="cv-members-btn" aria-expanded={showMembers}
+                  aria-label={`Members (${memberCount})${joinRequests.length ? `, ${joinRequests.length} waiting to join` : ''}`}
                   onClick={() => setShowMembers((v) => !v)}>
-                  <span className="cv-call-btn__text" style={{ display: 'inline' }}>Members</span>
-                  {joinRequests.length > 0 && (
-                    <span className="gx-badge" aria-label={`${joinRequests.length} waiting to join`}>{joinRequests.length}</span>
-                  )}
+                  <span aria-hidden="true" className="cv-members-btn__icon">👥</span>
+                  <span className="cv-members-btn__count">{memberCount}</span>
+                  {joinRequests.length > 0 && <span className="cv-members-btn__dot" aria-hidden="true" />}
                 </button>
               )}
               <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
@@ -1091,7 +1092,7 @@ export default function ConversationView() {
           )}
 
           {isGroup && (conv?.pinned_messages?.length > 0) && (
-            <div className="gx-pins" role="region" aria-label="Pinned messages">
+            <div className={`gx-pins${pinsOpen ? ' is-open' : ''}`} role="region" aria-label="Pinned messages">
               <span className="gx-pins__icon" aria-hidden="true">📌</span>
               <ul className="gx-pins__list">
                 {conv.pinned_messages.map((p) => (
@@ -1103,6 +1104,11 @@ export default function ConversationView() {
                   </li>
                 ))}
               </ul>
+              {conv.pinned_messages.length > 1 && (
+                <button type="button" className="gx-pins__more" aria-expanded={pinsOpen} onClick={() => setPinsOpen((o) => !o)}>
+                  {pinsOpen ? 'Less' : `+${conv.pinned_messages.length - 1}`}
+                </button>
+              )}
             </div>
           )}
 
