@@ -9,6 +9,7 @@ import AuthShowcase from './AuthShowcase';
 import GoogleButton from './GoogleButton';
 import GoogleSignupStep from './GoogleSignupStep';
 import RoleChoice from './RoleChoice';
+import ResendVerification from '../../components/ResendVerification';
 
 export default function Register() {
   const { loginWithGoogle } = useAuth();
@@ -72,6 +73,8 @@ export default function Register() {
           activate your account, then <Link to="/login">log in</Link> and start planning your
           next hangout.
         </p>
+        <p className="text-sm muted">Didn&rsquo;t get it? It can take a minute.</p>
+        <ResendVerification email={form.email} />
       </AuthCard>
     );
   }

@@ -83,10 +83,10 @@ export const googleLogin = (idToken) =>
 
 // Second step of Google signup: send the same (fresh) ID token plus the chosen
 // username and role. The server takes the email from the verified token.
-export const googleRegister = (idToken, username, role) =>
+export const googleRegister = (idToken, username, password, role) =>
   apiFetch('/api/accounts/google/register/', {
     method: 'POST',
-    body: { id_token: idToken, username, role },
+    body: { id_token: idToken, username, password, role },
   });
 
 export const completeOnboarding = (role) =>

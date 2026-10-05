@@ -699,7 +699,7 @@ def authenticate_google_login(request, id_token: str) -> dict:
 
 
 @transaction.atomic
-def register_google_user(request, *, id_token: str, username: str, role: str = AccountRole.CUSTOMER) -> User:
+def register_google_user(request, *, id_token: str, username: str, password: str, role: str = AccountRole.CUSTOMER) -> User:
     """Create an account from a Google identity, then log it in.
 
     The Google token is verified AGAIN here: the email comes from the
@@ -707,6 +707,11 @@ def register_google_user(request, *, id_token: str, username: str, role: str = A
     address by editing the request."""
     idinfo = _verify_google_token(id_token)
     email = idinfo["email"]
+
+    try:
+        validate_password(password)
+    except DjangoValidationError as exc:
+        raise ValidationError({"password": list(exc.messages)}) from exc
 
     if User.objects.filter(email=email).exists():
         raise ValidationError({"id_token": ["An account with this email already exists. Please log in."]})
@@ -718,7 +723,7 @@ def register_google_user(request, *, id_token: str, username: str, role: str = A
             user = User.objects.create_user(
                 email=email,
                 username=username,
-                password=None,  # Google-only; they can set a password via reset later
+                password=password,  # chosen on the sign-up form, so they can also log in with email + password
                 role=role,
                 email_verified=True,  # Google already verified the address
                 status=AccountStatus.ACTIVE,

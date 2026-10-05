@@ -4,6 +4,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
 import AuthCard from './AuthCard';
 import { ErrorAlert, Spinner } from '../../components/ui';
+import ResendVerification from '../../components/ResendVerification';
 
 export default function VerifyEmail() {
   const [params] = useSearchParams();
@@ -33,8 +34,9 @@ export default function VerifyEmail() {
         <>
           <ErrorAlert error={error} />
           <p className="text-sm muted">
-            The link may have expired. <Link to="/login">Log in</Link> and request a new one from your account settings.
+            The link may have expired or already been used. Enter your email to get a new one, or <Link to="/login">log in</Link>.
           </p>
+          <ResendVerification />
         </>
       )}
     </AuthCard>

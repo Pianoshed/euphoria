@@ -11,8 +11,15 @@ from django.conf import settings
 from django.core.mail import send_mail
 
 
+def _frontend_link(path: str, raw_token: str) -> str:
+    """Build a link to a page of the React site. FRONTEND_URL comes from settings
+    (e.g. http://localhost:5173 in dev, https://yourdomain.com in production)."""
+    base = getattr(settings, "FRONTEND_URL", "http://localhost:5173").rstrip("/")
+    return f"{base}{path}?token={raw_token}"
+
+
 def send_verification_email(user, raw_token: str) -> None:
-    link = f"https://example.com/verify-email?token={raw_token}"
+    link = _frontend_link("/verify-email", raw_token)
     send_mail(
         subject="Verify your email address",
         message=(
@@ -28,7 +35,7 @@ def send_verification_email(user, raw_token: str) -> None:
 
 
 def send_password_reset_email(user, raw_token: str) -> None:
-    link = f"https://example.com/reset-password?token={raw_token}"
+    link = _frontend_link("/password-reset/confirm", raw_token)
     send_mail(
         subject="Reset your password",
         message=(

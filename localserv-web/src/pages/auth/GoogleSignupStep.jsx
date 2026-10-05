@@ -17,15 +17,21 @@ export default function GoogleSignupStep({ google, onCancel }) {
   const navigate = useNavigate();
   const [username, setUsername] = useState(google.suggestedUsername || '');
   const [role, setRole] = useState('CUSTOMER');
+  const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (password !== confirm) {
+      setError({ message: 'The two passwords do not match.' });
+      return;
+    }
     setSubmitting(true);
     try {
-      await registerWithGoogle(google.token, username.trim(), role);
+      await registerWithGoogle(google.token, username.trim(), password, role);
       navigate('/services', { replace: true });
     } catch (err) {
       setError(err);
@@ -37,8 +43,8 @@ export default function GoogleSignupStep({ google, onCancel }) {
     <>
       <h1>Finish creating your account</h1>
       <p className="auth-sub">
-        <strong className="break">{google.email}</strong> isn't registered yet. Choose a username and
-        what you're here for, and you're in.
+        <strong className="break">{google.email}</strong> isn't registered yet. Choose a username,
+        create a password and say what you're here for, and you're in.
       </p>
 
       <form onSubmit={handleSubmit} className="stack">
@@ -55,6 +61,17 @@ export default function GoogleSignupStep({ google, onCancel }) {
           <input id="g-username" type="text" className="input" required minLength={3} maxLength={30}
             autoComplete="username" autoCapitalize="none" spellCheck={false}
             value={username} onChange={(e) => setUsername(e.target.value)} />
+        </div>
+
+        <div className="field">
+          <label htmlFor="g-password">Create a password</label>
+          <input id="g-password" type="password" className="input" required minLength={10}
+            autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+        </div>
+        <div className="field">
+          <label htmlFor="g-confirm">Confirm password</label>
+          <input id="g-confirm" type="password" className="input" required minLength={10}
+            autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
 
         <button className="btn-primary-full" disabled={submitting} type="submit">

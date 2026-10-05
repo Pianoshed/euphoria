@@ -62,7 +62,7 @@ export function AuthProvider({ children }) {
 
   // Step 2 of Google signup: creates the account and logs the person in.
   const registerWithGoogle = useCallback(
-    async (credential, username, role) => finishLogin(await googleRegister(credential, username, role)),
+    async (credential, username, password, role) => finishLogin(await googleRegister(credential, username, password, role)),
     [finishLogin],
   );
 

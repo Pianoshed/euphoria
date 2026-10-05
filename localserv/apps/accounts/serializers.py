@@ -137,6 +137,7 @@ class GoogleRegisterSerializer(serializers.Serializer):
 
     id_token = serializers.CharField()
     username = serializers.CharField(min_length=3, max_length=30)
+    password = serializers.CharField(write_only=True, trim_whitespace=False)
     # Same allowed roles as RegisterSerializer: never admin/moderator.
     role = serializers.ChoiceField(
         choices=[AccountRole.CUSTOMER.value, AccountRole.PROVIDER.value],

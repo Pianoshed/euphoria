@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert } from '../../components/ui';
 import AuthShowcase from './AuthShowcase';
 import GoogleButton from './GoogleButton';
+import ResendVerification from '../../components/ResendVerification';
 
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
@@ -89,6 +90,9 @@ export default function Login() {
           <p className="auth-sub">Sign in to keep the plans going.</p>
 
           <ErrorAlert error={error} />
+          {/^please verify your email/i.test(error?.body?.detail || '') && (
+            <ResendVerification email={form.email} />
+          )}
           {notice && (
             <p role="status" className="auth-sub" style={{ color: '#1d4ed8', fontWeight: 500 }}>
               {notice}
