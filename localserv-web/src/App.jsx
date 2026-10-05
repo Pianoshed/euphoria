@@ -27,6 +27,7 @@ import WalletPage from './pages/wallet/Wallet';
 
 import ConversationList from './pages/chat/ConversationList';
 import ConversationView from './pages/chat/ConversationView';
+import JoinGroup from './pages/chat/JoinGroup';
 import CallLog from './pages/chat/CallLog';
 
 import MyProfile from './pages/profile/MyProfile';
@@ -63,6 +64,7 @@ function AppRoutes() {
       <Route path="/wallet" element={<ProtectedRoute><WalletPage /></ProtectedRoute>} />
 
       <Route path="/chat" element={<ProtectedRoute><ConversationList /></ProtectedRoute>} />
+      <Route path="/chat/join/:code" element={<ProtectedRoute><JoinGroup /></ProtectedRoute>} />
       <Route path="/chat/:id" element={<ProtectedRoute><ConversationView /></ProtectedRoute>} />
       <Route path="/calls" element={<ProtectedRoute><CallLog /></ProtectedRoute>} />
 

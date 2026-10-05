@@ -56,7 +56,7 @@
 
 .cv-head__avatar--group { display: inline-flex !important; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ece7ff; font-size: 1.2rem; }
 .cv-members-toggle { display: none; }
-.cv-members-sheet { display: none; margin: 0 14px 8px; }
+.cv-members-sheet, .cv-members-backdrop { display: none; }
 
 /* Who said it, in groups */
 .cv-sender { margin: 0 0 2px 6px; font-size: 0.75rem; font-weight: 700; }
@@ -70,7 +70,6 @@
 
 @media (max-width: 860px) {
   .cv-members-toggle { display: inline-flex; }
-  .cv-members-sheet { display: block; }
   .gp-overlay { align-items: flex-end; padding: 0; }
   .gp-box { width: 100%; border-radius: 18px 18px 0 0; max-height: 88dvh; }
 }
@@ -156,10 +155,6 @@
 .gx-pin strong { flex: none; }
 .gx-pin span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a4868; }
 
-.gx-pinbtn { opacity: 0.3; }
-.gx-pinbtn.is-on { opacity: 1; }
-.cv-msg:hover .gx-pinbtn { opacity: 0.7; }
-.cv-msg:hover .gx-pinbtn.is-on { opacity: 1; }
 
 .cv-flash .cv-bubble { animation: gx-flash 1.4s ease; }
 @keyframes gx-flash { 0%, 60% { box-shadow: 0 0 0 3px rgba(242, 183, 5, 0.7); } 100% { box-shadow: none; } }
@@ -167,3 +162,116 @@
   .cv-flash .cv-bubble { animation: none; box-shadow: 0 0 0 3px rgba(242, 183, 5, 0.7); }
   .gx-vibe__seg { transition: none; }
 }
+
+
+/* ======================================================================
+   Fixes: mobile layout, voice notes, mood rings, names, join requests
+   ====================================================================== */
+
+/* ---- Mood ring: it used to be clipped by the scrolling list and touch the next row ---- */
+.gpanel__list { padding: 6px 4px; }
+.gpanel__row { gap: 12px; padding: 8px 4px; min-width: 0; }
+.gpanel__avatar-slot { flex: none; display: inline-flex; padding: 5px; }   /* room for the 3px gap + 2px ring */
+.gx-ring { box-shadow: 0 0 0 2px #fffdfa, 0 0 0 4px var(--ring, transparent); }
+.gpanel__name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.gpanel__name-text { min-width: 0; overflow-wrap: anywhere; }
+.gpanel__name .gx-tag { margin-left: 0; }
+.gpanel__row-actions { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+.gpanel__close { margin-left: auto; border: 0; background: none; font-size: 1.7rem; line-height: 1; cursor: pointer; color: inherit; }
+
+/* ---- Panel extras: invite link + join requests ---- */
+.gpanel__section { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 2px; border-top: 1px solid rgba(31, 29, 61, 0.08); }
+.gpanel__section--requests { border: 1px solid rgba(242, 183, 5, 0.5); border-radius: 14px; padding: 10px 12px; background: rgba(242, 183, 5, 0.1); }
+.gpanel__h { margin: 0; font-size: 0.9rem; }
+.gpanel__hint { margin: 0; font-size: 0.78rem; color: #6b6985; }
+.gpanel__link-input { font-size: 0.82rem; text-overflow: ellipsis; }
+.gpanel__reqs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.gpanel__req { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.gpanel__req-name { flex: 1 1 120px; min-width: 0; font-weight: 600; }
+.gpanel__req-name small { font-weight: 400; color: #6b6985; }
+.gpanel__req-btns { display: inline-flex; gap: 6px; }
+
+/* ---- Voice notes: never wider than the bubble, so they can't hang over the edge ---- */
+.cv-msg .cv-voice { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.cv-msg .cv-voice__bar { flex: 1 1 0; width: 0; min-width: 0; }
+.cv-bubble--voice { flex: 0 1 280px; width: 280px; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.cv-bubble .cv-once { max-width: 100%; box-sizing: border-box; white-space: normal; text-align: left; }
+.cv-msg__row { min-width: 0; }
+.cv-sender { max-width: 100%; overflow: hidden; display: flex; align-items: center; gap: 4px; }
+.cv-sender__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-sender .gx-dot { flex: none; margin-left: 2px; }
+
+/* ---- Phones ---- */
+@media (max-width: 860px) {
+  /* Members: a sheet over the chat (it used to push the whole chat down the page) */
+  .cv-members-backdrop { display: block; position: fixed; inset: 0; z-index: 70; background: rgba(20, 18, 40, 0.5); }
+  .cv-members-sheet {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 71; margin: 0;
+    max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 18px 18px 0 0; background: #fffdfa; box-shadow: 0 -12px 40px -16px rgba(20, 18, 40, 0.5);
+  }
+  .cv-members-sheet .gpanel { border: 0; border-radius: 18px 18px 0 0; }
+  .cv-members-sheet .gpanel__list { max-height: none; overflow: visible; }
+
+  /* Mood strip and pins: tidy, one line each, no sideways scroll */
+  .gx-top { gap: 8px; padding: 6px 12px; }
+  .gx-mood__btn { padding: 5px 10px; }
+  .gx-mood__pop { width: min(230px, calc(100vw - 24px)); }
+  .gx-pins { padding: 6px 12px; }
+
+  /* The chat area makes room for the strip + pins instead of overflowing the screen */
+  .cv-log.cv-log--group { height: clamp(300px, calc(100dvh - 19rem), 640px); }
+
+  /* Message rows: smaller action buttons so the bubble keeps its width */
+  .cv-msg__row { max-width: 100%; gap: 2px; }
+  .cv-bubble--voice { flex-basis: 240px; width: 240px; }
+  .cv-msg { max-width: 100%; }
+
+  .gpanel__req-btns { width: 100%; }
+}
+
+.gx-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #e2394a; color: #fff; font-size: 0.7rem; font-weight: 700; }
+.join-card { max-width: 440px; margin: 40px auto; padding: 24px 20px; text-align: center; display: flex; flex-direction: column; gap: 12px; border-radius: 18px; background: #fffdfa; border: 1px solid rgba(31, 29, 61, 0.12); }
+.join-card h1 { margin: 0; font-size: 1.3rem; overflow-wrap: anywhere; }
+.join-card p { margin: 0; color: #6b6985; }
+
+
+/* ======================================================================
+   Message actions: hidden until you tap a message (replaces the buttons that
+   used to sit beside every bubble)
+   ====================================================================== */
+.cv-bubble { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cv-bubble--deleted { cursor: default; }
+.cv-bubble[aria-expanded="true"] { box-shadow: 0 0 0 2px rgba(61, 59, 148, 0.35); }
+.cv-bubble:focus-visible { outline: 2px solid #3d3b94; outline-offset: 2px; }
+
+.cv-actions {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  max-width: 100%; margin: 4px 0 0; padding: 3px;
+  background: #fff; border: 1px solid rgba(31, 29, 61, 0.12); border-radius: 999px;
+  box-shadow: 0 8px 22px -12px rgba(31, 29, 61, 0.45);
+  animation: cv-actions-in 120ms ease-out;
+}
+@keyframes cv-actions-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.cv-actions .cv-react { position: static; }   /* so the emoji popover anchors to the whole bar, not one button */
+.cv-actions__btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+  border: 0; border-radius: 999px; background: transparent; color: #1f1d3d;
+  font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.cv-actions__btn:hover, .cv-actions__btn:focus-visible, .cv-actions__btn[aria-expanded="true"] { background: rgba(61, 59, 148, 0.09); }
+.cv-actions__btn.is-on { background: rgba(242, 183, 5, 0.22); }
+.cv-actions__btn--danger { color: #b0202f; }
+.cv-actions__btn--danger:hover, .cv-actions__btn--danger:focus-visible { background: rgba(226, 57, 74, 0.12); }
+
+/* the emoji popover opens above the bar, kept inside the screen */
+.cv-actions .cv-react__pop { bottom: calc(100% + 6px); left: 0; max-width: calc(100vw - 24px); }
+.cv-msg--mine .cv-actions .cv-react__pop { left: auto; right: 0; }
+.cv-actions .cv-quick { flex-wrap: wrap; justify-content: center; }
+.cv-actions .cv-react__pop .cv-palette { width: min(300px, calc(100vw - 24px)); }
+
+@media (max-width: 860px) {
+  .cv-actions__btn { padding: 0 10px; font-size: 0.78rem; }
+}
+@media (prefers-reduced-motion: reduce) { .cv-actions { animation: none; } }

@@ -2,7 +2,7 @@ import '../../styles/index.css';
 import './chat.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
 import { API_BASE, apiFetch, apiBlob } from '../../api/client';
@@ -333,12 +333,15 @@ export default function ConversationView() {
   const [showMembers, setShowMembers] = useState(false);    // phone: member sheet under the header
   const [pickerOpen, setPickerOpen] = useState(false);
   const [groupBusy, setGroupBusy] = useState(false);
+  const [joinRequests, setJoinRequests] = useState([]);   // admins: people waiting to be let in
+  const location = useLocation();
   const [outbox, setOutbox] = useState([]);            // messages still sending or that failed (Resend)
   const [recState, setRecState] = useState('idle');
   const [recSecs, setRecSecs] = useState(0);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reactTarget, setReactTarget] = useState(null); // { id, full }
+  const [menuFor, setMenuFor] = useState(null);         // id of the message whose action bar is open
   // Reactions are stored in this browser only (see note in chat.css / README).
   // Shape: { [messageId]: ['❤️', '😂'] } = the emoji *I* reacted with.
   const [reactions, setReactions] = useState({});
@@ -365,6 +368,7 @@ export default function ConversationView() {
     profilesLoadedRef.current = new Set();
     setOutbox([]);
     setShowMembers(false);
+    setJoinRequests([]);
     chatApi.getConversation(id)
       .then((c) => {
         setConv(c);
@@ -397,6 +401,7 @@ export default function ConversationView() {
 
   // Names for the people in a group. Fetched once per person (not on every refresh).
   const loadMemberProfiles = useCallback((c) => {
+    if (saver.active) return; // names come with the member list; profiles are only for pictures
     const wanted = (c?.members || []).map((m) => m.user_id).filter((uid) => uid !== user.id && !profilesLoadedRef.current.has(uid));
     wanted.forEach((uid) => profilesLoadedRef.current.add(uid));
     wanted.forEach((uid) => {
@@ -404,7 +409,7 @@ export default function ConversationView() {
         .then((p) => setMemberProfiles((cur) => ({ ...cur, [uid]: p })))
         .catch(() => setMemberProfiles((cur) => ({ ...cur, [uid]: { username: 'Member' } })));
     });
-  }, [user.id]);
+  }, [user.id, saver.active]);
   useEffect(() => { if (conv?.is_group) loadMemberProfiles(conv); }, [conv, loadMemberProfiles]);
 
   const reloadConversation = useCallback(
@@ -412,10 +417,23 @@ export default function ConversationView() {
     [id, navigate]
   );
 
+  const memberOf = (uid) => (conv?.members || []).find((x) => String(x.user_id) === String(uid));
+  // Every member's name comes from the group itself, so it shows for everyone, not just people
+  // whose profile you are allowed to open. The profile is only a fallback.
   const nameOfSender = (uid) => {
+    const m = memberOf(uid);
     const p = memberProfiles[uid];
-    return p?.display_name || p?.username || 'Member';
+    return m?.display_name || m?.username || p?.display_name || p?.username || 'Member';
   };
+
+  const senderMood = (uid) => moodOf(memberOf(uid));
+
+  // Admins: who is waiting to be let in. Reloaded when the group says it changed.
+  const reloadJoinRequests = useCallback(() => {
+    if (!conv?.is_group || conv.my_role !== 'admin') { setJoinRequests([]); return Promise.resolve(); }
+    return chatApi.listJoinRequests(id).then((r) => setJoinRequests(r.results ?? r)).catch(() => {});
+  }, [id, conv?.is_group, conv?.my_role]);
+  useEffect(() => { reloadJoinRequests(); }, [reloadJoinRequests]);
 
   // Scroll the message list itself. scrollIntoView() also scrolled the whole page,
   // which on a phone yanked the header out of view every time a message arrived.
@@ -459,16 +477,18 @@ export default function ConversationView() {
 
   // Close the emoji popovers on outside click or Escape.
   useEffect(() => {
-    if (!paletteOpen && !reactTarget) return undefined;
+    if (!paletteOpen && !reactTarget && !menuFor) return undefined;
     const onDown = (e) => {
-      if (e.target.closest('[data-emoji-pop]') || e.target.closest('[data-react-pop]')) return;
+      if (e.target.closest('[data-emoji-pop]') || e.target.closest('[data-react-pop]') || e.target.closest('[data-msg-menu]')) return;
       setPaletteOpen(false);
       setReactTarget(null);
+      setMenuFor(null);
     };
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setPaletteOpen(false);
         setReactTarget(null);
+        setMenuFor(null);
       }
     };
     document.addEventListener('mousedown', onDown);
@@ -477,7 +497,7 @@ export default function ConversationView() {
       document.removeEventListener('mousedown', onDown);
       document.removeEventListener('keydown', onKey);
     };
-  }, [paletteOpen, reactTarget]);
+  }, [paletteOpen, reactTarget, menuFor]);
 
   // Text messages can arrive live over the socket; an attachment
   // always goes through REST (see handleSend) since it's a file
@@ -550,6 +570,8 @@ export default function ConversationView() {
         } : c));
       } else if (data.type === 'members_changed') {
         reloadConversation();
+      } else if (data.type === 'join_requests_changed') {
+        reloadJoinRequests();
       } else if (data.type === 'member_removed') {
         if (String(data.user_id) === String(user.id)) navigate('/chat'); // you were removed from this group
       } else if (data.type === 'error') {
@@ -885,6 +907,15 @@ export default function ConversationView() {
     if (peerLoaded && !isGroup) setPeer(id, { name: peerName, avatar: peerAvatar });
   }, [id, peerLoaded, peerName, peerAvatar, setPeer, isGroup]);
 
+  // Arriving from "Reply privately": put the quoted message in the box and focus it.
+  useEffect(() => {
+    const d = location.state?.draft;
+    if (!d) return;
+    setDraft(d);
+    navigate(location.pathname, { replace: true, state: null }); // so a refresh doesn't re-fill it
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [location.state, location.pathname, navigate]);
+
   // ---- Group actions ----
   const runGroup = async (fn) => {
     setGroupBusy(true);
@@ -901,6 +932,28 @@ export default function ConversationView() {
     runGroup(async () => { await chatApi.removeGroupMember(id, uid); await reloadConversation(); });
   };
   const renameGroupTo = (title) => runGroup(async () => { setConv(await chatApi.renameGroup(id, title)); });
+  const getInvite = async (reset) => (await chatApi.getInviteCode(id, reset)).invite_code;
+  const decideRequest = (requestId, action) => runGroup(async () => {
+    await chatApi.decideJoinRequest(id, requestId, action);
+    await Promise.all([reloadConversation(), reloadJoinRequests()]);
+  });
+  // Answer one person on their own: open (or start) your 1-to-1 chat with them, with the message
+  // you are answering quoted in the draft so they know what it is about. Nothing is posted to the group.
+  const messagePrivately = async (uid, name, m) => {
+    setError(null);
+    try {
+      const direct = await chatApi.startConversation(uid);
+      let draftText = '';
+      if (m) {
+        const what = m.body ? m.body.replace(/\s+/g, ' ').trim() : (isAudioMessage(m) ? 'your voice message' : 'your photo');
+        const short = what.length > 80 ? `${what.slice(0, 77)}…` : what;
+        draftText = `Re "${short}" (in ${groupName}): `;
+      }
+      navigate(`/chat/${direct.id}`, { state: { draft: draftText, from: name } });
+    } catch (err) {
+      setError(err);
+    }
+  };
   const leaveGroup = () => {
     if (!window.confirm('Leave this group? You will stop getting its messages.')) return;
     runGroup(async () => { await chatApi.removeGroupMember(id, user.id); navigate('/chat'); });
@@ -925,8 +978,14 @@ export default function ConversationView() {
   const memberCount = conv?.members?.length || 0;
   const groupName = conv?.title
     || (conv?.members || []).filter((m) => m.user_id !== user.id).slice(0, 3)
-      .map((m) => memberProfiles[m.user_id]?.display_name || memberProfiles[m.user_id]?.username || '…').join(', ')
+      .map((m) => m.display_name || m.username || memberProfiles[m.user_id]?.display_name || memberProfiles[m.user_id]?.username || '…').join(', ')
     || 'Group chat';
+  const panelProps = conv ? {
+    conv, profiles: memberProfiles, meId: user.id, saver: saver.active, busy: groupBusy,
+    requests: joinRequests, onDecide: decideRequest, onGetInvite: getInvite,
+    onMessage: (uid, name) => messagePrivately(uid, name, null),
+    onAdd: () => setPickerOpen(true), onRemove: removePerson, onRename: renameGroupTo, onLeave: leaveGroup,
+  } : null;
   const displayName = isGroup ? groupName : (otherProfile?.display_name || otherProfile?.username || '…');
   const callBusy = call.status !== 'idle' && call.status !== 'ended';
   const peerInfo = { name: displayName, avatar: otherProfile?.avatar || null };
@@ -983,6 +1042,9 @@ export default function ConversationView() {
                 <button type="button" className="cv-call-btn cv-members-toggle" aria-expanded={showMembers}
                   onClick={() => setShowMembers((v) => !v)}>
                   <span className="cv-call-btn__text" style={{ display: 'inline' }}>Members</span>
+                  {joinRequests.length > 0 && (
+                    <span className="gx-badge" aria-label={`${joinRequests.length} waiting to join`}>{joinRequests.length}</span>
+                  )}
                 </button>
               )}
               <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
@@ -1010,10 +1072,13 @@ export default function ConversationView() {
           )}
 
           {isGroup && showMembers && conv && (
-            <div className="cv-members-sheet">
-              <GroupPanel conv={conv} profiles={memberProfiles} meId={user.id} saver={saver.active} busy={groupBusy}
-                onAdd={() => setPickerOpen(true)} onRemove={removePerson} onRename={renameGroupTo} onLeave={leaveGroup} />
-            </div>
+            <>
+              <div className="cv-members-backdrop" onClick={() => setShowMembers(false)} aria-hidden="true" />
+              <div className="cv-members-sheet" role="dialog" aria-modal="true" aria-label="Group members">
+                <GroupPanel {...panelProps} onClose={() => setShowMembers(false)}
+                  onMessage={(uid, name) => { setShowMembers(false); messagePrivately(uid, name, null); }} />
+              </div>
+            </>
           )}
 
           <ErrorAlert error={error} />
@@ -1041,7 +1106,7 @@ export default function ConversationView() {
             </div>
           )}
 
-          <div className="cv-log" ref={logRef} onScroll={onLogScroll}>
+          <div className={`cv-log${isGroup ? ' cv-log--group' : ''}`} ref={logRef} onScroll={onLogScroll}>
             {messages.length === 0 && (
               <p className="cv-empty">No messages yet. Say hi to {displayName}.</p>
             )}
@@ -1064,17 +1129,35 @@ export default function ConversationView() {
                   <div className={`cv-msg${mine ? ' cv-msg--mine' : ''}${joinsPrev ? ' cv-msg--joined' : ''}`}>
                     {isGroup && !mine && !joinsPrev && !m.is_deleted && (
                       <p className="cv-sender" style={{ color: colorFor(m.sender) }}>
-                        {nameOfSender(m.sender)}
-                        {moodOf((conv?.members || []).find((x) => x.user_id === m.sender)) && (
-                          <span className={`gx-dot gx-dot--${moodOf((conv?.members || []).find((x) => x.user_id === m.sender))}`}
-                            title={MOODS[moodOf((conv?.members || []).find((x) => x.user_id === m.sender))].label} aria-hidden="true" />
+                        <span className="cv-sender__name">{nameOfSender(m.sender)}</span>
+                        {senderMood(m.sender) && (
+                          <span className={`gx-dot gx-dot--${senderMood(m.sender)}`}
+                            title={MOODS[senderMood(m.sender)].label} aria-hidden="true" />
                         )}
                       </p>
                     )}
                     <div className="cv-msg__row">
                       <div
-                        className={`cv-bubble${m.is_deleted ? ' cv-bubble--deleted' : ''}`}
+                        className={`cv-bubble${m.is_deleted ? ' cv-bubble--deleted' : ''}${!m.is_deleted && isAudioMessage(m) ? ' cv-bubble--voice' : ''}`}
+                        data-msg-menu
+                        tabIndex={m.is_deleted ? undefined : 0}
+                        aria-expanded={m.is_deleted ? undefined : menuFor === m.id}
+                        onKeyDown={(e) => {
+                          if (m.is_deleted || e.target !== e.currentTarget) return;
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setReactTarget(null);
+                            setMenuFor((cur) => (cur === m.id ? null : m.id));
+                          }
+                        }}
                         onDoubleClick={() => !m.is_deleted && toggleReaction(m.id, '❤️')}
+                        onClick={(e) => {
+                          if (m.is_deleted) return;
+                          if (e.target.closest('a, button, input, audio, label')) return;
+                          if (window.getSelection && String(window.getSelection()).length) return; // selecting text, not tapping
+                          setReactTarget(null);
+                          setMenuFor((cur) => (cur === m.id ? null : m.id));
+                        }}
                       >
                         {m.is_deleted ? (
                           <p><em>Message deleted</em></p>
@@ -1112,26 +1195,26 @@ export default function ConversationView() {
                         )}
                       </div>
 
-                      {!m.is_deleted && (
+                    </div>
+
+                    {menuFor === m.id && !m.is_deleted && (
+                      <div className="cv-actions" role="toolbar" aria-label="Message actions" data-msg-menu>
                         <div className="cv-react" data-react-pop>
-                          <button
-                            type="button"
-                            className="cv-react__btn"
-                            aria-label="React to this message"
-                            aria-expanded={pickerHere}
-                            onClick={() => setReactTarget(pickerHere ? null : { id: m.id, full: false })}
-                          >☺</button>
+                          <button type="button" className="cv-actions__btn" aria-label="React to this message" aria-expanded={pickerHere}
+                            onClick={() => setReactTarget(pickerHere ? null : { id: m.id, full: false })}>
+                            <span aria-hidden="true">☺</span><span className="cv-actions__label">React</span>
+                          </button>
                           {pickerHere && (
                             <div className="cv-react__pop" data-react-pop>
                               {reactTarget.full ? (
-                                <EmojiPalette label="Pick a reaction" onPick={(e) => toggleReaction(m.id, e)} />
+                                <EmojiPalette label="Pick a reaction" onPick={(e) => { toggleReaction(m.id, e); setMenuFor(null); }} />
                               ) : (
                                 <div className="cv-quick" role="group" aria-label="Quick reactions">
                                   {QUICK_REACTIONS.map((e) => (
                                     <button key={e} type="button"
                                       className={`cv-quick__btn${mineReactions.includes(e) ? ' is-on' : ''}`}
                                       aria-label={`React with ${e}`} aria-pressed={mineReactions.includes(e)}
-                                      onClick={() => toggleReaction(m.id, e)}>{e}</button>
+                                      onClick={() => { toggleReaction(m.id, e); setMenuFor(null); }}>{e}</button>
                                   ))}
                                   <button type="button" className="cv-quick__btn cv-quick__more" aria-label="More emoji"
                                     onClick={() => setReactTarget({ id: m.id, full: true })}>+</button>
@@ -1140,17 +1223,27 @@ export default function ConversationView() {
                             </div>
                           )}
                         </div>
-                      )}
-                      {isGroup && !m.is_deleted && (
-                        <button type="button" className={`cv-del gx-pinbtn${m.pinned ? ' is-on' : ''}`}
-                          aria-pressed={Boolean(m.pinned)} aria-label={m.pinned ? 'Unpin this message' : 'Pin this message'}
-                          title={m.pinned ? 'Unpin' : 'Pin to the top'} onClick={() => togglePin(m)}>📌</button>
-                      )}
-                      {mine && !m.is_deleted && (
-                        <button type="button" className="cv-del" aria-label="Delete this message" title="Delete"
-                          onClick={() => handleDelete(m)}>🗑</button>
-                      )}
-                    </div>
+                        {isGroup && !mine && (
+                          <button type="button" className="cv-actions__btn" aria-label={`Reply privately to ${nameOfSender(m.sender)}`}
+                            onClick={() => { setMenuFor(null); messagePrivately(m.sender, nameOfSender(m.sender), m); }}>
+                            <span aria-hidden="true">↩</span><span className="cv-actions__label">Reply privately</span>
+                          </button>
+                        )}
+                        {isGroup && (
+                          <button type="button" className={`cv-actions__btn${m.pinned ? ' is-on' : ''}`} aria-pressed={Boolean(m.pinned)}
+                            aria-label={m.pinned ? 'Unpin this message' : 'Pin this message'}
+                            onClick={() => { setMenuFor(null); togglePin(m); }}>
+                            <span aria-hidden="true">📌</span><span className="cv-actions__label">{m.pinned ? 'Unpin' : 'Pin'}</span>
+                          </button>
+                        )}
+                        {mine && (
+                          <button type="button" className="cv-actions__btn cv-actions__btn--danger" aria-label="Delete this message"
+                            onClick={() => { setMenuFor(null); handleDelete(m); }}>
+                            <span aria-hidden="true">🗑</span><span className="cv-actions__label">Delete</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {mineReactions.length > 0 && (
                       <div className="cv-chips">
@@ -1275,10 +1368,7 @@ export default function ConversationView() {
 
         {isGroup ? (
           <aside className="cv-canvas cv-canvas--group" aria-label="Group members">
-            {conv && (
-              <GroupPanel conv={conv} profiles={memberProfiles} meId={user.id} saver={saver.active} busy={groupBusy}
-                onAdd={() => setPickerOpen(true)} onRemove={removePerson} onRename={renameGroupTo} onLeave={leaveGroup} />
-            )}
+            {conv && <GroupPanel {...panelProps} />}
           </aside>
         ) : (
           <PortraitCanvas profile={otherProfile} otherUserId={otherUserId} presence={presence} />

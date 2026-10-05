@@ -19,6 +19,18 @@ export const removeGroupMember = (conversationId, userId) =>
 export const renameGroup = (conversationId, title) =>
   apiFetch(`/api/chat/conversations/${conversationId}/`, { method: 'PATCH', body: { title } });
 
+// Invite link + join requests. An admin shares the link; whoever opens it can only ASK to join.
+export const getInviteCode = (conversationId, reset = false) =>
+  apiFetch(`/api/chat/conversations/${conversationId}/invite/`, { method: 'POST', body: { reset } });
+export const previewGroupInvite = (code) => apiFetch(`/api/chat/groups/join/${encodeURIComponent(code)}/`);
+export const requestToJoin = (code) =>
+  apiFetch(`/api/chat/groups/join/${encodeURIComponent(code)}/`, { method: 'POST', body: {} });
+export const listJoinRequests = (conversationId) =>
+  apiFetch(`/api/chat/conversations/${conversationId}/join-requests/`);
+// action: 'approve' | 'decline'
+export const decideJoinRequest = (conversationId, requestId, action) =>
+  apiFetch(`/api/chat/conversations/${conversationId}/join-requests/${requestId}/`, { method: 'POST', body: { action } });
+
 export const getConversation = (id) => apiFetch(`/api/chat/conversations/${id}/`);
 
 // `after` (ISO time) asks only for messages created or changed since then: a quiet poll then
