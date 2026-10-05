@@ -399,6 +399,7 @@ export default function ConversationView() {
   useEffect(() => { outboxRef.current = outbox; }, [outbox]);
 
   const isGroup = Boolean(conv?.is_group);
+  const convLoaded = Boolean(conv);
 
   // Names for the people in a group. Fetched once per person (not on every refresh).
   const loadMemberProfiles = useCallback((c) => {
@@ -896,11 +897,13 @@ export default function ConversationView() {
 
   // Tell the call which conversation is open (so a call to it rings here) and who the other person is.
   // These are hooks, so they must stay ABOVE the early return below (hooks can't be skipped on some renders).
+  // Calls are one-to-one only: never register a group (or a conversation still loading) as the
+  // viewed one, or the call provider opens /ws/call/<id>/ and the server rejects it every time.
   useEffect(() => {
-    if (missing) return undefined;
+    if (missing || !convLoaded || isGroup) return undefined;
     setViewedConversation(id);
     return () => clearViewedConversation(id);
-  }, [id, missing, setViewedConversation, clearViewedConversation]);
+  }, [id, missing, convLoaded, isGroup, setViewedConversation, clearViewedConversation]);
   const peerName = otherProfile?.display_name || otherProfile?.username || '\u2026';
   const peerAvatar = otherProfile?.avatar || null;
   const peerLoaded = Boolean(otherProfile);
