@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from django.conf import settings
@@ -116,18 +117,30 @@ def message_attachment_upload_path(instance, filename):
     # Server-generated path/filename, same reasoning as
     # apps.accounts.models.avatar_upload_path -- never trust the
     # client's filename or extension.
-    return f"chat_attachments/{instance.message.conversation_id}/{uuid.uuid4().hex}.jpg"
+    # The extension comes from OUR sniffed type (see media_utils), never the client's filename.
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in (".jpg", ".webm", ".ogg", ".m4a", ".mp3", ".wav"):
+        ext = ".jpg"
+    return f"chat_attachments/{instance.message.conversation_id}/{uuid.uuid4().hex}{ext}"
 
 
 class MessageAttachment(BaseModel):
-    """One image attachment per message. Images only for now (see
-    apps.chat.media_utils for the same signature-verification +
-    EXIF-stripping treatment avatars get) -- a document/PDF attachment
+    """One attachment per message: an image (signature-verified and
+    re-encoded, EXIF stripped -- see apps.chat.media_utils) or a short
+    voice note (signature-sniffed, size- and length-capped). A document/PDF
     type is a reasonable follow-up but isn't built here."""
+
+    class Kind(models.TextChoices):
+        IMAGE = "image", "Image"
+        AUDIO = "audio", "Voice note"
+
+    kind = models.CharField(max_length=5, choices=Kind.choices, default=Kind.IMAGE)
+    # Voice notes only: length in whole seconds, as reported by the recorder (clamped server-side).
+    duration_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
 
     message = models.OneToOneField(Message, on_delete=models.CASCADE, related_name="attachment")
     # blank=True: the file is removed once a view-once photo has been opened.
-    file = models.ImageField(upload_to=message_attachment_upload_path, blank=True)
+    file = models.FileField(upload_to=message_attachment_upload_path, blank=True)
     original_filename = models.CharField(max_length=255, blank=True)
     size_bytes = models.PositiveIntegerField()
     # View-once: the recipient can open it a single time, then the file is deleted.

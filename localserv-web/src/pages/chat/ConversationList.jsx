@@ -184,7 +184,8 @@ export default function ConversationList() {
           const started = startedLabel(c.created_at);
           const name = profile?.username || '…';
           const preview = c.last_message
-            ? (c.last_message.body ?? 'Message deleted')
+            ? (c.last_message.body === null ? 'Message deleted'
+              : c.last_message.body || (c.last_message.attachment_type === 'audio' ? '🎤 Voice message' : '📷 Photo'))
             : 'Nothing yet. Be brave, say hi.';
 
           return (

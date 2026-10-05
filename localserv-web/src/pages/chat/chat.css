@@ -151,7 +151,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: min(82%, 520px);
+  max-width: min(86%, 640px);
 }
 .cv-msg--mine .cv-msg__row { flex-direction: row-reverse; }
 
@@ -269,12 +269,12 @@
 
 .cv-composer {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 4px;
   padding: 5px 5px 5px 8px;
   background: #fff;
   border: 1.5px solid var(--cv-line);
-  border-radius: 999px;
+  border-radius: 26px;
   transition: border-color 120ms, box-shadow 120ms;
 }
 .cv-composer:focus-within {
@@ -290,6 +290,10 @@
   background: transparent;
   color: inherit;
   font: inherit;
+  line-height: 1.4;
+  resize: none;
+  max-height: 168px;
+  overflow-y: auto;
 }
 
 .cv-icon-btn {
@@ -312,6 +316,8 @@
 
 .cv-send {
   flex: none;
+  align-self: flex-end;
+  margin-bottom: 1px;
   padding: 9px 20px;
   border: 0;
   border-radius: 999px;
@@ -599,3 +605,68 @@
 }
 .cv-viewer__note, .cv-viewer__err { margin: 0; font-size: 0.88rem; opacity: 0.85; text-align: center; }
 .cv-viewer__err { color: #ffb4bb; opacity: 1; }
+
+
+/* ---- Long messages: collapse + "Read more" ------------------------------ */
+.cv-longtext {
+  display: -webkit-box;
+  -webkit-line-clamp: 8;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.cv-longtext.is-open { display: block; -webkit-line-clamp: unset; }
+.cv-more {
+  margin-top: 4px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.cv-more:hover { opacity: 1; }
+.cv-count { align-self: flex-end; padding: 0 4px 12px; font-size: 0.72rem; color: var(--cv-muted); }
+.cv-count.is-max { color: var(--cv-accent); font-weight: 700; }
+
+/* ---- Voice notes -------------------------------------------------------- */
+.cv-icon-btn.cv-mic { color: var(--cv-indigo); }
+.cv-composer--rec { align-items: center; padding: 5px 5px 5px 8px; }
+.cv-rec__dot {
+  flex: none;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  background: var(--cv-accent);
+  animation: cv-pulse 1s ease-in-out infinite;
+}
+.cv-rec__time { font-variant-numeric: tabular-nums; font-weight: 700; }
+.cv-rec__hint { flex: 1; min-width: 0; color: var(--cv-muted); font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-send--rec { display: inline-flex; align-items: center; gap: 6px; align-self: center; margin: 0; }
+@keyframes cv-pulse { 50% { opacity: 0.25; } }
+
+.cv-voice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 200px;
+  width: min(300px, 62vw);
+}
+.cv-voice__btn {
+  flex: none;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px;
+  border: 0; border-radius: 50%;
+  background: var(--cv-indigo); color: #fff;
+  cursor: pointer;
+}
+.cv-voice--mine .cv-voice__btn { background: #fff; color: var(--cv-accent); }
+.cv-voice__bar { flex: 1; min-width: 0; height: 4px; accent-color: var(--cv-indigo); cursor: pointer; }
+.cv-voice--mine .cv-voice__bar { accent-color: #fff; }
+.cv-voice__time { flex: none; font-size: 0.8rem; font-variant-numeric: tabular-nums; opacity: 0.85; }
+.cv-voice audio { display: none; }
+
+@media (prefers-reduced-motion: reduce) { .cv-rec__dot { animation: none; } }
+@media (max-width: 860px) { .cv-msg__row { max-width: 92%; } }

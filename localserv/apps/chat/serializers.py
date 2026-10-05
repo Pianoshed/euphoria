@@ -6,6 +6,8 @@ from .models import CallLog, Conversation, Message
 
 class MessageSerializer(serializers.ModelSerializer):
     attachment_url = serializers.SerializerMethodField()
+    attachment_type = serializers.SerializerMethodField()
+    duration = serializers.SerializerMethodField()
     attachment_view_once = serializers.SerializerMethodField()
     attachment_viewed = serializers.SerializerMethodField()
 
@@ -13,7 +15,7 @@ class MessageSerializer(serializers.ModelSerializer):
         model = Message
         fields = [
             "id", "conversation", "sender", "body",
-            "attachment_url", "attachment_view_once", "attachment_viewed",
+            "attachment_url", "attachment_type", "duration", "attachment_view_once", "attachment_viewed",
             "created_at", "edited_at", "is_deleted",
         ]
         read_only_fields = fields
@@ -26,6 +28,14 @@ class MessageSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         url = attachment.file.url
         return request.build_absolute_uri(url) if request else url
+
+    def get_attachment_type(self, obj):
+        attachment = services.get_message_attachment(obj)
+        return attachment.kind if attachment else None
+
+    def get_duration(self, obj):
+        attachment = services.get_message_attachment(obj)
+        return attachment.duration_seconds if attachment else None
 
     def get_attachment_view_once(self, obj):
         attachment = services.get_message_attachment(obj)
@@ -41,8 +51,12 @@ class SendMessageSerializer(serializers.Serializer):
     # enforces "at least one of body/attachment" itself, since that's a
     # cross-field rule more naturally expressed there than here.
     body = serializers.CharField(max_length=services.MAX_MESSAGE_LENGTH, required=False, allow_blank=True)
-    attachment = serializers.ImageField(required=False)
+    # A FileField (not ImageField) because a voice note is audio; the real validation of
+    # both kinds (signature sniffing, size caps) happens in apps.chat.media_utils.
+    attachment = serializers.FileField(required=False)
     view_once = serializers.BooleanField(required=False, default=False)
+    attachment_type = serializers.ChoiceField(choices=["image", "audio"], required=False, default="image")
+    duration = serializers.FloatField(required=False, allow_null=True, min_value=0, max_value=3600)
 
 
 class EditMessageSerializer(serializers.Serializer):
@@ -79,8 +93,10 @@ class ConversationSerializer(serializers.ModelSerializer):
         last = obj.messages.order_by("-created_at").first()
         if last is None:
             return None
+        attachment = None if last.is_deleted else services.get_message_attachment(last)
         return {
             "body": None if last.is_deleted else last.body,
+            "attachment_type": attachment.kind if attachment else None,
             "sender_id": str(last.sender_id),
             "created_at": last.created_at,
         }

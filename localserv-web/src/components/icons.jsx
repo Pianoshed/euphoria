@@ -64,3 +64,45 @@ export function StarRating({ value = 0, max = 5, size = 16 }) {
     </span>
   );
 }
+
+export function MicIcon({ size = 20 }) {
+  return (
+    <Svg size={size}>
+      <rect x="9" y="3" width="6" height="12" rx="3" />
+      <path d="M5 11a7 7 0 0014 0M12 18v3" />
+    </Svg>
+  );
+}
+
+export function StopIcon({ size = 16 }) {
+  return (
+    <Svg size={size} fill="currentColor" stroke="none">
+      <rect x="6" y="6" width="12" height="12" rx="2" />
+    </Svg>
+  );
+}
+
+export function TrashIcon({ size = 20 }) {
+  return (
+    <Svg size={size}>
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 002 2h6a2 2 0 002-2l1-12M9 7V4h6v3" />
+    </Svg>
+  );
+}
+
+export function PlayIcon({ size = 16 }) {
+  return (
+    <Svg size={size} fill="currentColor" stroke="none">
+      <path d="M8 5.5v13a1 1 0 001.5.86l10.5-6.5a1 1 0 000-1.72L9.5 4.64A1 1 0 008 5.5z" />
+    </Svg>
+  );
+}
+
+export function PauseIcon({ size = 16 }) {
+  return (
+    <Svg size={size} fill="currentColor" stroke="none">
+      <rect x="6" y="5" width="4" height="14" rx="1" />
+      <rect x="14" y="5" width="4" height="14" rx="1" />
+    </Svg>
+  );
+}

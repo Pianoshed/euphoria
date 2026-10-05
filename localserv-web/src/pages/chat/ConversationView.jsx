@@ -12,7 +12,7 @@ import { useCall } from '../../context/CallContext';
 import { useDataSaver } from '../../hooks/useDataSaver';
 import { compressImage } from '../../utils/dataSaver';
 import { ErrorAlert, Spinner } from '../../components/ui';
-import { PaperclipIcon } from '../../components/icons';
+import { PaperclipIcon, MicIcon, StopIcon, TrashIcon, PlayIcon, PauseIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
 import { playMessageSound } from '../../utils/notifySound';
 
@@ -110,6 +110,107 @@ const VideoIcon = () => (
     <path d="M15 10l6-3v10l-6-3" />
   </svg>
 );
+
+
+/* ------------------------------------------------------------------ */
+/* Voice notes + long text helpers                                     */
+/* ------------------------------------------------------------------ */
+
+const MAX_VOICE_SECONDS = 120;          // short voice notes only
+const LONG_TEXT_CHARS = 500;            // longer than this collapses behind "Read more"
+const LONG_TEXT_LINES = 10;
+const AUDIO_EXT = /\.(webm|ogg|oga|opus|m4a|mp4|aac|mp3|wav)(\?|$)/i;
+
+// Backend may send attachment_type/attachment_mime; fall back to the file extension.
+const isAudioMessage = (m) => Boolean(m.attachment_url) && (
+  m.attachment_type === 'audio'
+  || String(m.attachment_mime || '').startsWith('audio/')
+  || AUDIO_EXT.test(m.attachment_url)
+);
+
+const fmtClock = (secs) => {
+  const s = Math.max(0, Math.round(secs || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
+
+// Pick a recording format this browser can actually make (Safari = mp4, Chrome/Firefox = webm/ogg).
+function pickRecorderMime() {
+  if (typeof MediaRecorder === 'undefined') return '';
+  const options = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus', 'audio/mp4'];
+  return options.find((t) => MediaRecorder.isTypeSupported?.(t)) || '';
+}
+
+function LongText({ text, className }) {
+  const [open, setOpen] = useState(false);
+  const lines = text.split('\n').length;
+  const long = text.length > LONG_TEXT_CHARS || lines > LONG_TEXT_LINES;
+  if (!long) return <p className={className}>{text}</p>;
+  return (
+    <div className={className}>
+      <p className={`cv-longtext${open ? ' is-open' : ''}`}>{text}</p>
+      <button type="button" className="cv-more" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        {open ? 'Show less' : 'Read more'}
+      </button>
+    </div>
+  );
+}
+
+function VoicePlayer({ src, mine, knownDuration, saver }) {
+  const audioRef = useRef(null);
+  // Data saver: don't download someone else's voice note until it's tapped (same as photos).
+  const [loaded, setLoaded] = useState(!(saver && !mine));
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(knownDuration || 0);
+
+  const toggle = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) a.play().catch(() => setPlaying(false)); else a.pause();
+  };
+  const seek = (e) => {
+    const a = audioRef.current;
+    if (!a || !duration) return;
+    a.currentTime = (Number(e.target.value) / 100) * duration;
+  };
+  // Browsers report Infinity for MediaRecorder webm until it's been scrubbed; handle that.
+  const onMeta = (e) => {
+    const a = e.currentTarget;
+    if (Number.isFinite(a.duration)) setDuration(a.duration);
+    else { a.currentTime = 1e7; }
+  };
+  const onTime = (e) => {
+    const a = e.currentTarget;
+    if (!Number.isFinite(duration) || !duration) {
+      if (Number.isFinite(a.duration)) { setDuration(a.duration); a.currentTime = 0; }
+      return;
+    }
+    setProgress((a.currentTime / duration) * 100);
+  };
+
+  if (!loaded && !(src && !saver)) {
+    return (
+      <button type="button" className="cv-once cv-once--open" onClick={() => setLoaded(true)}>
+        🎤 Tap to load voice message {knownDuration ? `(${fmtClock(knownDuration)}) ` : ''}<span>(saves data)</span>
+      </button>
+    );
+  }
+
+  return (
+    <div className={`cv-voice${mine ? ' cv-voice--mine' : ''}`}>
+      <button type="button" className="cv-voice__btn" onClick={toggle} aria-label={playing ? 'Pause voice message' : 'Play voice message'}>
+        {playing ? <PauseIcon size={16} /> : <PlayIcon size={16} />}
+      </button>
+      <input type="range" className="cv-voice__bar" min="0" max="100" step="0.5" value={progress}
+        onChange={seek} aria-label="Voice message position" />
+      <span className="cv-voice__time">{fmtClock(playing || progress > 0 ? (progress / 100) * duration : duration)}</span>
+      <audio ref={audioRef} src={src} preload={saver ? 'none' : 'metadata'} autoPlay={saver && !mine}
+        onLoadedMetadata={onMeta} onTimeUpdate={onTime} onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
+        onPlay={() => setPlaying(true)} onPause={() => setPlaying(false)}
+        onEnded={() => { setPlaying(false); setProgress(0); }} />
+    </div>
+  );
+}
 
 function initialOf(profile) {
   return (profile?.display_name || profile?.username || '?')[0].toUpperCase();
@@ -213,6 +314,9 @@ export default function ConversationView() {
   const [viewOnce, setViewOnce] = useState(false); // send the pending photo as view-once
   const [viewer, setViewer] = useState(null); // { id, url, loading, error } for an open view-once photo
   const [sending, setSending] = useState(false);
+  // Voice note recorder: 'idle' | 'recording'
+  const [recState, setRecState] = useState('idle');
+  const [recSecs, setRecSecs] = useState(0);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [reactTarget, setReactTarget] = useState(null); // { id, full }
@@ -226,6 +330,11 @@ export default function ConversationView() {
   const seededRef = useRef(false);    // false until the first load of this conversation has been counted
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
+  const recorderRef = useRef(null);   // MediaRecorder
+  const recChunksRef = useRef([]);
+  const recStreamRef = useRef(null);
+  const recTimerRef = useRef(null);
+  const recCancelRef = useRef(false);
 
   useEffect(() => {
     setMissing(false);
@@ -332,6 +441,8 @@ export default function ConversationView() {
           body: data.body, attachment_url: data.attachment_url ?? null,
           attachment_view_once: data.attachment_view_once ?? false,
           attachment_viewed: data.attachment_viewed ?? false,
+          attachment_type: data.attachment_type ?? null, attachment_mime: data.attachment_mime ?? null,
+          duration: data.duration ?? null,
           created_at: data.created_at, is_deleted: false, edited_at: null,
         }]));
       } else if (data.type === 'message_deleted') {
@@ -414,6 +525,110 @@ export default function ConversationView() {
       setSending(false);
     }
   };
+
+
+  // Auto-grow the message box with what's typed (up to a cap, then it scrolls inside).
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 168)}px`;
+  }, [draft]);
+
+  // Enter sends on a keyboard; Shift+Enter adds a new line. On phones Enter is a new line (use Send).
+  const onDraftKeyDown = (e) => {
+    if (e.key !== 'Enter' || e.shiftKey || e.nativeEvent.isComposing) return;
+    const coarse = window.matchMedia?.('(pointer: coarse)').matches;
+    if (coarse) return;
+    e.preventDefault();
+    if (!sending && (draft.trim() || attachment)) handleSend(e);
+  };
+
+  /* ---- Voice notes ---- */
+  const stopTracks = () => {
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    recStreamRef.current = null;
+    clearInterval(recTimerRef.current);
+  };
+
+  const sendVoice = async (blob, secs, mime) => {
+    const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
+    const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mime || 'audio/webm' });
+    setSending(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append('attachment', file);
+      form.append('attachment_type', 'audio');
+      form.append('duration', String(Math.round(secs)));
+      const message = await apiFetch(`/api/chat/conversations/${id}/messages/`, { method: 'POST', body: form });
+      setMessages((prev) => mergeMessages(prev, [{ ...message, duration: message.duration ?? Math.round(secs) }]));
+    } catch (err) {
+      setError(err);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const startRecording = async () => {
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
+      setError(new Error('Voice messages are not supported in this browser.'));
+      return;
+    }
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: saver.active ? { channelCount: 1 } : true });
+      recStreamRef.current = stream;
+      const mime = pickRecorderMime();
+      // Data saver: ~12 kbps voice-quality audio (about 90 KB a minute) instead of the browser default.
+      const rec = new MediaRecorder(stream, {
+        ...(mime ? { mimeType: mime } : {}),
+        audioBitsPerSecond: saver.active ? 12000 : 32000,
+      });
+      recChunksRef.current = [];
+      recCancelRef.current = false;
+      rec.ondataavailable = (e) => { if (e.data.size) recChunksRef.current.push(e.data); };
+      rec.onstop = () => {
+        const secs = (Date.now() - rec._startedAt) / 1000;
+        const type = rec.mimeType || mime || 'audio/webm';
+        const blob = new Blob(recChunksRef.current, { type });
+        stopTracks();
+        setRecState('idle');
+        setRecSecs(0);
+        recorderRef.current = null;
+        if (!recCancelRef.current && secs >= 0.8 && blob.size) sendVoice(blob, secs, type);
+      };
+      rec._startedAt = Date.now();
+      rec.start();
+      recorderRef.current = rec;
+      setRecState('recording');
+      setRecSecs(0);
+      recTimerRef.current = setInterval(() => {
+        const secs = (Date.now() - rec._startedAt) / 1000;
+        setRecSecs(secs);
+        if (secs >= MAX_VOICE_SECONDS && rec.state === 'recording') rec.stop(); // auto-send at the limit
+      }, 200);
+    } catch (err) {
+      stopTracks();
+      setError(new Error(err?.name === 'NotAllowedError'
+        ? 'Microphone access is blocked. Allow it in your browser settings to send voice messages.'
+        : 'Could not start the microphone.'));
+    }
+  };
+
+  const finishRecording = (cancel) => {
+    recCancelRef.current = cancel;
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    else { stopTracks(); setRecState('idle'); }
+  };
+
+  // Leaving the page mid-recording discards it and releases the mic.
+  useEffect(() => () => {
+    recCancelRef.current = true;
+    if (recorderRef.current?.state === 'recording') recorderRef.current.stop();
+    recStreamRef.current?.getTracks().forEach((t) => t.stop());
+    clearInterval(recTimerRef.current);
+  }, []);
 
   const handleDelete = async (m) => {
     if (!window.confirm('Delete this message for everyone?')) return;
@@ -620,6 +835,8 @@ export default function ConversationView() {
                                   📷 Tap to view photo <span>(once)</span>
                                 </button>
                               )
+                            ) : isAudioMessage(m) ? (
+                              <VoicePlayer src={mediaUrl(m.attachment_url)} mine={mine} knownDuration={m.duration} saver={saver.active} />
                             ) : m.attachment_url && (saver.active && !mine && !shownPhotos[m.id] ? (
                               <button type="button" className="cv-once cv-once--open"
                                 onClick={() => setShownPhotos((s) => ({ ...s, [m.id]: true }))}>
@@ -631,7 +848,8 @@ export default function ConversationView() {
                               </a>
                             ))}
                             {m.body && (
-                              <p className={m.attachment_url || m.attachment_view_once ? 'cv-bubble__caption' : undefined}>{m.body}</p>
+                              <LongText text={m.body}
+                                className={m.attachment_url || m.attachment_view_once ? 'cv-bubble__caption' : undefined} />
                             )}
                           </>
                         )}
@@ -711,21 +929,39 @@ export default function ConversationView() {
                 <EmojiPalette onPick={insertEmoji} />
               </div>
             )}
+            {recState === 'recording' ? (
+              <div className="cv-composer cv-composer--rec" role="status" aria-live="polite">
+                <button type="button" className="cv-icon-btn" onClick={() => finishRecording(true)} aria-label="Cancel recording" title="Cancel">
+                  <TrashIcon />
+                </button>
+                <span className="cv-rec__dot" aria-hidden="true" />
+                <span className="cv-rec__time">{fmtClock(recSecs)}</span>
+                <span className="cv-rec__hint">Recording… max {fmtClock(MAX_VOICE_SECONDS)}</span>
+                <button type="button" className="cv-send cv-send--rec" onClick={() => finishRecording(false)} aria-label="Stop and send voice message">
+                  <StopIcon size={14} /> Send
+                </button>
+              </div>
+            ) : (
             <form onSubmit={handleSend} className="cv-composer">
               <label className="cv-icon-btn" aria-label="Attach an image">
                 <PaperclipIcon />
                 <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
               </label>
-              <input
+              <textarea
                 ref={inputRef}
                 className="cv-composer__input"
                 placeholder="Write a message…"
                 aria-label="Message"
+                rows={1}
                 enterKeyHint="send"
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={onDraftKeyDown}
                 maxLength={4000}
               />
+              {draft.length > 3500 && (
+                <span className={`cv-count${draft.length >= 3950 ? ' is-max' : ''}`} aria-live="polite">{4000 - draft.length}</span>
+              )}
               <button
                 type="button"
                 className={`cv-icon-btn cv-icon-btn--emoji${paletteOpen ? ' is-open' : ''}`}
@@ -734,8 +970,16 @@ export default function ConversationView() {
                 data-emoji-pop
                 onClick={() => { setReactTarget(null); setPaletteOpen((o) => !o); }}
               >☺</button>
-              <button className="cv-send" disabled={sending || (!draft.trim() && !attachment)} type="submit">Send</button>
+              {draft.trim() || attachment ? (
+                <button className="cv-send" disabled={sending} type="submit">Send</button>
+              ) : (
+                <button className="cv-icon-btn cv-mic" type="button" onClick={startRecording} disabled={sending}
+                  aria-label="Record a voice message" title="Record a voice message">
+                  <MicIcon />
+                </button>
+              )}
             </form>
+            )}
           </div>
         </section>
 

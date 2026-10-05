@@ -10,7 +10,7 @@ from apps.common.constants import ContactPermission
 from apps.common.exceptions import AccountNotEligibleError, DomainError
 from apps.common.utils import clamp_page_size
 
-from .media_utils import process_message_attachment
+from .media_utils import clamp_voice_duration, process_message_attachment, process_voice_upload
 from .models import Conversation, ConversationParticipantState, Message, MessageAttachment
 
 MAX_MESSAGE_LENGTH = 4000
@@ -82,9 +82,15 @@ def get_conversation_for_user(conversation_id, user) -> Conversation | None:
 # Messages
 # ---------------------------------------------------------------------------
 @transaction.atomic
-@transaction.atomic
 def send_message(
-    conversation: Conversation, sender: User, *, body: str = "", attachment=None, view_once: bool = False
+    conversation: Conversation,
+    sender: User,
+    *,
+    body: str = "",
+    attachment=None,
+    view_once: bool = False,
+    attachment_type: str = MessageAttachment.Kind.IMAGE,
+    duration=None,
 ) -> Message:
     if not conversation.is_participant(sender):
         raise DomainError("You are not a participant in this conversation.")
@@ -103,14 +109,26 @@ def send_message(
         conversation=conversation, sender=sender, body=body, has_attachment=bool(attachment)
     )
     if attachment:
-        processed = process_message_attachment(attachment)
-        message_attachment = MessageAttachment(
-            message=message,
-            original_filename=(attachment.name or "")[:255],
-            size_bytes=attachment.size,
-            view_once=bool(view_once),
-        )
-        message_attachment.file.save("attachment.jpg", processed, save=True)
+        if attachment_type == MessageAttachment.Kind.AUDIO:
+            processed, ext = process_voice_upload(attachment)
+            message_attachment = MessageAttachment(
+                message=message,
+                kind=MessageAttachment.Kind.AUDIO,
+                original_filename=(attachment.name or "")[:255],
+                size_bytes=attachment.size,
+                view_once=False,  # view-once is a photo feature
+                duration_seconds=clamp_voice_duration(duration),
+            )
+            message_attachment.file.save(f"voice.{ext}", processed, save=True)
+        else:
+            processed = process_message_attachment(attachment)
+            message_attachment = MessageAttachment(
+                message=message,
+                original_filename=(attachment.name or "")[:255],
+                size_bytes=attachment.size,
+                view_once=bool(view_once),
+            )
+            message_attachment.file.save("attachment.jpg", processed, save=True)
     conversation.save(update_fields=["updated_at"])  # bumps conversation list ordering
     return message
 
@@ -271,6 +289,8 @@ def serialize_message_for_broadcast(conversation: Conversation, message: Message
         "sender_id": str(message.sender_id),
         "body": message.body,
         "attachment_url": attachment_url,
+        "attachment_type": attachment.kind if attachment else None,
+        "duration": attachment.duration_seconds if attachment else None,
         "attachment_view_once": view_once,
         "attachment_viewed": bool(attachment and attachment.viewed_at),
         "created_at": message.created_at.isoformat(),
