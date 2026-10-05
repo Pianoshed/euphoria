@@ -2,7 +2,7 @@ import '../../styles/index.css';
 import './chat.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
 import { API_BASE, apiFetch, apiBlob } from '../../api/client';
@@ -15,6 +15,9 @@ import { ErrorAlert, Spinner } from '../../components/ui';
 import { PaperclipIcon, MicIcon, StopIcon, TrashIcon, PlayIcon, PauseIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
 import { playMessageSound } from '../../utils/notifySound';
+import PeoplePicker from '../../components/PeoplePicker';
+import GroupPanel, { MOODS, moodOf, MoodPicker, VibeBar } from './GroupPanel';
+import './group.css';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
 // Resolve against the API host so the image loads from the backend, not the frontend.
@@ -79,7 +82,7 @@ const sortOldestFirst = (list) => [...list].sort(byTime);
 
 // Keep whatever is already on screen, add what's new, and pick up edits and deletes.
 // Returns the SAME array when nothing changed so a quiet poll never re-renders or moves the scroll.
-const msgSig = (m) => `${m.id}|${m.edited_at ?? ''}|${m.is_deleted ? 1 : 0}|${m.body ?? ''}|${m.attachment_viewed ? 1 : 0}`;
+const msgSig = (m) => `${m.id}|${m.edited_at ?? ''}|${m.is_deleted ? 1 : 0}|${m.body ?? ''}|${m.attachment_viewed ? 1 : 0}|${m.pinned ? 1 : 0}`;
 function mergeMessages(prev, fresh) {
   if (!prev) return sortOldestFirst(fresh);
   const byId = new Map(prev.map((m) => [m.id, m]));
@@ -212,6 +215,16 @@ function VoicePlayer({ src, mine, knownDuration, saver }) {
   );
 }
 
+const NAME_COLORS = ['#c2410c', '#0f766e', '#6d28d9', '#be123c', '#1d4ed8', '#a16207', '#047857'];
+const colorFor = (uid) => {
+  let h = 0;
+  for (const ch of String(uid)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return NAME_COLORS[h % NAME_COLORS.length];
+};
+let outboxSeq = 0;
+const newTempId = () => `out-${Date.now()}-${(outboxSeq += 1)}`;
+const STALE_SOCKET_MS = 8000; // a socket send with no echo after this long is checked, then marked failed
+
 function initialOf(profile) {
   return (profile?.display_name || profile?.username || '?')[0].toUpperCase();
 }
@@ -313,8 +326,14 @@ export default function ConversationView() {
   const [attachmentPreview, setAttachmentPreview] = useState(null);
   const [viewOnce, setViewOnce] = useState(false); // send the pending photo as view-once
   const [viewer, setViewer] = useState(null); // { id, url, loading, error } for an open view-once photo
-  const [sending, setSending] = useState(false);
   // Voice note recorder: 'idle' | 'recording'
+  const navigate = useNavigate();
+  const [conv, setConv] = useState(null);              // conversation detail (groups: title, members, my_role)
+  const [memberProfiles, setMemberProfiles] = useState({}); // { [userId]: profile } for group members
+  const [showMembers, setShowMembers] = useState(false);    // phone: member sheet under the header
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [groupBusy, setGroupBusy] = useState(false);
+  const [outbox, setOutbox] = useState([]);            // messages still sending or that failed (Resend)
   const [recState, setRecState] = useState('idle');
   const [recSecs, setRecSecs] = useState(0);
 
@@ -330,6 +349,9 @@ export default function ConversationView() {
   const seededRef = useRef(false);    // false until the first load of this conversation has been counted
   const fileInputRef = useRef(null);
   const inputRef = useRef(null);
+  const messagesRef = useRef(null);
+  const outboxRef = useRef([]);
+  const profilesLoadedRef = useRef(new Set());
   const recorderRef = useRef(null);   // MediaRecorder
   const recChunksRef = useRef([]);
   const recStreamRef = useRef(null);
@@ -338,12 +360,22 @@ export default function ConversationView() {
 
   useEffect(() => {
     setMissing(false);
+    setConv(null);
+    setMemberProfiles({});
+    profilesLoadedRef.current = new Set();
+    setOutbox([]);
+    setShowMembers(false);
     chatApi.getConversation(id)
       .then((c) => {
+        setConv(c);
+        if (c.is_group) {
+          setOtherUserId(null);
+          setOtherProfile({ username: c.title || 'Group chat' });
+          return null;
+        }
         setOtherUserId(c.other_user_id);
-        return accountsApi.getPublicProfile(c.other_user_id);
+        return accountsApi.getPublicProfile(c.other_user_id).then(setOtherProfile);
       })
-      .then(setOtherProfile)
       .catch((err) => {
         if (err?.status === 404) setMissing(true);
         else setOtherProfile({ username: 'Unknown user' });
@@ -358,6 +390,33 @@ export default function ConversationView() {
     setReactions(readJSON(reactionsKey(id), {}));
   }, [id]);
 
+  useEffect(() => { messagesRef.current = messages; }, [messages]);
+  useEffect(() => { outboxRef.current = outbox; }, [outbox]);
+
+  const isGroup = Boolean(conv?.is_group);
+
+  // Names for the people in a group. Fetched once per person (not on every refresh).
+  const loadMemberProfiles = useCallback((c) => {
+    const wanted = (c?.members || []).map((m) => m.user_id).filter((uid) => uid !== user.id && !profilesLoadedRef.current.has(uid));
+    wanted.forEach((uid) => profilesLoadedRef.current.add(uid));
+    wanted.forEach((uid) => {
+      accountsApi.getPublicProfile(uid)
+        .then((p) => setMemberProfiles((cur) => ({ ...cur, [uid]: p })))
+        .catch(() => setMemberProfiles((cur) => ({ ...cur, [uid]: { username: 'Member' } })));
+    });
+  }, [user.id]);
+  useEffect(() => { if (conv?.is_group) loadMemberProfiles(conv); }, [conv, loadMemberProfiles]);
+
+  const reloadConversation = useCallback(
+    () => chatApi.getConversation(id).then(setConv).catch((err) => { if (err?.status === 404) navigate('/chat'); }),
+    [id, navigate]
+  );
+
+  const nameOfSender = (uid) => {
+    const p = memberProfiles[uid];
+    return p?.display_name || p?.username || 'Member';
+  };
+
   // Scroll the message list itself. scrollIntoView() also scrolled the whole page,
   // which on a phone yanked the header out of view every time a message arrived.
   // Only follow new messages if the reader is already at the bottom (or sent them),
@@ -370,8 +429,8 @@ export default function ConversationView() {
     const log = logRef.current;
     if (!log || !messages) return;
     const last = messages[messages.length - 1];
-    if (stickRef.current || last?.sender === user.id) log.scrollTop = log.scrollHeight;
-  }, [messages, user.id]);
+    if (stickRef.current || last?.sender === user.id || outbox.length) log.scrollTop = log.scrollHeight;
+  }, [messages, outbox.length, user.id]);
 
   // New messages from the other person while the page is open: beep, and count them as read
   // if the tab is in view. The first load of a conversation only sets the starting count, so
@@ -425,12 +484,34 @@ export default function ConversationView() {
   // upload, but the resulting message still broadcasts over the
   // socket to the OTHER participant just the same -- both transports
   // funnel through the same broadcast_message() server-side.
+  // Data saving: once the first page is loaded, ask only for messages created or changed since
+  // the newest `updated_at` we hold (edits, deletes, pins and opened photos all bump it). A quiet
+  // poll then returns an empty list instead of re-sending 30 messages every time.
   const refreshMessages = useCallback(
-    () => chatApi.listMessages(id)
-      .then((data) => setMessages((prev) => mergeMessages(prev, data.results ?? data)))
-      .catch(() => {}),
+    () => {
+      const known = messagesRef.current;
+      const after = known && known.length
+        ? known.reduce((max, m) => (m.updated_at && m.updated_at > max ? m.updated_at : max), '')
+        : '';
+      return chatApi.listMessages(id, after || undefined)
+        .then((data) => setMessages((prev) => mergeMessages(prev, data.results ?? data)))
+        .catch(() => {});
+    },
     [id]
   );
+
+  // ---- Outbox: what is still sending, or failed and waiting for Resend ----
+  const patchOutbox = useCallback((tempId, patch) => {
+    setOutbox((list) => list.map((o) => (o.tempId === tempId ? { ...o, ...patch } : o)));
+  }, []);
+  const markFailed = useCallback((tempId, detail) => {
+    patchOutbox(tempId, { status: 'failed', error: detail || 'Could not send.' });
+  }, [patchOutbox]);
+  const dropOutbox = useCallback((tempId) => {
+    const gone = outboxRef.current.find((o) => o.tempId === tempId);
+    if (gone?.preview) URL.revokeObjectURL(gone.preview);
+    setOutbox((list) => list.filter((o) => o.tempId !== tempId));
+  }, []);
 
   const { connected, sendOverSocket } = useChatSocket(missing ? null : id, {
     onOpen: refreshMessages, // catch up on anything missed while the socket was down
@@ -451,8 +532,31 @@ export default function ConversationView() {
           : m)));
       } else if (data.type === 'attachment_viewed') {
         setMessages((prev) => prev?.map((m) => (m.id === data.message_id ? { ...m, attachment_viewed: true } : m)));
+      } else if (data.type === 'pins_changed') {
+        // The event carries the (max 3) pinned messages, so no extra request is needed.
+        setConv((c) => (c ? { ...c, pinned_messages: data.pinned_messages || [] } : c));
+        setMessages((prev) => {
+          if (!prev) return prev;
+          const pinnedIds = new Set((data.pinned_messages || []).map((p) => p.id));
+          return prev.map((m) => (Boolean(m.pinned) === pinnedIds.has(m.id) ? m : { ...m, pinned: pinnedIds.has(m.id) }));
+        });
+      } else if (data.type === 'mood_changed') {
+        // Silent update of one person's colour: no sound, no unread count, no refetch.
+        setConv((c) => (c ? {
+          ...c,
+          members: (c.members || []).map((m) => (String(m.user_id) === String(data.user_id)
+            ? { ...m, mood: data.mood, mood_set_at: data.mood_set_at }
+            : m)),
+        } : c));
+      } else if (data.type === 'members_changed') {
+        reloadConversation();
+      } else if (data.type === 'member_removed') {
+        if (String(data.user_id) === String(user.id)) navigate('/chat'); // you were removed from this group
       } else if (data.type === 'error') {
-        setError(new Error(data.detail));
+        // A rejected socket send: show it on the message that failed so it can be resent.
+        const pending = [...outboxRef.current].reverse().find((o) => o.viaSocket && o.status === 'sending');
+        if (pending) markFailed(pending.tempId, data.detail);
+        else setError(new Error(data.detail));
       }
     },
   });
@@ -475,6 +579,77 @@ export default function ConversationView() {
     };
   }, [id, connected, refreshMessages, saver.active]);
 
+  // Send one outbox item. Text prefers the live socket; if there is no echo in a few seconds it is
+  // checked against the server and, if it never arrived, marked failed so the person can Resend.
+  const deliver = async (item, forceRest = false) => {
+    const mineSameBody = (messagesRef.current || []).filter((m) => m.sender === user.id && m.body === item.body).map((m) => m.id);
+    patchOutbox(item.tempId, { status: 'sending', error: null, knownIds: mineSameBody });
+    try {
+      if (item.kind === 'text' && !forceRest && navigator.onLine !== false && sendOverSocket(item.body)) {
+        patchOutbox(item.tempId, { viaSocket: true, sentAt: Date.now() });
+        return;
+      }
+      patchOutbox(item.tempId, { viaSocket: false });
+      let message;
+      if (item.kind === 'text') {
+        message = await chatApi.sendMessage(id, item.body);
+      } else {
+        const form = new FormData();
+        form.append('attachment', item.file);
+        if (item.body) form.append('body', item.body);
+        if (item.kind === 'voice') {
+          form.append('attachment_type', 'audio');
+          form.append('duration', String(Math.round(item.duration || 0)));
+        } else if (item.viewOnce) {
+          form.append('view_once', 'true');
+        }
+        message = await apiFetch(`/api/chat/conversations/${id}/messages/`, { method: 'POST', body: form });
+      }
+      setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
+      dropOutbox(item.tempId);
+    } catch (err) {
+      markFailed(item.tempId, err?.message);
+    }
+  };
+
+  const queueSend = (fields) => {
+    const item = { tempId: newTempId(), status: 'sending', createdLocal: Date.now(), ...fields };
+    setOutbox((list) => [...list, item]);
+    deliver(item);
+  };
+
+  const resend = (item) => deliver(item, true); // a resend always goes by REST: it reports success or failure itself
+  const resendAllFailed = () => outboxRef.current.filter((o) => o.status === 'failed').forEach((o) => deliver(o, true));
+
+  // A socket text counts as delivered once it shows up in the log (from the socket or a poll).
+  useEffect(() => {
+    if (!messages || !outbox.length) return;
+    outbox.forEach((o) => {
+      if (o.kind !== 'text' || !o.knownIds) return;
+      const echoed = messages.some((m) => m.sender === user.id && m.body === o.body && !o.knownIds.includes(m.id));
+      if (echoed) dropOutbox(o.tempId);
+    });
+  }, [messages, outbox, user.id, dropOutbox]);
+
+  // Watchdog for socket sends that never echo: re-check with the server, then give up (Resend appears).
+  useEffect(() => {
+    const timer = setInterval(() => {
+      const now = Date.now();
+      outboxRef.current.forEach((o) => {
+        if (o.status !== 'sending' || !o.viaSocket || now - (o.sentAt || now) < STALE_SOCKET_MS) return;
+        patchOutbox(o.tempId, { sentAt: now + 60000 }); // don't re-check every second
+        refreshMessages().finally(() => {
+          setOutbox((list) => list.map((x) => (x.tempId === o.tempId && x.status === 'sending' && x.viaSocket
+            ? { ...x, status: 'failed', error: 'Not delivered.' } : x)));
+        });
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [patchOutbox, refreshMessages]);
+
+  // Free any preview images when leaving the page.
+  useEffect(() => () => { outboxRef.current.forEach((o) => { if (o.preview) URL.revokeObjectURL(o.preview); }); }, []);
+
   const handleFileChange = async (e) => {
     const picked = e.target.files?.[0];
     if (!picked) { setAttachment(null); setAttachmentPreview(null); return; }
@@ -491,41 +666,20 @@ export default function ConversationView() {
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  const handleSend = async (e) => {
+  const handleSend = (e) => {
     e.preventDefault();
     const body = draft.trim();
     if (!body && !attachment) return;
-    setSending(true);
     setError(null);
     setPaletteOpen(false);
-    const pendingAttachment = attachment;
-    const pendingViewOnce = viewOnce;
+    if (attachment) {
+      queueSend({ kind: 'image', body, file: attachment, preview: URL.createObjectURL(attachment), viewOnce: !isGroup && viewOnce });
+    } else {
+      queueSend({ kind: 'text', body });
+    }
     setDraft('');
     clearAttachment();
-    try {
-      if (pendingAttachment) {
-        // File uploads can't go over the plain-text WS protocol this
-        // app uses -- always REST for these.
-        const form = new FormData();
-        form.append('attachment', pendingAttachment);
-        if (body) form.append('body', body);
-        if (pendingViewOnce) form.append('view_once', 'true');
-        const message = await apiFetch(`/api/chat/conversations/${id}/messages/`, { method: 'POST', body: form });
-        setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
-      } else if (!sendOverSocket(body)) {
-        // Prefer the live socket for plain text (near-instant echo to
-        // both sides); fall back to REST if it isn't connected.
-        const message = await chatApi.sendMessage(id, body);
-        setMessages((prev) => mergeMessages(prev, [message])); // dedupes: the socket may have delivered it first
-      }
-    } catch (err) {
-      setError(err);
-      setDraft(body);
-    } finally {
-      setSending(false);
-    }
   };
-
 
   // Auto-grow the message box with what's typed (up to a cap, then it scrolls inside).
   useEffect(() => {
@@ -541,7 +695,7 @@ export default function ConversationView() {
     const coarse = window.matchMedia?.('(pointer: coarse)').matches;
     if (coarse) return;
     e.preventDefault();
-    if (!sending && (draft.trim() || attachment)) handleSend(e);
+    if (draft.trim() || attachment) handleSend(e);
   };
 
   /* ---- Voice notes ---- */
@@ -551,23 +705,11 @@ export default function ConversationView() {
     clearInterval(recTimerRef.current);
   };
 
-  const sendVoice = async (blob, secs, mime) => {
+  const sendVoice = (blob, secs, mime) => {
     const ext = mime.includes('mp4') ? 'm4a' : mime.includes('ogg') ? 'ogg' : 'webm';
     const file = new File([blob], `voice-${Date.now()}.${ext}`, { type: mime || 'audio/webm' });
-    setSending(true);
     setError(null);
-    try {
-      const form = new FormData();
-      form.append('attachment', file);
-      form.append('attachment_type', 'audio');
-      form.append('duration', String(Math.round(secs)));
-      const message = await apiFetch(`/api/chat/conversations/${id}/messages/`, { method: 'POST', body: form });
-      setMessages((prev) => mergeMessages(prev, [{ ...message, duration: message.duration ?? Math.round(secs) }]));
-    } catch (err) {
-      setError(err);
-    } finally {
-      setSending(false);
-    }
+    queueSend({ kind: 'voice', body: '', file, duration: secs });
   };
 
   const startRecording = async () => {
@@ -629,6 +771,40 @@ export default function ConversationView() {
     recStreamRef.current?.getTracks().forEach((t) => t.stop());
     clearInterval(recTimerRef.current);
   }, []);
+
+  const togglePin = async (m) => {
+    try {
+      const res = m.pinned ? await chatApi.unpinMessage(m.id) : await chatApi.pinMessage(m.id);
+      const pinnedIds = new Set((res.pinned_messages || []).map((p) => p.id));
+      setConv((c) => (c ? { ...c, pinned_messages: res.pinned_messages || [] } : c));
+      setMessages((prev) => prev?.map((x) => (Boolean(x.pinned) === pinnedIds.has(x.id) ? x : { ...x, pinned: pinnedIds.has(x.id) })));
+    } catch (err) {
+      setError(err);
+    }
+  };
+
+  const jumpToMessage = (messageId) => {
+    const el = logRef.current?.querySelector(`[data-mid="${messageId}"]`);
+    if (!el) return; // older than what is loaded; the bar still shows the text
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    el.classList.add('cv-flash');
+    window.setTimeout(() => el.classList.remove('cv-flash'), 1400);
+  };
+
+  const changeMood = async (mood) => {
+    const prevMembers = conv?.members;
+    // Optimistic: the colour changes at once, and is put back if the server says no.
+    setConv((c) => (c ? {
+      ...c,
+      members: (c.members || []).map((m) => (m.user_id === user.id ? { ...m, mood: mood || null } : m)),
+    } : c));
+    try {
+      await chatApi.setMood(id, mood);
+    } catch (err) {
+      setConv((c) => (c ? { ...c, members: prevMembers } : c));
+      setError(err);
+    }
+  };
 
   const handleDelete = async (m) => {
     if (!window.confirm('Delete this message for everyone?')) return;
@@ -706,8 +882,29 @@ export default function ConversationView() {
   const peerAvatar = otherProfile?.avatar || null;
   const peerLoaded = Boolean(otherProfile);
   useEffect(() => {
-    if (peerLoaded) setPeer(id, { name: peerName, avatar: peerAvatar });
-  }, [id, peerLoaded, peerName, peerAvatar, setPeer]);
+    if (peerLoaded && !isGroup) setPeer(id, { name: peerName, avatar: peerAvatar });
+  }, [id, peerLoaded, peerName, peerAvatar, setPeer, isGroup]);
+
+  // ---- Group actions ----
+  const runGroup = async (fn) => {
+    setGroupBusy(true);
+    setError(null);
+    try { await fn(); } catch (err) { setError(err); } finally { setGroupBusy(false); }
+  };
+  const addPeople = async (ids) => {
+    const c = await chatApi.addGroupMembers(id, ids);
+    setConv(c);
+    setPickerOpen(false);
+  };
+  const removePerson = (uid, name) => {
+    if (!window.confirm(`Remove ${name} from this group?`)) return;
+    runGroup(async () => { await chatApi.removeGroupMember(id, uid); await reloadConversation(); });
+  };
+  const renameGroupTo = (title) => runGroup(async () => { setConv(await chatApi.renameGroup(id, title)); });
+  const leaveGroup = () => {
+    if (!window.confirm('Leave this group? You will stop getting its messages.')) return;
+    runGroup(async () => { await chatApi.removeGroupMember(id, user.id); navigate('/chat'); });
+  };
 
   if (missing) {
     return (
@@ -725,7 +922,12 @@ export default function ConversationView() {
 
   const presence = presenceLabel(otherProfile);
   const online = Boolean(presence?.online);
-  const displayName = otherProfile?.display_name || otherProfile?.username || '…';
+  const memberCount = conv?.members?.length || 0;
+  const groupName = conv?.title
+    || (conv?.members || []).filter((m) => m.user_id !== user.id).slice(0, 3)
+      .map((m) => memberProfiles[m.user_id]?.display_name || memberProfiles[m.user_id]?.username || '…').join(', ')
+    || 'Group chat';
+  const displayName = isGroup ? groupName : (otherProfile?.display_name || otherProfile?.username || '…');
   const callBusy = call.status !== 'idle' && call.status !== 'ended';
   const peerInfo = { name: displayName, avatar: otherProfile?.avatar || null };
 
@@ -734,7 +936,9 @@ export default function ConversationView() {
       <div className="cv-shell">
         <section className="cv-chat" aria-label={`Conversation with ${displayName}`}>
           <header className="cv-head">
-            {otherUserId ? (
+            {isGroup ? (
+              <span className="cv-head__avatar cv-head__avatar--group" aria-hidden="true">👥</span>
+            ) : otherUserId ? (
               <Link to={`/profile/${otherUserId}`} className="cv-head__avatar" aria-label={`${displayName}'s profile`}>
                 {otherProfile?.avatar
                   ? <img src={otherProfile.avatar} alt="" />
@@ -743,12 +947,18 @@ export default function ConversationView() {
             ) : null}
             <div className="cv-head__text">
               <h1 className="cv-head__name" title={displayName}>{displayName}</h1>
-              <p className="cv-status cv-status--small">
-                <span className={`cv-dot${online ? ' cv-dot--on' : ''}`} aria-hidden="true" />
-                {online ? 'Online now' : (presence?.text || 'Offline')}
-              </p>
+              {isGroup ? (
+                <p className="cv-status cv-status--small">{memberCount} {memberCount === 1 ? 'person' : 'people'}</p>
+              ) : (
+                <p className="cv-status cv-status--small">
+                  <span className={`cv-dot${online ? ' cv-dot--on' : ''}`} aria-hidden="true" />
+                  {online ? 'Online now' : (presence?.text || 'Offline')}
+                </p>
+              )}
             </div>
             <div className="cv-head__actions">
+              {!isGroup && (
+                <>
               <button
                 type="button"
                 className="cv-call-btn"
@@ -767,6 +977,14 @@ export default function ConversationView() {
               >
                 <VideoIcon /><span className="cv-call-btn__text">Video</span>
               </button>
+                </>
+              )}
+              {isGroup && (
+                <button type="button" className="cv-call-btn cv-members-toggle" aria-expanded={showMembers}
+                  onClick={() => setShowMembers((v) => !v)}>
+                  <span className="cv-call-btn__text" style={{ display: 'inline' }}>Members</span>
+                </button>
+              )}
               <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
                 onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
                 aria-label={`Data saver is ${saver.active ? 'on' : 'off'}. Tap to turn it ${saver.active ? 'off' : 'on'}.`}
@@ -791,7 +1009,37 @@ export default function ConversationView() {
             </div>
           )}
 
+          {isGroup && showMembers && conv && (
+            <div className="cv-members-sheet">
+              <GroupPanel conv={conv} profiles={memberProfiles} meId={user.id} saver={saver.active} busy={groupBusy}
+                onAdd={() => setPickerOpen(true)} onRemove={removePerson} onRename={renameGroupTo} onLeave={leaveGroup} />
+            </div>
+          )}
+
           <ErrorAlert error={error} />
+
+          {isGroup && conv && (
+            <div className="gx-top">
+              <VibeBar members={conv.members || []} profiles={memberProfiles} meId={user.id} />
+              <MoodPicker value={moodOf((conv.members || []).find((m) => m.user_id === user.id))} onPick={changeMood} />
+            </div>
+          )}
+
+          {isGroup && (conv?.pinned_messages?.length > 0) && (
+            <div className="gx-pins" role="region" aria-label="Pinned messages">
+              <span className="gx-pins__icon" aria-hidden="true">📌</span>
+              <ul className="gx-pins__list">
+                {conv.pinned_messages.map((p) => (
+                  <li key={p.id}>
+                    <button type="button" className="gx-pin" onClick={() => jumpToMessage(p.id)}>
+                      <strong>{p.sender === user.id ? 'You' : nameOfSender(p.sender)}</strong>
+                      <span>{p.preview || (p.attachment_type === 'audio' ? '🎤 Voice message' : '📷 Photo')}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <div className="cv-log" ref={logRef} onScroll={onLogScroll}>
             {messages.length === 0 && (
@@ -811,9 +1059,18 @@ export default function ConversationView() {
               const pickerHere = reactTarget?.id === m.id;
 
               return (
-                <div key={m.id}>
+                <div key={m.id} data-mid={m.id}>
                   {newDay && <p className="cv-day"><span>{dayLabel(m.created_at)}</span></p>}
                   <div className={`cv-msg${mine ? ' cv-msg--mine' : ''}${joinsPrev ? ' cv-msg--joined' : ''}`}>
+                    {isGroup && !mine && !joinsPrev && !m.is_deleted && (
+                      <p className="cv-sender" style={{ color: colorFor(m.sender) }}>
+                        {nameOfSender(m.sender)}
+                        {moodOf((conv?.members || []).find((x) => x.user_id === m.sender)) && (
+                          <span className={`gx-dot gx-dot--${moodOf((conv?.members || []).find((x) => x.user_id === m.sender))}`}
+                            title={MOODS[moodOf((conv?.members || []).find((x) => x.user_id === m.sender))].label} aria-hidden="true" />
+                        )}
+                      </p>
+                    )}
                     <div className="cv-msg__row">
                       <div
                         className={`cv-bubble${m.is_deleted ? ' cv-bubble--deleted' : ''}`}
@@ -884,6 +1141,11 @@ export default function ConversationView() {
                           )}
                         </div>
                       )}
+                      {isGroup && !m.is_deleted && (
+                        <button type="button" className={`cv-del gx-pinbtn${m.pinned ? ' is-on' : ''}`}
+                          aria-pressed={Boolean(m.pinned)} aria-label={m.pinned ? 'Unpin this message' : 'Pin this message'}
+                          title={m.pinned ? 'Unpin' : 'Pin to the top'} onClick={() => togglePin(m)}>📌</button>
+                      )}
                       {mine && !m.is_deleted && (
                         <button type="button" className="cv-del" aria-label="Delete this message" title="Delete"
                           onClick={() => handleDelete(m)}>🗑</button>
@@ -910,15 +1172,43 @@ export default function ConversationView() {
                 </div>
               );
             })}
+
+            {outbox.map((o) => (
+              <div key={o.tempId} className="cv-msg cv-msg--mine">
+                <div className="cv-msg__row">
+                  <div className={`cv-bubble cv-bubble--pending${o.status === 'failed' ? ' cv-bubble--failed' : ''}`}>
+                    {o.kind === 'image' && o.preview && <img className="cv-bubble__img" src={o.preview} alt="Photo being sent" />}
+                    {o.kind === 'voice' && <p>🎤 Voice message · {fmtClock(o.duration)}</p>}
+                    {o.body && <LongText text={o.body} className={o.kind === 'image' ? 'cv-bubble__caption' : undefined} />}
+                  </div>
+                </div>
+                {o.status === 'failed' ? (
+                  <p className="cv-outbox cv-outbox--failed" role="alert">
+                    <span>Not sent{o.error ? `: ${o.error}` : ''}</span>
+                    <button type="button" onClick={() => resend(o)}>Resend</button>
+                    <button type="button" onClick={() => dropOutbox(o.tempId)}>Discard</button>
+                  </p>
+                ) : (
+                  <p className="cv-outbox" role="status">Sending…</p>
+                )}
+              </div>
+            ))}
+            {outbox.filter((o) => o.status === 'failed').length > 1 && (
+              <p className="cv-outbox cv-outbox--failed">
+                <button type="button" onClick={resendAllFailed}>Resend all not sent</button>
+              </p>
+            )}
           </div>
 
           {attachmentPreview && (
             <div className="cv-attach">
               <img src={attachmentPreview} alt="" />
-              <label className="cv-once-toggle">
-                <input type="checkbox" checked={viewOnce} onChange={(e) => setViewOnce(e.target.checked)} />
-                View once
-              </label>
+              {!isGroup && (
+                <label className="cv-once-toggle">
+                  <input type="checkbox" checked={viewOnce} onChange={(e) => setViewOnce(e.target.checked)} />
+                  View once
+                </label>
+              )}
               <button type="button" className="btn btn--ghost btn--sm" onClick={clearAttachment}>Remove</button>
             </div>
           )}
@@ -971,9 +1261,9 @@ export default function ConversationView() {
                 onClick={() => { setReactTarget(null); setPaletteOpen((o) => !o); }}
               >☺</button>
               {draft.trim() || attachment ? (
-                <button className="cv-send" disabled={sending} type="submit">Send</button>
+                <button className="cv-send" type="submit">Send</button>
               ) : (
-                <button className="cv-icon-btn cv-mic" type="button" onClick={startRecording} disabled={sending}
+                <button className="cv-icon-btn cv-mic" type="button" onClick={startRecording}
                   aria-label="Record a voice message" title="Record a voice message">
                   <MicIcon />
                 </button>
@@ -983,8 +1273,29 @@ export default function ConversationView() {
           </div>
         </section>
 
-        <PortraitCanvas profile={otherProfile} otherUserId={otherUserId} presence={presence} />
+        {isGroup ? (
+          <aside className="cv-canvas cv-canvas--group" aria-label="Group members">
+            {conv && (
+              <GroupPanel conv={conv} profiles={memberProfiles} meId={user.id} saver={saver.active} busy={groupBusy}
+                onAdd={() => setPickerOpen(true)} onRemove={removePerson} onRename={renameGroupTo} onLeave={leaveGroup} />
+            )}
+          </aside>
+        ) : (
+          <PortraitCanvas profile={otherProfile} otherUserId={otherUserId} presence={presence} />
+        )}
       </div>
+      {pickerOpen && conv && (
+        <PeoplePicker
+          title="Add people"
+          submitLabel="Add to group"
+          minPick={1}
+          maxPick={20 - (conv.members?.length || 0)}
+          excludeIds={(conv.members || []).map((m) => m.user_id)}
+          saver={saver.active}
+          onSubmit={addPeople}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
       {viewer && (
         <div className="cv-viewer" role="dialog" aria-modal="true" aria-label="View-once photo" onClick={closeViewer}>
           <div className="cv-viewer__box" onClick={(e) => e.stopPropagation()}>

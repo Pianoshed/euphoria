@@ -22,8 +22,14 @@ class Conversation(BaseModel):
     who_can_message privacy setting (apps.accounts.models.ProfilePrivacy).
     """
 
-    user_a = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
-    user_b = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    # Direct chats set user_a/user_b. Group chats leave both NULL and use ConversationMember.
+    user_a = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+", null=True, blank=True)
+    user_b = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+", null=True, blank=True)
+    is_group = models.BooleanField(default=False)
+    title = models.CharField(max_length=80, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
     booking = models.ForeignKey(
         "bookings.Booking", on_delete=models.SET_NULL, null=True, blank=True, related_name="conversations"
     )
@@ -33,17 +39,68 @@ class Conversation(BaseModel):
         constraints = [
             models.UniqueConstraint(fields=["user_a", "user_b"], name="unique_conversation_pair"),
             models.CheckConstraint(condition=~models.Q(user_a=models.F("user_b")), name="conversation_not_self"),
+            models.CheckConstraint(
+                condition=models.Q(is_group=True) | (models.Q(user_a__isnull=False) & models.Q(user_b__isnull=False)),
+                name="direct_conversation_has_both_users",
+            ),
         ]
         indexes = [models.Index(fields=["user_a"]), models.Index(fields=["user_b"])]
 
     def is_participant(self, user) -> bool:
-        return user is not None and user.is_authenticated and user.id in (self.user_a_id, self.user_b_id)
+        if user is None or not user.is_authenticated:
+            return False
+        if self.is_group:
+            return self.members.filter(user_id=user.id).exists()
+        return user.id in (self.user_a_id, self.user_b_id)
 
     def other_participant_id(self, user):
+        """The other person in a DIRECT chat. Groups have no single 'other' (returns None)."""
+        if self.is_group:
+            return None
         return self.user_b_id if user.id == self.user_a_id else self.user_a_id
+
+    def participant_ids(self) -> list:
+        if self.is_group:
+            return list(self.members.values_list("user_id", flat=True))
+        return [self.user_a_id, self.user_b_id]
 
     def __str__(self):
         return f"Conversation({self.user_a_id}, {self.user_b_id})"
+
+
+class ConversationMember(BaseModel):
+    """Membership row for GROUP conversations (direct chats don't use it).
+    Leaving or being removed deletes the row, so is_participant() is a plain existence check."""
+
+    class Role(models.TextChoices):
+        ADMIN = "admin", "Admin"
+        MEMBER = "member", "Member"
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="members")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    role = models.CharField(max_length=6, choices=Role.choices, default=Role.MEMBER)
+
+    class Mood(models.TextChoices):
+        HAPPY = "happy", "Happy"   # yellow
+        CALM = "calm", "Calm"      # green
+        MEH = "meh", "Bleh"        # grey
+        LOW = "low", "Low"         # blue
+        UPSET = "upset", "Upset"   # red
+
+    # A quiet "colour splash" for this person IN THIS GROUP. It never creates a message, never
+    # bumps the conversation's order, and the API treats it as unset after MOOD_TTL (24h).
+    mood = models.CharField(max_length=5, choices=Mood.choices, blank=True, default="")
+    mood_set_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        db_table = "chat_conversation_member"
+        constraints = [
+            models.UniqueConstraint(fields=["conversation", "user"], name="unique_conversation_member"),
+        ]
+        indexes = [models.Index(fields=["user"])]
+
+    def __str__(self):
+        return f"Member({self.conversation_id}, {self.user_id}, {self.role})"
 
 
 class ConversationParticipantState(BaseModel):
@@ -98,6 +155,11 @@ class Message(BaseModel):
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
     deleted_at = models.DateTimeField(null=True, blank=True)
+    # Group chats: a pinned message stays in a bar at the top of the chat (see services.pin_message).
+    pinned_at = models.DateTimeField(null=True, blank=True)
+    pinned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
 
     class Meta(BaseModel.Meta):
         db_table = "chat_message"

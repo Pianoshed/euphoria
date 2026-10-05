@@ -1,5 +1,7 @@
 from django.db.models import Q
 from django.http import HttpResponse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied
 from rest_framework.pagination import PageNumberPagination
@@ -13,10 +15,13 @@ from apps.common.permissions import IsActiveAccount
 from . import call_logs, services
 from .models import CallLog, Message
 from .serializers import (
+    AddMembersSerializer,
     CallLogSerializer,
     ConversationSerializer,
     EditMessageSerializer,
     MessageSerializer,
+    MoodSerializer,
+    RenameGroupSerializer,
     SendMessageSerializer,
     StartConversationSerializer,
 )
@@ -51,7 +56,11 @@ class ConversationListCreateView(APIView):
     def post(self, request):
         serializer = StartConversationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        conversation = services.start_or_get_conversation(request.user, serializer.validated_data["target_user_id"])
+        data = serializer.validated_data
+        if data.get("member_ids"):
+            conversation = services.create_group_conversation(request.user, data["member_ids"], data.get("title", ""))
+        else:
+            conversation = services.start_or_get_conversation(request.user, data["target_user_id"])
         return Response(
             ConversationSerializer(conversation, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
@@ -63,7 +72,51 @@ class ConversationDetailView(APIView):
 
     def get(self, request, conversation_id):
         conversation = _get_conversation_or_404(conversation_id, request.user)
+        return Response(ConversationSerializer(conversation, context={"request": request, "detail": True}).data)
+
+    def patch(self, request, conversation_id):
+        """Rename a group (admins only)."""
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        serializer = RenameGroupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.rename_group(conversation, request.user, serializer.validated_data["title"])
+        services.broadcast_event(conversation, {"type": "members_changed", "conversation_id": str(conversation.id)})
         return Response(ConversationSerializer(conversation, context={"request": request}).data)
+
+
+class ConversationMembersView(APIView):
+    """POST /conversations/<id>/members/ {user_ids: [...]} -- admins add people to a group."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def post(self, request, conversation_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        serializer = AddMembersSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        services.add_group_members(conversation, request.user, serializer.validated_data["user_ids"])
+        services.broadcast_event(conversation, {"type": "members_changed", "conversation_id": str(conversation.id)})
+        return Response(ConversationSerializer(conversation, context={"request": request}).data)
+
+
+class ConversationMemberDetailView(APIView):
+    """DELETE /conversations/<id>/members/<user_id>/ -- an admin removes someone, or you leave."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def delete(self, request, conversation_id, user_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        services.remove_group_member(conversation, request.user, user_id)
+        # Tell the removed person's open socket to close, and everyone else to refresh the member list.
+        services.broadcast_event(
+            conversation,
+            {"type": "member_removed", "conversation_id": str(conversation.id), "user_id": str(user_id)},
+        )
+        services.broadcast_event(conversation, {"type": "members_changed", "conversation_id": str(conversation.id)})
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class ConversationMessageListCreateView(APIView):
@@ -73,7 +126,18 @@ class ConversationMessageListCreateView(APIView):
 
     def get(self, request, conversation_id):
         conversation = _get_conversation_or_404(conversation_id, request.user)
-        qs, page_size = services.list_messages(conversation, page_size=request.query_params.get("page_size"))
+        after = None
+        raw_after = request.query_params.get("after")
+        if raw_after:
+            try:
+                after = parse_datetime(raw_after)
+            except ValueError:
+                after = None
+            if after is not None and timezone.is_naive(after):
+                after = timezone.make_aware(after)
+        qs, page_size = services.list_messages(
+            conversation, page_size=request.query_params.get("page_size"), after=after
+        )
         paginator = ChatPagination()
         paginator.page_size = page_size
         page = paginator.paginate_queryset(qs, request)
@@ -120,12 +184,73 @@ class MessageDetailView(APIView):
 
     def delete(self, request, message_id):
         message = self._get_message_or_404(request, message_id)
+        was_pinned = message.pinned_at is not None
         services.delete_message(message, request.user)
         services.broadcast_event(
             message.conversation,
             {"type": "message_deleted", "id": str(message.id), "conversation_id": str(message.conversation_id)},
         )
+        if was_pinned:
+            _broadcast_pins(message.conversation)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+def _broadcast_pins(conversation):
+    pinned = [services.serialize_pinned(m) for m in services.list_pinned_messages(conversation)]
+    services.broadcast_event(
+        conversation,
+        {"type": "pins_changed", "conversation_id": str(conversation.id), "pinned_messages": pinned},
+    )
+    return pinned
+
+
+class MessagePinView(APIView):
+    """POST /messages/<id>/pin/ pins it to the top of the group; DELETE unpins."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def _message_or_404(self, request, message_id):
+        message = Message.objects.select_related("conversation").filter(id=message_id).first()
+        if message is None or not message.conversation.is_participant(request.user):
+            raise NotFound("Message not found.")
+        return message
+
+    def post(self, request, message_id):
+        message = self._message_or_404(request, message_id)
+        services.pin_message(message, request.user)
+        return Response({"pinned_messages": _broadcast_pins(message.conversation)})
+
+    def delete(self, request, message_id):
+        message = self._message_or_404(request, message_id)
+        services.unpin_message(message, request.user)
+        return Response({"pinned_messages": _broadcast_pins(message.conversation)})
+
+
+class ConversationMoodView(APIView):
+    """PUT /conversations/<id>/mood/ {mood} sets my colour in this group ("" clears it).
+    Silent by design: no message, no list re-order, no unread count -- just a tiny live event."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "chat_write"
+
+    def put(self, request, conversation_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        serializer = MoodSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        member = services.set_mood(conversation, request.user, serializer.validated_data["mood"])
+        mood = member.mood or None
+        mood_set_at = member.mood_set_at.isoformat() if member.mood_set_at else None
+        services.broadcast_event(
+            conversation,
+            {
+                "type": "mood_changed", "conversation_id": str(conversation.id),
+                "user_id": str(request.user.id), "mood": mood, "mood_set_at": mood_set_at,
+            },
+        )
+        return Response({"mood": mood, "mood_set_at": mood_set_at})
 
 
 class MessageViewOnceView(APIView):

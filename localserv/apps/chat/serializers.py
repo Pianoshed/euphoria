@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from . import services
-from .models import CallLog, Conversation, Message
+from .models import CallLog, Conversation, ConversationMember, Message
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -10,13 +10,14 @@ class MessageSerializer(serializers.ModelSerializer):
     duration = serializers.SerializerMethodField()
     attachment_view_once = serializers.SerializerMethodField()
     attachment_viewed = serializers.SerializerMethodField()
+    pinned = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             "id", "conversation", "sender", "body",
             "attachment_url", "attachment_type", "duration", "attachment_view_once", "attachment_viewed",
-            "created_at", "edited_at", "is_deleted",
+            "pinned", "created_at", "updated_at", "edited_at", "is_deleted",
         ]
         read_only_fields = fields
 
@@ -45,6 +46,9 @@ class MessageSerializer(serializers.ModelSerializer):
         attachment = services.get_message_attachment(obj)
         return bool(attachment and attachment.viewed_at)
 
+    def get_pinned(self, obj):
+        return obj.pinned_at is not None and not obj.is_deleted
+
 
 class SendMessageSerializer(serializers.Serializer):
     # Neither is individually required -- apps.chat.services.send_message
@@ -64,17 +68,46 @@ class EditMessageSerializer(serializers.Serializer):
 
 
 class StartConversationSerializer(serializers.Serializer):
-    target_user_id = serializers.UUIDField()
+    # Direct chat: target_user_id. Group chat: member_ids (+ optional title).
+    target_user_id = serializers.UUIDField(required=False)
+    member_ids = serializers.ListField(
+        child=serializers.UUIDField(), required=False, allow_empty=False, max_length=services.GROUP_MAX_MEMBERS
+    )
+    title = serializers.CharField(max_length=80, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if bool(attrs.get("target_user_id")) == bool(attrs.get("member_ids")):
+            raise serializers.ValidationError("Send either target_user_id (one person) or member_ids (a group).")
+        return attrs
+
+
+class AddMembersSerializer(serializers.Serializer):
+    user_ids = serializers.ListField(child=serializers.UUIDField(), allow_empty=False, max_length=services.GROUP_MAX_MEMBERS)
+
+
+class RenameGroupSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=80, allow_blank=True)
+
+
+class MoodSerializer(serializers.Serializer):
+    # "" clears your mood.
+    mood = serializers.ChoiceField(choices=list(ConversationMember.Mood.values), allow_blank=True)
 
 
 class ConversationSerializer(serializers.ModelSerializer):
     other_user_id = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
+    my_role = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()
     last_message = serializers.SerializerMethodField()
+    pinned_messages = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
-        fields = ["id", "booking", "other_user_id", "unread_count", "last_message", "created_at", "updated_at"]
+        fields = [
+            "id", "booking", "is_group", "title", "other_user_id", "members", "my_role",
+            "unread_count", "last_message", "pinned_messages", "created_at", "updated_at",
+        ]
         read_only_fields = fields
 
     def get_other_user_id(self, obj):
@@ -82,6 +115,28 @@ class ConversationSerializer(serializers.ModelSerializer):
         if not request:
             return None
         return obj.other_participant_id(request.user)
+
+    def get_members(self, obj):
+        if not obj.is_group:
+            return []
+        out = []
+        for m in obj.members.order_by("created_at"):
+            mood = services.member_mood(m)  # None once it has faded
+            out.append({
+                "user_id": str(m.user_id), "role": m.role,
+                "mood": mood, "mood_set_at": m.mood_set_at if mood else None,
+            })
+        return out
+
+    def get_pinned_messages(self, obj):
+        # Only on the detail view (context["detail"]) so the conversation LIST stays light.
+        if not obj.is_group or not self.context.get("detail"):
+            return []
+        return [services.serialize_pinned(m) for m in services.list_pinned_messages(obj)]
+
+    def get_my_role(self, obj):
+        request = self.context.get("request")
+        return services.member_role(obj, request.user) if request else None
 
     def get_unread_count(self, obj):
         request = self.context.get("request")
