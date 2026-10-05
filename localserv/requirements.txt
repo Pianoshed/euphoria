@@ -22,3 +22,5 @@ sentry-sdk==2.19.0
 google-auth
 whitenoise
 django-anymail[brevo]
+uvicorn[standard]
+websockets-17.2
