@@ -1,5 +1,5 @@
 from .base import *  # noqa: F401,F403
-from .base import LOGGING, env
+from .base import BREVO_API_KEY, LOGGING, env
 
 # STAGING / DEMO ONLY. Fake money, stub payments. Never point real users,
 # real payment credentials, or the production database at this.
@@ -29,7 +29,9 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
-EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"  # or smtp if you want real emails
+# Real email through Brevo when BREVO_API_KEY is set (base.py picks the backend); otherwise just print emails in the log.
+if not BREVO_API_KEY:
+    EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"
 
 LOGGING["formatters"]["json"] = {"()": "apps.common.log_formatters.JSONFormatter"}
 LOGGING["handlers"]["console"]["formatter"] = "json"

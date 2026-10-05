@@ -470,6 +470,19 @@ export default function ConversationView() {
     setReactTarget(null);
   }, [id]);
 
+  // Tell the call which conversation is open (so a call to it rings here) and who the other person is.
+  // These are hooks, so they must stay ABOVE the early return below (hooks can't be skipped on some renders).
+  useEffect(() => {
+    setViewedConversation(id);
+    return () => clearViewedConversation(id);
+  }, [id, setViewedConversation, clearViewedConversation]);
+  const peerName = otherProfile?.display_name || otherProfile?.username || '\u2026';
+  const peerAvatar = otherProfile?.avatar || null;
+  const peerLoaded = Boolean(otherProfile);
+  useEffect(() => {
+    if (peerLoaded) setPeer(id, { name: peerName, avatar: peerAvatar });
+  }, [id, peerLoaded, peerName, peerAvatar, setPeer]);
+
   if (!messages) return <div className="page"><Spinner /></div>;
 
   const presence = presenceLabel(otherProfile);
@@ -477,15 +490,6 @@ export default function ConversationView() {
   const displayName = otherProfile?.display_name || otherProfile?.username || '…';
   const callBusy = call.status !== 'idle' && call.status !== 'ended';
   const peerInfo = { name: displayName, avatar: otherProfile?.avatar || null };
-
-  // Tell the call which conversation is open (so a call to it rings here) and who the other person is.
-  useEffect(() => {
-    setViewedConversation(id);
-    return () => clearViewedConversation(id);
-  }, [id, setViewedConversation, clearViewedConversation]);
-  useEffect(() => {
-    if (otherProfile) setPeer(id, { name: displayName, avatar: otherProfile.avatar || null });
-  }, [id, otherProfile, displayName, setPeer]);
 
   return (
     <div className="page cv">

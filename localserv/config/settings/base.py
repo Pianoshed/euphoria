@@ -185,6 +185,18 @@ PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", default="stub")
 STUB_PAYMENT_WEBHOOK_SECRET = env("STUB_PAYMENT_WEBHOOK_SECRET", default="stub-secret-change-me")
 
 # --- Email ---
+# Where the React site lives. Used to build the links inside emails (verify email, reset password).
+FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
+
+# With BREVO_API_KEY set, email goes out through Brevo's HTTP API (works on hosts that block SMTP).
+# Without it, dev/staging print emails in the log and prod falls back to SMTP (see each settings file).
+BREVO_API_KEY = env("BREVO_API_KEY", default="")
+if BREVO_API_KEY:
+    INSTALLED_APPS += ["anymail"]
+    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
+    ANYMAIL = {"BREVO_API_KEY": BREVO_API_KEY}
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)  # seconds: a slow mail service must not hang a request
+
 EMAIL_HOST = env("EMAIL_HOST", default="")
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
