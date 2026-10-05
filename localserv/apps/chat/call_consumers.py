@@ -15,6 +15,8 @@ from .consumers import (
     CLOSE_UNAUTHENTICATED,
 )
 
+log = logging.getLogger("apps")
+
 # Signal types a client may send. The server only checks shape and size, then relays to the
 # other participant. It does not interpret ICE candidates, and reads an SDP for just one thing:
 # whether it has a video line, which tells a voice call from a video call (see call_logs).
@@ -51,31 +53,36 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
     itself, so nobody's browser can change who called whom, when, or for how long.
     """
 
+    async def _reject(self, code, reason):
+        """Close before accept(). The browser only sees a generic 403 / "connection failed",
+        so log the real reason server-side."""
+        log.warning("WS call reject: %s", reason)
+        await self.close(code=code)
+
     async def connect(self):
         user = self.scope["user"]
         conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
+        log.info("WS call connect user=%s cid=%s", user, conversation_id)
 
         if user is None or not user.is_authenticated:
-            await self.close(code=CLOSE_UNAUTHENTICATED)
-            return
+            return await self._reject(CLOSE_UNAUTHENTICATED, "anonymous")
 
         if getattr(user, "status", None) != AccountStatus.ACTIVE:
-            await self.close(code=CLOSE_ACCOUNT_NOT_ACTIVE)
-            return
+            return await self._reject(CLOSE_ACCOUNT_NOT_ACTIVE, f"status={user.status}")
 
         conversation = await self._get_conversation_for_user(conversation_id, user)
         if conversation is None:
-            await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)
-            return
+            return await self._reject(CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT, "no conversation/participant")
 
-        if conversation.is_group:
-            await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)  # calls are one-to-one only
-            return
+        if conversation.is_group:  # calls are one-to-one only
+            return await self._reject(
+                CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT, "group conversation (calls 1-to-1 only)"
+            )
 
-        self.other_id = conversation.other_participant_id(user)
+        # May hit the DB, so keep it out of the async context.
+        self.other_id = await database_sync_to_async(conversation.other_participant_id)(user)
         if await self._is_blocked(user.id, self.other_id):
-            await self.close(code=CLOSE_BLOCKED)
-            return
+            return await self._reject(CLOSE_BLOCKED, "blocked")
 
         self.conversation = conversation
         self.user = user
@@ -142,7 +149,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
             elif kind in BARE_TYPES:
                 await database_sync_to_async(call_logs.record_end)(self.conversation.id, self.user.id, kind)
         except Exception:
-            logging.getLogger("apps").warning("Call log update failed", exc_info=True)
+            log.warning("Call log update failed", exc_info=True)
 
     async def _replay_ringing_offer(self):
         """The callee may open this socket after the offer was sent (they were on another page
@@ -151,7 +158,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         try:
             calls = await database_sync_to_async(call_logs.ringing_for)(self.user.id, self.conversation.id)
         except Exception:
-            logging.getLogger("apps").warning("Could not look up a ringing call", exc_info=True)
+            log.warning("Could not look up a ringing call", exc_info=True)
             return
         if calls and calls[0].offer_sdp:
             await self.send_json({"type": "offer", "sdp": calls[0].offer_sdp, "from": str(calls[0].caller_id)})
@@ -174,7 +181,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
                         inbox_group(user_id), {"type": "call.ended", "conversation_id": conversation_id}
                     )
         except Exception:
-            logging.getLogger("apps").warning("Call inbox notify failed", exc_info=True)
+            log.warning("Call inbox notify failed", exc_info=True)
 
     async def _error(self, detail):
         await self.send_json({"type": "error", "detail": detail})
@@ -252,9 +259,11 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
     async def connect(self):
         user = self.scope["user"]
         if user is None or not user.is_authenticated:
+            log.warning("WS inbox reject: anonymous")
             await self.close(code=CLOSE_UNAUTHENTICATED)
             return
         if getattr(user, "status", None) != AccountStatus.ACTIVE:
+            log.warning("WS inbox reject: status=%s", user.status)
             await self.close(code=CLOSE_ACCOUNT_NOT_ACTIVE)
             return
         self.user = user
@@ -270,7 +279,7 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
                         "caller_id": str(call.caller_id), "mode": call.mode,
                     })
         except Exception:
-            logging.getLogger("apps").warning("Could not catch up the call inbox", exc_info=True)
+            log.warning("Could not catch up the call inbox", exc_info=True)
 
     async def disconnect(self, code):
         if hasattr(self, "group_name"):
@@ -287,41 +296,3 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
 
     async def call_ended(self, event):
         await self.send_json({"type": "ended", "conversation_id": event["conversation_id"]})
-log = logging.getLogger("apps")
-
-async def _reject(self, code, reason):
-    log.warning("WS call reject: %s", reason)
-    await self.close(code=code)
-
-async def connect(self):
-    try:
-        user = self.scope["user"]
-        cid = self.scope["url_route"]["kwargs"]["conversation_id"]
-        log.warning("WS call connect user=%s auth=%s cid=%s",
-                    user, getattr(user, "is_authenticated", None), cid)
-
-        if user is None or not user.is_authenticated:
-            return await self._reject(CLOSE_UNAUTHENTICATED, "anonymous")
-        if getattr(user, "status", None) != AccountStatus.ACTIVE:
-            return await self._reject(CLOSE_ACCOUNT_NOT_ACTIVE, f"status={user.status}")
-
-        conversation = await self._get_conversation_for_user(cid, user)
-        if conversation is None:
-            return await self._reject(CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT, "no conversation/participant")
-        if conversation.is_group:
-            return await self._reject(CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT, "group conversation")
-
-        self.other_id = await database_sync_to_async(conversation.other_participant_id)(user)
-        if await self._is_blocked(user.id, self.other_id):
-            return await self._reject(CLOSE_BLOCKED, "blocked")
-
-        self.conversation = conversation
-        self.user = user
-        self.group_name = f"call_{conversation.id}"
-        self._sent_at = deque()
-        await self.channel_layer.group_add(self.group_name, self.channel_name)
-        await self.accept()
-        await self._replay_ringing_offer()
-    except Exception:
-        log.exception("WS call connect crashed")
-        raise
