@@ -2,14 +2,15 @@ import '../../styles/index.css';
 import './chat.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
 import { API_BASE, apiFetch, apiBlob } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { useChatSocket } from '../../hooks/useChatSocket';
-import { useVideoCall } from '../../hooks/useVideoCall';
-import VideoCallPanel from './VideoCallPanel';
+import { useCall } from '../../context/CallContext';
+import { useDataSaver } from '../../hooks/useDataSaver';
+import { compressImage } from '../../utils/dataSaver';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import { PaperclipIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
@@ -192,23 +193,10 @@ export default function ConversationView() {
   usePageBackdrop('couples');
   const { id } = useParams();
   const { user } = useAuth();
-  const call = useVideoCall({ conversationId: id, myId: user.id });
-  const location = useLocation();
-  const navigate = useNavigate();
-  // Accepted from the site-wide ring: this page's call socket opens, the server replays the
-  // offer, status becomes 'incoming', and we answer. The 15s stamp stops a stale flag from
-  // auto-answering some later call.
-  const acceptStamp = location.state?.acceptCall;
-  const { status: callStatus, acceptCall } = call;
-  useEffect(() => {
-    if (!acceptStamp) return;
-    if (Date.now() - acceptStamp > 15_000) {
-      navigate(location.pathname, { replace: true, state: null });
-    } else if (callStatus === 'incoming') {
-      navigate(location.pathname, { replace: true, state: null });
-      acceptCall();
-    }
-  }, [acceptStamp, callStatus, acceptCall, location.pathname, navigate]);
+  // The call itself lives above the routes (see CallContext), so it keeps going when this page closes.
+  const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer } = useCall();
+  const saver = useDataSaver();
+  const [shownPhotos, setShownPhotos] = useState({}); // photos the person tapped to load while Data saver is on
   const [messages, setMessages] = useState(null);
   const [otherProfile, setOtherProfile] = useState(null);
   const [otherUserId, setOtherUserId] = useState(null);
@@ -354,7 +342,7 @@ export default function ConversationView() {
   useEffect(() => {
     if (!id) return undefined;
     const run = () => { if (document.visibilityState === 'visible') refreshMessages(); };
-    const timer = setInterval(run, connected ? 20000 : 4000);
+    const timer = setInterval(run, connected ? (saver.active ? 60000 : 20000) : (saver.active ? 12000 : 4000));
     document.addEventListener('visibilitychange', run);
     window.addEventListener('focus', run);
     window.addEventListener('online', run);
@@ -364,12 +352,15 @@ export default function ConversationView() {
       window.removeEventListener('focus', run);
       window.removeEventListener('online', run);
     };
-  }, [id, connected, refreshMessages]);
+  }, [id, connected, refreshMessages, saver.active]);
 
-  const handleFileChange = (e) => {
-    const file = e.target.files?.[0];
-    setAttachment(file || null);
-    setAttachmentPreview(file ? URL.createObjectURL(file) : null);
+  const handleFileChange = async (e) => {
+    const picked = e.target.files?.[0];
+    if (!picked) { setAttachment(null); setAttachmentPreview(null); return; }
+    // Shrink big photos first: much less mobile data to send, and to download on the other side.
+    const file = await compressImage(picked, saver.active);
+    setAttachment(file);
+    setAttachmentPreview(URL.createObjectURL(file));
   };
 
   const clearAttachment = () => {
@@ -485,6 +476,16 @@ export default function ConversationView() {
   const online = Boolean(presence?.online);
   const displayName = otherProfile?.display_name || otherProfile?.username || '…';
   const callBusy = call.status !== 'idle' && call.status !== 'ended';
+  const peerInfo = { name: displayName, avatar: otherProfile?.avatar || null };
+
+  // Tell the call which conversation is open (so a call to it rings here) and who the other person is.
+  useEffect(() => {
+    setViewedConversation(id);
+    return () => clearViewedConversation(id);
+  }, [id, setViewedConversation, clearViewedConversation]);
+  useEffect(() => {
+    if (otherProfile) setPeer(id, { name: displayName, avatar: otherProfile.avatar || null });
+  }, [id, otherProfile, displayName, setPeer]);
 
   return (
     <div className="page cv">
@@ -509,7 +510,7 @@ export default function ConversationView() {
               <button
                 type="button"
                 className="cv-call-btn"
-                onClick={() => call.startCall('voice')}
+                onClick={() => startCallIn(id, 'voice', peerInfo)}
                 disabled={callBusy}
                 aria-label={`Start a voice call with ${displayName}`}
               >
@@ -518,11 +519,16 @@ export default function ConversationView() {
               <button
                 type="button"
                 className="cv-call-btn"
-                onClick={() => call.startCall('video')}
+                onClick={() => startCallIn(id, 'video', peerInfo)}
                 disabled={callBusy}
                 aria-label={`Start a video call with ${displayName}`}
               >
                 <VideoIcon /><span className="cv-call-btn__text">Video</span>
+              </button>
+              <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
+                onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
+                title="Data saver: smaller photos, lower call quality, slower refresh">
+                <span aria-hidden="true">↓</span><span className="cv-call-btn__text">Data saver {saver.active ? 'on' : 'off'}</span>
               </button>
               <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
                 <span className="cv-live__text">{connected ? 'Live' : 'Reconnecting…'}</span>
@@ -574,11 +580,16 @@ export default function ConversationView() {
                                   📷 Tap to view photo <span>(once)</span>
                                 </button>
                               )
-                            ) : m.attachment_url && (
+                            ) : m.attachment_url && (saver.active && !mine && !shownPhotos[m.id] ? (
+                              <button type="button" className="cv-once cv-once--open"
+                                onClick={() => setShownPhotos((s) => ({ ...s, [m.id]: true }))}>
+                                📷 Tap to load photo <span>(saves data)</span>
+                              </button>
+                            ) : (
                               <a href={mediaUrl(m.attachment_url)} target="_blank" rel="noreferrer">
                                 <img className="cv-bubble__img" src={mediaUrl(m.attachment_url)} alt="Photo" loading="lazy" />
                               </a>
-                            )}
+                            ))}
                             {m.body && (
                               <p className={m.attachment_url || m.attachment_view_once ? 'cv-bubble__caption' : undefined}>{m.body}</p>
                             )}
@@ -703,7 +714,6 @@ export default function ConversationView() {
           </div>
         </div>
       )}
-      <VideoCallPanel call={call} name={displayName} avatar={otherProfile?.avatar} />
     </div>
   );
 }

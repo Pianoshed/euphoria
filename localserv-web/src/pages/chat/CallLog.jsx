@@ -51,26 +51,6 @@ const when = (iso) => new Date(iso).toLocaleString([], {
   year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
 });
 
-const csvCell = (v) => `"${String(v ?? '').replaceAll('"', '""')}"`;
-
-function downloadCsv(rows, nameOf) {
-  const header = ['Started', 'Caller', 'Called', 'Type', 'Result', 'Answered at', 'Ended at', 'Duration (seconds)', 'Duration (minutes)'];
-  const lines = rows.map((r) => {
-    const secs = durationSeconds(r);
-    return [
-      r.started_at, nameOf(r.caller, r.caller_username), nameOf(r.callee, r.callee_username), r.mode,
-      r.outcome, r.answered_at || '', r.ended_at || '', secs, (secs / 60).toFixed(2),
-    ].map(csvCell).join(',');
-  });
-  const blob = new Blob([`\uFEFF${[header.map(csvCell).join(','), ...lines].join('\r\n')}`], { type: 'text/csv;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `call-log-${new Date().toISOString().slice(0, 10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
 export default function CallLog() {
   const { user } = useAuth();
   const staff = isStaff(user);
@@ -132,11 +112,6 @@ export default function CallLog() {
           <h1>Call log</h1>
           <p className="muted">Every voice and video call, with the time it started and how long it lasted.</p>
         </div>
-        {rows?.length > 0 && (
-          <button type="button" className="btn btn--sm" onClick={() => downloadCsv(rows, nameOf)}>
-            Download CSV
-          </button>
-        )}
       </header>
 
       {staff && (

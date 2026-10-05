@@ -1,6 +1,7 @@
 import './call.css';
 import { useEffect, useRef, useState } from 'react';
 import { startRingback, startRingtone, stopRingback, stopRingtone } from '../../utils/notifySound';
+import { useDataSaver } from '../../hooks/useDataSaver';
 
 function VideoTile({ stream, muted = false, mirrored = false, className = '' }) {
   const ref = useRef(null);
@@ -61,6 +62,16 @@ const SwapIcon = ({ size = 22 }) => (
     <path d="M7 4v13M3.5 13.5 7 17l3.5-3.5M17 20V7M13.5 10.5 17 7l3.5 3.5" />
   </svg>
 );
+const MinimizeIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+const ExpandIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M4 14v6h6M20 10V4h-6M4 20l7-7M20 4l-7 7" />
+  </svg>
+);
 const HangUpIcon = () => (
   <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M3 14c4-4 14-4 18 0l-2.5 2.5-3-1.5v-2.2c-2-.6-4-.6-6 0V15l-3 1.5z" />
@@ -75,9 +86,10 @@ const HangUpIcon = () => (
  * never restarts a stream or cuts the other person's audio. Tap the small picture (or the
  * swap button) to put yourself on the big screen, and tap again to swap back.
  */
-export default function VideoCallPanel({ call, name, avatar }) {
+export default function VideoCallPanel({ call, name, avatar, minimized = false, onMinimize, onExpand, quiet = false }) {
   const { status, notice } = call;
   const elapsed = useElapsed(status === 'active');
+  const saver = useDataSaver();
   const [swapped, setSwapped] = useState(false); // true = my camera is the big picture
   const voice = call.mode === 'voice';
   const canFlip = !voice && typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
@@ -89,10 +101,10 @@ export default function VideoCallPanel({ call, name, avatar }) {
 
   // Ring while a call is waiting to be answered.
   useEffect(() => {
-    if (status !== 'incoming') return undefined;
+    if (status !== 'incoming' || quiet) return undefined;
     startRingtone();
     return stopRingtone;
-  }, [status]);
+  }, [status, quiet]);
 
   // The caller hears a ringback tone until the other person answers, declines or the call times out.
   useEffect(() => {
@@ -112,6 +124,8 @@ export default function VideoCallPanel({ call, name, avatar }) {
     ) : null;
   }
 
+  if (status === 'incoming' && quiet) return null; // answered from the site-wide ring: no second ring screen
+
   if (status === 'incoming') {
     return (
       <div className="vc-backdrop">
@@ -125,6 +139,31 @@ export default function VideoCallPanel({ call, name, avatar }) {
           </div>
           <small>{voice ? 'Your microphone turns on when you accept.' : 'Your camera and microphone turn on when you accept.'}</small>
         </div>
+      </div>
+    );
+  }
+
+  if (minimized && status !== 'incoming') {
+    return (
+      <div className={`vc-mini${voice ? ' vc-mini--voice' : ''}`} role="region" aria-label={`Call with ${name}`}>
+        {/* The remote video element stays mounted: it is what plays the other person's voice. */}
+        <button type="button" className="vc-mini__who" onClick={onExpand} aria-label="Back to the call">
+          <span className="vc-mini__thumb">
+            <CallerFace name={name} avatar={avatar} className="vc-mini__face" />
+            {!voice && call.remoteStream && <VideoTile stream={call.remoteStream} className="vc-mini__video" />}
+          </span>
+          <span className="vc-mini__text">
+            <strong>{name}</strong>
+            <small>{status === 'active' ? elapsed : status === 'calling' ? 'Calling\u2026' : 'Connecting\u2026'}</small>
+          </span>
+        </button>
+        {voice && <VideoTile stream={call.remoteStream} className="vc-mini__audio" />}
+        <button type="button" className={`vc-mini__btn${call.micOn ? '' : ' is-off'}`} onClick={call.toggleMic}
+          aria-pressed={!call.micOn} aria-label={call.micOn ? 'Mute microphone' : 'Unmute microphone'}>
+          <MicIcon off={!call.micOn} />
+        </button>
+        <button type="button" className="vc-mini__btn" onClick={onExpand} aria-label="Open the call screen"><ExpandIcon /></button>
+        <button type="button" className="vc-mini__btn vc-mini__btn--end" onClick={call.hangUp} aria-label="End call"><HangUpIcon /></button>
       </div>
     );
   }
@@ -145,7 +184,8 @@ export default function VideoCallPanel({ call, name, avatar }) {
     : voice ? 'Voice call' : name;
 
   return (
-    <div className={`vc-screen${voice ? ' vc-screen--voice' : ''}`} role="dialog" aria-modal="true" aria-label={`${voice ? 'Voice' : 'Video'} call with ${name}`}>
+    <div className={`vc-screen${voice ? ' vc-screen--voice' : ''}${avatar ? ' vc-screen--photo' : ''}`}
+      style={avatar ? { '--vc-photo': `url("${avatar}")` } : undefined} role="dialog" aria-modal="true" aria-label={`${voice ? 'Voice' : 'Video'} call with ${name}`}>
       {/* Other person */}
       <div
         className={`vc-tile vc-tile--remote ${selfBig ? 'vc-tile--small' : 'vc-tile--big'}`}
@@ -158,14 +198,27 @@ export default function VideoCallPanel({ call, name, avatar }) {
 
       {waiting && (
         <div className="vc-waiting">
-          <CallerFace name={name} avatar={avatar} className="vc-face--pulse vc-face--big" />
-          <p role="status">{label}</p>
+          <CallerFace name={name} avatar={avatar} className={`vc-face--big${status === 'active' ? '' : ' vc-face--pulse'}`} />
+          {voice && <strong className="vc-waiting__name">{name}</strong>}
+          <p role="status">{voice && status === 'active' ? elapsed : label}</p>
         </div>
       )}
 
       <div className="vc-top">
+        <CallerFace name={name} avatar={avatar} className="vc-top__face" />
         <strong>{name}</strong>
         {status === 'active' && <span className="vc-timer" aria-label="Call length">{elapsed}</span>}
+        <span className="vc-top__spacer" />
+        {!voice && (
+          <button type="button" className={`vc-chip${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
+            onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
+            title="Lower the picture quality to use less mobile data">
+            Data saver {saver.active ? 'on' : 'off'}
+          </button>
+        )}
+        <button type="button" className="vc-chip vc-chip--icon" onClick={onMinimize} aria-label="Minimize the call" title="Keep the call going and go back to the app">
+          <MinimizeIcon />
+        </button>
         <span className="vc-note">Only the two of you are on this call. We don&rsquo;t record it.</span>
       </div>
 

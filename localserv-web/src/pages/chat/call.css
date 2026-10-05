@@ -268,3 +268,92 @@
   .cv-call-btn { justify-content: center; width: 42px; height: 42px; padding: 0; }
   .cv-call-btn__text { display: none; }
 }
+
+/* ---------- Photo, minimize and the floating call bar ---------- */
+
+/* A soft, blurred copy of the person's photo behind the call. */
+.vc-screen--photo::before {
+  content: '';
+  position: absolute;
+  inset: -30px;
+  z-index: 0;
+  background: var(--vc-photo) center / cover no-repeat;
+  filter: blur(34px) brightness(0.45) saturate(1.2);
+  pointer-events: none;
+}
+.vc-screen--photo .vc-tile--big { background: transparent; }
+
+.vc-top { align-items: center; }
+.vc-top__face { width: 36px; height: 36px; font-size: 1rem; flex: none; }
+.vc-top__spacer { flex: 1; }
+.vc-chip {
+  pointer-events: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 999px;
+  background: rgba(20, 18, 43, 0.45);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.vc-chip.is-on { background: #1f9d55; border-color: #1f9d55; }
+.vc-chip--icon { padding: 7px 9px; }
+.vc-waiting__name { font-size: 1.5rem; overflow-wrap: anywhere; text-align: center; padding: 0 16px; }
+
+.vc-mini {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  right: 8px;
+  left: 8px;
+  margin-inline: auto;
+  width: min(420px, calc(100vw - 16px));
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #1c1a36;
+  color: #fff;
+  box-shadow: 0 14px 30px -10px rgba(0, 0, 0, 0.6);
+}
+.vc-mini__who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.vc-mini__thumb { position: relative; flex: none; width: 44px; height: 44px; border-radius: 50%; overflow: hidden; }
+.vc-mini__face { width: 44px; height: 44px; font-size: 1.1rem; }
+.vc-mini__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.vc-mini__audio { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.vc-mini__text { display: flex; flex-direction: column; min-width: 0; }
+.vc-mini__text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.95rem; }
+.vc-mini__text small { font-variant-numeric: tabular-nums; color: #7ee2a8; }
+.vc-mini__btn {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  cursor: pointer;
+}
+.vc-mini__btn.is-off { background: #fff; color: #1c1a36; }
+.vc-mini__btn--end { background: var(--vc-accent); }

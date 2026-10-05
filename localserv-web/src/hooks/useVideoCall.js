@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { WS_BASE } from '../api/client';
 import { getIceServers } from '../api/chat';
 import { setInCall } from '../utils/callActivity';
+import { applySenderLimits, callMediaConstraints, isDataSaverOn, subscribeDataSaver } from '../utils/dataSaver';
 
 /*
  * One-to-one video calling over WebRTC.
@@ -148,10 +149,9 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
   }, [finish, send, setStatusBoth]);
 
   const openMedia = useCallback(async (facingMode = 'user', withVideo = true) => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true },
-      video: withVideo ? { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } } : false,
-    });
+    const stream = await navigator.mediaDevices.getUserMedia(
+      callMediaConstraints(isDataSaverOn(), facingMode, withVideo),
+    );
     localRef.current = stream;
     setLocalStream(stream);
     return stream;
@@ -197,6 +197,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       const stream = await openMedia(facing, !voice);
       const pc = await createPeer();
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await applySenderLimits(pc, isDataSaverOn());
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       if (!send({ type: 'offer', sdp: offer.sdp })) throw new Error('signal');
@@ -221,6 +222,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       const stream = await openMedia(facing, modeRef.current === 'video');
       const pc = await createPeer();
       stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      await applySenderLimits(pc, isDataSaverOn());
       await pc.setRemoteDescription({ type: 'offer', sdp: offer.sdp });
       await flushPendingIce();
       const answer = await pc.createAnswer();
@@ -265,7 +267,9 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
   const flipCamera = useCallback(async () => {
     const nextFacing = facing === 'user' ? 'environment' : 'user';
     try {
-      const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: nextFacing } });
+      const fresh = await navigator.mediaDevices.getUserMedia({
+        video: callMediaConstraints(isDataSaverOn(), nextFacing, true).video,
+      });
       const track = fresh.getVideoTracks()[0];
       track.enabled = camOn;
       const sender = pcRef.current?.getSenders().find((s) => s.track?.kind === 'video');
@@ -279,6 +283,9 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       setNotice('Could not switch cameras on this device.');
     }
   }, [camOn, facing]);
+
+  // Switching Data saver on or off during a call changes the quality right away.
+  useEffect(() => subscribeDataSaver(() => { applySenderLimits(pcRef.current, isDataSaverOn()); }), []);
 
   /* ---------- incoming signals ---------- */
 

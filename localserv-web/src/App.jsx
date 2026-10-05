@@ -6,6 +6,7 @@ import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
+import { CallProvider } from './context/CallContext';
 
 import Register from './pages/auth/Register';
 import VerifyEmail from './pages/auth/VerifyEmail';
@@ -83,10 +84,12 @@ export default function App() {
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <Router>
         <AuthProvider>
-          <NavBar />
-          <MessageNotifier />
-          <IncomingCallNotifier />
-          <AppRoutes />
+          <CallProvider>
+            <NavBar />
+            <MessageNotifier />
+            <IncomingCallNotifier />
+            <AppRoutes />
+          </CallProvider>
         </AuthProvider>
       </Router>
     </GoogleOAuthProvider>

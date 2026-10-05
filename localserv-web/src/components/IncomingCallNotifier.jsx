@@ -1,12 +1,13 @@
 import '../pages/chat/call.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { WS_BASE } from '../api/client';
 import * as chatApi from '../api/chat';
 import * as accountsApi from '../api/accounts';
 import { armSound, startRingtone, stopRingtone } from '../utils/notifySound';
 import { isInCall } from '../utils/callActivity';
+import { useCall } from '../context/CallContext';
 
 const RING_MS = 45_000; // keep in step with RING_TIMEOUT_MS in useVideoCall and RING_TIMEOUT_SECONDS on the server
 const POLL_MS = 6_000;
@@ -35,8 +36,10 @@ function quickSignal(conversationId, type) {
  */
 export default function IncomingCallNotifier() {
   const { user } = useAuth();
-  const navigate = useNavigate();
   const { pathname } = useLocation();
+  const { acceptIncoming, activeId } = useCall();
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
   const [ring, setRing] = useState(null); // { conversationId, mode, name, avatar }
   const ringRef = useRef(null);
   const pathRef = useRef(pathname);
@@ -53,7 +56,7 @@ export default function IncomingCallNotifier() {
   const onIncoming = useCallback((info) => {
     const cid = String(info.conversation_id);
     if (ringRef.current?.conversationId === cid) return; // already ringing for this one
-    if (/^\/chat\/([^/]+)/.exec(pathRef.current)?.[1] === cid) return; // that page rings itself
+    if (activeIdRef.current === cid) return; // that conversation's own call socket rings itself
     if (isInCall() || ringRef.current) { quickSignal(cid, 'busy'); return; }
 
     const next = { conversationId: cid, mode: info.mode, name: 'Incoming call', avatar: null };
@@ -150,9 +153,9 @@ export default function IncomingCallNotifier() {
 
   const voice = ring.mode === 'voice';
   const accept = () => {
-    const cid = ring.conversationId;
+    const { conversationId: cid, name, avatar } = ring;
     clear();
-    navigate(`/chat/${cid}`, { state: { acceptCall: Date.now() } });
+    acceptIncoming(cid, { name, avatar }); // the call screen opens over whatever page this is
   };
   const decline = () => {
     const cid = ring.conversationId;
