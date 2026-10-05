@@ -16,7 +16,14 @@ import { applySenderLimits, callMediaConstraints, isDataSaverOn, subscribeDataSa
  */
 
 const RING_TIMEOUT_MS = 45_000;
-const RECONNECT_DELAY_MS = 2_000;
+const MIN_RECONNECT_MS = 1_000;
+const MAX_RECONNECT_MS = 15_000;
+// Only seen if the server accept()s first and then closes with a custom code.
+const NO_RETRY = new Set([4401, 4403, 4404]);
+// A close BEFORE accept() (anonymous, not a participant, group chat, blocked) reaches the
+// browser as a generic 403 / code 1006, never as 4401 etc. So also stop after this many
+// handshakes in a row that never opened.
+const MAX_FAILED_OPENS = 5;
 
 const callSocketUrl = (conversationId) => `${WS_BASE}/ws/call/${conversationId}/`;
 
@@ -361,11 +368,24 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
     if (!enabled || !conversationId) return undefined;
     closedRef.current = false;
     let reconnectTimer;
+    let attempt = 0;
+    let failedOpens = 0;
 
     const connect = () => {
+      clearTimeout(reconnectTimer);
+      const current = wsRef.current;
+      if (closedRef.current || (current && current.readyState <= WebSocket.OPEN)) return;
+
       const ws = new WebSocket(callSocketUrl(conversationId));
       wsRef.current = ws;
-      ws.onopen = () => setSignalReady(true);
+      let didOpen = false;
+
+      ws.onopen = () => {
+        didOpen = true;
+        attempt = 0;
+        failedOpens = 0;
+        setSignalReady(true);
+      };
       ws.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
@@ -374,11 +394,31 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
         } catch { /* ignore malformed frames */ }
       };
       ws.onclose = (e) => {
+        if (wsRef.current === ws) wsRef.current = null;
         setSignalReady(false);
-        if (closedRef.current || e.code === 4401 || e.code === 4403 || e.code === 4404) return;
-        reconnectTimer = setTimeout(connect, RECONNECT_DELAY_MS);
+        if (closedRef.current || NO_RETRY.has(e.code)) return;
+        if (!didOpen) {
+          failedOpens += 1;
+          if (failedOpens >= MAX_FAILED_OPENS) return; // server keeps rejecting us; stop
+        }
+        const delay = Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt);
+        attempt += 1;
+        reconnectTimer = setTimeout(connect, delay);
       };
     };
+
+    // Tab visible again or network back: start a fresh round if the socket is down.
+    const wake = () => {
+      if (document.visibilityState !== 'visible') return;
+      const current = wsRef.current;
+      if (!current || current.readyState > WebSocket.OPEN) {
+        attempt = 0;
+        failedOpens = 0;
+        connect();
+      }
+    };
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('online', wake);
     connect();
 
     // Closing the tab mid-call should end it for the other person right away.
@@ -391,6 +431,8 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
       closedRef.current = true;
       clearTimeout(reconnectTimer);
       window.removeEventListener('pagehide', onUnload);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('online', wake);
       onUnload();
       wsRef.current?.close();
       wsRef.current = null;
