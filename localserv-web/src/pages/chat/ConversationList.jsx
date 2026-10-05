@@ -3,10 +3,14 @@ import './inbox.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useArchivedChats } from '../../hooks/useArchivedChats';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
 import { ErrorAlert } from '../../components/ui';
+import PeoplePicker from '../../components/PeoplePicker';
+import { useDataSaver } from '../../hooks/useDataSaver';
+import { useAuth } from '../../context/AuthContext';
+import './group.css';
 import Chopper from '../../components/Chopper';
 import { presenceLabel } from '../../utils/presence';
 import { archiveHint, isShelved, startedLabel } from '../../utils/chatAge';
@@ -18,6 +22,10 @@ export default function ConversationList() {
   const [conversations, setConversations] = useState(null);
   const [profiles, setProfiles] = useState({});
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
+  const saver = useDataSaver();
+  const { user } = useAuth();
+  const [groupOpen, setGroupOpen] = useState(false);
   const [flight, setFlight] = useState(0); // bump to send the chopper round again
   const [view, setView] = useState('inbox'); // 'inbox' | 'archived'
   const [undo, setUndo] = useState(null);    // { ids, label } for the "Archived. Undo" line
@@ -32,7 +40,9 @@ export default function ConversationList() {
     const list = data.results ?? data;
     setConversations(list);
 
-    const ids = [...new Set(list.map((c) => c.other_user_id))];
+    const ids = [...new Set(list.map((c) => (c.is_group
+      ? (c.last_message && c.last_message.sender_id !== String(user?.id) ? c.last_message.sender_id : null)
+      : c.other_user_id)).filter(Boolean))];
     const wanted = ids.filter((id, i) => !profilesRef.current[id] || i < 12);
     if (!wanted.length) return;
     const entries = await Promise.all(
@@ -44,7 +54,7 @@ export default function ConversationList() {
     );
     profilesRef.current = { ...profilesRef.current, ...Object.fromEntries(entries) };
     setProfiles(profilesRef.current);
-  }, []);
+  }, [user?.id]);
 
   // Keep the inbox live without a refresh: poll while visible, and refresh the moment
   // the tab regains focus or the network comes back.
@@ -81,7 +91,19 @@ export default function ConversationList() {
   const suggested = useMemo(() => inbox.filter((c) => archiveHint(c)), [inbox]);
   const shown = view === 'inbox' ? inbox : shelf;
 
-  const nameOf = (c) => profiles[c.other_user_id]?.username || 'that chat';
+  const nameOf = (c) => (c.is_group ? (c.title || 'that group') : (profiles[c.other_user_id]?.username || 'that chat'));
+
+  // People you already talk to, offered first when picking group members.
+  const suggestions = useMemo(
+    () => (conversations ?? []).filter((c) => !c.is_group && profiles[c.other_user_id])
+      .map((c) => ({ id: c.other_user_id, ...profiles[c.other_user_id] })),
+    [conversations, profiles],
+  );
+  const createGroup = async (ids, title) => {
+    const c = await chatApi.createGroup(ids, title);
+    setGroupOpen(false);
+    navigate(`/chat/${c.id}`);
+  };
 
   const archiveOne = (c) => {
     archive(c.id);
@@ -113,6 +135,9 @@ export default function ConversationList() {
           <p>{tagline}</p>
           <button type="button" className="inbox__link" onClick={() => setFlight((n) => n + 1)}>
             Send the chopper again
+          </button>
+          <button type="button" className="btn btn--sm btn--primary" onClick={() => setGroupOpen(true)}>
+            New group
           </button>
         </div>
       </header>
@@ -177,22 +202,28 @@ export default function ConversationList() {
 
       <ul className="inbox__list">
         {shown.map((c, i) => {
-          const profile = profiles[c.other_user_id];
-          const presence = presenceLabel(profile);
+          const isGroup = Boolean(c.is_group);
+          const profile = isGroup ? null : profiles[c.other_user_id];
+          const presence = isGroup ? null : presenceLabel(profile);
           const unread = c.unread_count > 0;
           const hint = view === 'inbox' ? archiveHint(c) : null;
           const started = startedLabel(c.created_at);
-          const name = profile?.username || '…';
+          const name = isGroup ? (c.title || 'Group chat') : (profile?.username || '…');
           const preview = c.last_message
             ? (c.last_message.body === null ? 'Message deleted'
               : c.last_message.body || (c.last_message.attachment_type === 'audio' ? '🎤 Voice message' : '📷 Photo'))
             : 'Nothing yet. Be brave, say hi.';
+          // In a group, say who wrote the last message.
+          const lastSender = isGroup && c.last_message
+            ? (c.last_message.sender_id === String(user?.id) ? 'You' : (profiles[c.last_message.sender_id]?.username || 'Someone'))
+            : null;
+          const previewText = lastSender ? `${lastSender}: ${preview}` : preview;
 
           return (
             <li key={c.id} className="inbox__item" style={{ '--i': Math.min(i, 10) }}>
               <Link to={`/chat/${c.id}`} className={`drop-row${unread ? ' drop-row--unread' : ''}${view === 'archived' ? ' drop-row--shelved' : ''}`}>
                 <span className="avatar-wrap">
-                  <span className="avatar" aria-hidden="true">{name[0]?.toUpperCase()}</span>
+                  <span className="avatar" aria-hidden="true">{isGroup ? '👥' : name[0]?.toUpperCase()}</span>
                   {presence?.online && <span className="dot-online" role="img" aria-label="Online" />}
                 </span>
 
@@ -204,10 +235,11 @@ export default function ConversationList() {
                     )}
                   </span>
                   <span className={`bubble__text truncate${c.last_message ? '' : ' bubble__text--empty'}`}>
-                    {preview}
+                    {previewText}
                   </span>
                   <span className="bubble__meta">
                     {unread && <span className="bubble__badge">{plural(c.unread_count, 'new drop', 'new drops')}</span>}
+                    {isGroup && <span className="bubble__started">{c.members?.length || 0} people</span>}
                     {started && <span className="bubble__started">Started {started}</span>}
                     {hint && <span className={`bubble__hint bubble__hint--${hint.kind}`}>{hint.label}</span>}
                   </span>
@@ -237,6 +269,20 @@ export default function ConversationList() {
           );
         })}
       </ul>
+
+      {groupOpen && (
+        <PeoplePicker
+          title="New group"
+          submitLabel="Create group"
+          minPick={2}
+          maxPick={19}
+          askTitle
+          suggestions={suggestions}
+          saver={saver.active}
+          onSubmit={createGroup}
+          onClose={() => setGroupOpen(false)}
+        />
+      )}
     </div>
   );
 }
