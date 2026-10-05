@@ -42,10 +42,12 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)
             return
 
-        other_id = conversation.other_participant_id(user)
-        if await self._is_blocked(user.id, other_id):
-            await self.close(code=CLOSE_BLOCKED)
-            return
+        # Blocking is a one-to-one check; a group has no single "other" person.
+        if not conversation.is_group:
+            other_id = conversation.other_participant_id(user)
+            if await self._is_blocked(user.id, other_id):
+                await self.close(code=CLOSE_BLOCKED)
+                return
 
         self.conversation = conversation
         self.user = user
@@ -77,7 +79,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(self.group_name, {"type": "chat.message", "payload": payload})
 
     async def chat_message(self, event):
-        await self.send_json(event["payload"])
+        payload = event["payload"]
+        # Someone was removed from this group: close THEIR socket so they stop receiving messages.
+        if payload.get("type") == "member_removed" and str(payload.get("user_id")) == str(self.user.id):
+            await self.send_json(payload)
+            await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)
+            return
+        await self.send_json(payload)
 
     # --- sync ORM access, wrapped for the async consumer ---------------------------
 

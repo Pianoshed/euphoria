@@ -1,13 +1,13 @@
 from django.contrib import admin
 
-from .models import CallLog, Conversation, ConversationParticipantState, Message, MessageAttachment
+from .models import CallLog, Conversation, ConversationMember, ConversationParticipantState, Message, MessageAttachment
 
 
 @admin.register(Conversation)
 class ConversationAdmin(admin.ModelAdmin):
-    list_display = ["id", "user_a", "user_b", "booking", "created_at", "updated_at"]
+    list_display = ["id", "is_group", "title", "user_a", "user_b", "booking", "created_at", "updated_at"]
     search_fields = ["user_a__username", "user_b__username"]
-    readonly_fields = ["id", "user_a", "user_b", "booking", "created_at", "updated_at"]
+    readonly_fields = ["id", "is_group", "title", "created_by", "user_a", "user_b", "booking", "created_at", "updated_at"]
 
     def has_add_permission(self, request):
         return False
@@ -78,4 +78,17 @@ class CallLogAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ConversationMember)
+class ConversationMemberAdmin(admin.ModelAdmin):
+    list_display = ["conversation", "user", "role", "created_at"]
+    search_fields = ["user__username"]
+    readonly_fields = [f.name for f in ConversationMember._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False

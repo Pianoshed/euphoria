@@ -68,6 +68,10 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)
             return
 
+        if conversation.is_group:
+            await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)  # calls are one-to-one only
+            return
+
         self.other_id = conversation.other_participant_id(user)
         if await self._is_blocked(user.id, self.other_id):
             await self.close(code=CLOSE_BLOCKED)
