@@ -1,6 +1,7 @@
 from datetime import timedelta
 
 
+import logging
 import re
 from django.db import IntegrityError, transaction
 from google.auth.exceptions import GoogleAuthError
@@ -212,7 +213,12 @@ def request_password_reset(*, email: str) -> None:
         token_hash=hash_token(raw_token),
         expires_at=timezone.now() + PASSWORD_RESET_TOKEN_TTL,
     )
-    emails.send_password_reset_email(user, raw_token)
+    try:
+            emails.send_password_reset_email(user, raw_token)
+    except Exception:
+        # Never reveal (or crash on) a mail problem here: the endpoint must answer the same
+        # way whether or not the address has an account. The error is in the server log.
+        logging.getLogger("apps").error("Password reset email failed for user %s", user.pk, exc_info=True)
 
 
 @transaction.atomic
