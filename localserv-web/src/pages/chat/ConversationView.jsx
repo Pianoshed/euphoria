@@ -99,6 +99,11 @@ const PhoneIcon = () => (
     <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
   </svg>
 );
+const DataSaverIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 4v10M8 10l4 4 4-4M5 19h14" />
+  </svg>
+);
 const VideoIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <rect x="3" y="6" width="12" height="12" rx="2" />
@@ -196,6 +201,7 @@ export default function ConversationView() {
   // The call itself lives above the routes (see CallContext), so it keeps going when this page closes.
   const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer } = useCall();
   const saver = useDataSaver();
+  const [missing, setMissing] = useState(false); // the server says this conversation does not exist for this account
   const [shownPhotos, setShownPhotos] = useState({}); // photos the person tapped to load while Data saver is on
   const [messages, setMessages] = useState(null);
   const [otherProfile, setOtherProfile] = useState(null);
@@ -222,13 +228,17 @@ export default function ConversationView() {
   const inputRef = useRef(null);
 
   useEffect(() => {
+    setMissing(false);
     chatApi.getConversation(id)
       .then((c) => {
         setOtherUserId(c.other_user_id);
         return accountsApi.getPublicProfile(c.other_user_id);
       })
       .then(setOtherProfile)
-      .catch(() => setOtherProfile({ username: 'Unknown user' }));
+      .catch((err) => {
+        if (err?.status === 404) setMissing(true);
+        else setOtherProfile({ username: 'Unknown user' });
+      });
 
     incomingRef.current = 0;
     seededRef.current = false;
@@ -313,7 +323,7 @@ export default function ConversationView() {
     [id]
   );
 
-  const { connected, sendOverSocket } = useChatSocket(id, {
+  const { connected, sendOverSocket } = useChatSocket(missing ? null : id, {
     onOpen: refreshMessages, // catch up on anything missed while the socket was down
     onMessage: (data) => {
       if (data.type === 'message') {
@@ -473,15 +483,28 @@ export default function ConversationView() {
   // Tell the call which conversation is open (so a call to it rings here) and who the other person is.
   // These are hooks, so they must stay ABOVE the early return below (hooks can't be skipped on some renders).
   useEffect(() => {
+    if (missing) return undefined;
     setViewedConversation(id);
     return () => clearViewedConversation(id);
-  }, [id, setViewedConversation, clearViewedConversation]);
+  }, [id, missing, setViewedConversation, clearViewedConversation]);
   const peerName = otherProfile?.display_name || otherProfile?.username || '\u2026';
   const peerAvatar = otherProfile?.avatar || null;
   const peerLoaded = Boolean(otherProfile);
   useEffect(() => {
     if (peerLoaded) setPeer(id, { name: peerName, avatar: peerAvatar });
   }, [id, peerLoaded, peerName, peerAvatar, setPeer]);
+
+  if (missing) {
+    return (
+      <div className="page">
+        <h1>Conversation not found</h1>
+        <p className="muted">
+          This conversation doesn&rsquo;t exist, or it belongs to a different account than the one you&rsquo;re signed in with.
+        </p>
+        <p><Link to="/chat">Back to your conversations</Link></p>
+      </div>
+    );
+  }
 
   if (!messages) return <div className="page"><Spinner /></div>;
 
@@ -531,8 +554,9 @@ export default function ConversationView() {
               </button>
               <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
                 onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
+                aria-label={`Data saver is ${saver.active ? 'on' : 'off'}. Tap to turn it ${saver.active ? 'off' : 'on'}.`}
                 title="Data saver: smaller photos, lower call quality, slower refresh">
-                <span aria-hidden="true">↓</span><span className="cv-call-btn__text">Data saver {saver.active ? 'on' : 'off'}</span>
+                <DataSaverIcon /><span className="cv-call-btn__text">Data saver {saver.active ? 'on' : 'off'}</span>
               </button>
               <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
                 <span className="cv-live__text">{connected ? 'Live' : 'Reconnecting…'}</span>

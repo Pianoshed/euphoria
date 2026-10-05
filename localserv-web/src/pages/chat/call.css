@@ -357,3 +357,7 @@
 }
 .vc-mini__btn.is-off { background: #fff; color: #1c1a36; }
 .vc-mini__btn--end { background: var(--vc-accent); }
+
+/* Data saver button: always shows an icon; green when on. */
+.cv-call-btn.is-on { background: var(--vc-green); border-color: var(--vc-green); color: #fff; }
+.cv-call-btn.is-on:hover:not(:disabled) { background: var(--vc-green); }
