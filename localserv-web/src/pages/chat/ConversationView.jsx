@@ -1,5 +1,6 @@
 import '../../styles/index.css';
 import './chat.css';
+import './group-call.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -11,7 +12,7 @@ import { useChatSocket } from '../../hooks/useChatSocket';
 import { useCall } from '../../context/CallContext';
 import { useDataSaver } from '../../hooks/useDataSaver';
 import { compressImage } from '../../utils/dataSaver';
-import { ErrorAlert, Spinner } from '../../components/ui';
+import { ChillLoader, ErrorAlert, Spinner } from '../../components/ui';
 import { PaperclipIcon, MicIcon, StopIcon, TrashIcon, PlayIcon, PauseIcon } from '../../components/icons';
 import { presenceLabel } from '../../utils/presence';
 import { playMessageSound } from '../../utils/notifySound';
@@ -313,7 +314,7 @@ export default function ConversationView() {
   const { id } = useParams();
   const { user } = useAuth();
   // The call itself lives above the routes (see CallContext), so it keeps going when this page closes.
-  const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer } = useCall();
+  const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer, joinGroupCall, groupBusy: onGroupCall } = useCall();
   const saver = useDataSaver();
   const [missing, setMissing] = useState(false); // the server says this conversation does not exist for this account
   const [shownPhotos, setShownPhotos] = useState({}); // photos the person tapped to load while Data saver is on
@@ -355,6 +356,9 @@ export default function ConversationView() {
   const inputRef = useRef(null);
   const messagesRef = useRef(null);
   const outboxRef = useRef([]);
+  const [groupCall, setGroupCall] = useState(null);   // { active, participants, in_call, full, ... } for the "call in progress" bar
+  const [typers, setTypers] = useState({});           // { [userId]: time their last "typing" ping arrived }
+  const [unseen, setUnseen] = useState(0);            // new messages that arrived while scrolled up in the history
   const profilesLoadedRef = useRef(new Set());
   const recorderRef = useRef(null);   // MediaRecorder
   const recChunksRef = useRef([]);
@@ -389,6 +393,9 @@ export default function ConversationView() {
     incomingRef.current = 0;
     seededRef.current = false;
     stickRef.current = true;
+    setUnseen(0);
+    setTypers({});
+    setGroupCall(null);
     setMessages(null); // never count the previous conversation's messages as new here
     chatApi.listMessages(id).then((data) => setMessages(sortOldestFirst(data.results ?? data))).catch(setError);
     chatApi.markConversationRead(id).catch(() => {});
@@ -444,6 +451,13 @@ export default function ConversationView() {
   const onLogScroll = () => {
     const log = logRef.current;
     if (log) stickRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+    if (stickRef.current) setUnseen(0);
+  };
+  const jumpToNewest = () => {
+    const log = logRef.current;
+    if (log) log.scrollTo({ top: log.scrollHeight, behavior: 'smooth' });
+    stickRef.current = true;
+    setUnseen(0);
   };
   useEffect(() => {
     const log = logRef.current;
@@ -468,6 +482,7 @@ export default function ConversationView() {
       return;
     }
     if (incoming > incomingRef.current) {
+      if (!stickRef.current) setUnseen((n) => n + (incoming - incomingRef.current));
       playMessageSound();
       if (document.visibilityState === 'visible') chatApi.markConversationRead(id).catch(() => {});
     }
@@ -535,10 +550,23 @@ export default function ConversationView() {
     setOutbox((list) => list.filter((o) => o.tempId !== tempId));
   }, []);
 
-  const { connected, sendOverSocket } = useChatSocket(missing ? null : id, {
+  // Is a call going on in this group? Refreshed on the chat socket's `group_call_changed`, and on a slow poll.
+  const loadGroupCall = useCallback(() => {
+    if (!isGroup) return Promise.resolve();
+    return chatApi.getGroupCall(id).then(setGroupCall).catch(() => {});
+  }, [id, isGroup]);
+  useEffect(() => {
+    if (!isGroup) return undefined;
+    loadGroupCall();
+    const timer = setInterval(() => { if (document.visibilityState === 'visible') loadGroupCall(); }, 20000);
+    return () => clearInterval(timer);
+  }, [isGroup, loadGroupCall]);
+
+  const { connected, sendOverSocket, sendTyping } = useChatSocket(missing ? null : id, {
     onOpen: refreshMessages, // catch up on anything missed while the socket was down
     onMessage: (data) => {
       if (data.type === 'message') {
+        setTypers((t) => { if (!(data.sender_id in t)) return t; const { [data.sender_id]: _done, ...rest } = t; return rest; });
         setMessages((prev) => (prev?.some((m) => m.id === data.id) ? prev : [...(prev || []), {
           id: data.id, conversation: data.conversation_id, sender: data.sender_id,
           body: data.body, attachment_url: data.attachment_url ?? null,
@@ -570,6 +598,11 @@ export default function ConversationView() {
             ? { ...m, mood: data.mood, mood_set_at: data.mood_set_at }
             : m)),
         } : c));
+      } else if (data.type === 'typing') {
+        // "X is typing": shown for a few seconds, and cleared the moment their message lands.
+        if (String(data.user_id) !== String(user.id)) setTypers((t) => ({ ...t, [data.user_id]: Date.now() }));
+      } else if (data.type === 'group_call_changed') {
+        loadGroupCall();
       } else if (data.type === 'members_changed') {
         reloadConversation();
       } else if (data.type === 'join_requests_changed') {
@@ -584,6 +617,19 @@ export default function ConversationView() {
       }
     },
   });
+
+  // A typing ping fades after 4 seconds without a new one.
+  useEffect(() => {
+    if (!Object.keys(typers).length) return undefined;
+    const timer = setInterval(() => {
+      setTypers((t) => {
+        const now = Date.now();
+        const fresh = Object.fromEntries(Object.entries(t).filter(([, at]) => now - at < 4000));
+        return Object.keys(fresh).length === Object.keys(t).length ? t : fresh;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [typers]);
 
   // Safety net under the socket: poll while the page is visible (every 4s if the socket is
   // down, every 20s if it's up) and refresh the moment the tab regains focus or the network
@@ -975,7 +1021,7 @@ export default function ConversationView() {
     );
   }
 
-  if (!messages) return <div className="page"><Spinner /></div>;
+  if (!messages) return <div className="page"><ChillLoader kind="chat" rows={5} /></div>;
 
   const presence = presenceLabel(otherProfile);
   const online = Boolean(presence?.online);
@@ -993,6 +1039,21 @@ export default function ConversationView() {
   const displayName = isGroup ? groupName : (otherProfile?.display_name || otherProfile?.username || '…');
   const callBusy = call.status !== 'idle' && call.status !== 'ended';
   const peerInfo = { name: displayName, avatar: otherProfile?.avatar || null };
+  // Names and pictures for the group call's tiles (anyone missing is looked up by the call itself).
+  const peopleForCall = Object.fromEntries(Object.entries(memberProfiles).map(([uid, p]) => [
+    uid, { name: p.display_name || p.username || 'Someone', avatar: p.avatar || null },
+  ]));
+  const nameOfPerson = (uid) => {
+    const p = memberProfiles[uid];
+    return p?.display_name || p?.username || (isGroup ? 'Someone' : displayName);
+  };
+  const typingNames = Object.keys(typers).map(nameOfPerson);
+  const typingText = typingNames.length === 0 ? ''
+    : typingNames.length === 1 ? `${typingNames[0]} is typing`
+    : typingNames.length === 2 ? `${typingNames[0]} and ${typingNames[1]} are typing`
+    : 'Several people are typing';
+  const typingLine = typingText ? `${typingText}…` : '';
+  const callBar = isGroup && groupCall?.active ? groupCall : null;
 
   return (
     <div className="page cv">
@@ -1043,6 +1104,20 @@ export default function ConversationView() {
                 </>
               )}
               {isGroup && (
+                <>
+                  <button type="button" className="cv-call-btn" disabled={callBusy || onGroupCall}
+                    onClick={() => joinGroupCall(id, 'voice', { title: groupName, people: peopleForCall })}
+                    aria-label={`Start a group voice call in ${displayName}`}>
+                    <PhoneIcon /><span className="cv-call-btn__text">Voice</span>
+                  </button>
+                  <button type="button" className="cv-call-btn" disabled={callBusy || onGroupCall}
+                    onClick={() => joinGroupCall(id, 'video', { title: groupName, people: peopleForCall })}
+                    aria-label={`Start a group video call in ${displayName}`}>
+                    <VideoIcon /><span className="cv-call-btn__text">Video</span>
+                  </button>
+                </>
+              )}
+              {isGroup && (
                 <button type="button" className="cv-members-btn" aria-expanded={showMembers}
                   aria-label={`Members (${memberCount})${joinRequests.length ? `, ${joinRequests.length} waiting to join` : ''}`}
                   onClick={() => setShowMembers((v) => !v)}>
@@ -1072,6 +1147,29 @@ export default function ConversationView() {
                 <strong>Data saver is on.</strong> Photos load when you tap them and calls use less data.
               </span>
               <button type="button" onClick={() => saver.setSetting('off')}>Turn off</button>
+            </div>
+          )}
+
+          {callBar && (
+            <div className="gx-callbar" role="status">
+              <span className="gx-callbar__text">
+                📞 {callBar.in_call ? 'You are on the call' : 'Call in progress'}
+                {' · '}{callBar.participants.length} {callBar.participants.length === 1 ? 'person' : 'people'} on it
+              </span>
+              {!callBar.in_call && (
+                <>
+                  <button type="button" disabled={callBusy || onGroupCall || callBar.full}
+                    onClick={() => joinGroupCall(id, 'voice', { title: groupName, people: peopleForCall })}>
+                    {callBar.full ? 'Call is full' : 'Join voice'}
+                  </button>
+                  {!callBar.full && (
+                    <button type="button" disabled={callBusy || onGroupCall}
+                      onClick={() => joinGroupCall(id, 'video', { title: groupName, people: peopleForCall })}>
+                      Join video
+                    </button>
+                  )}
+                </>
+              )}
             </div>
           )}
 
@@ -1302,6 +1400,14 @@ export default function ConversationView() {
             )}
           </div>
 
+          {unseen > 0 && (
+            <div className="cv-newrow">
+              <button type="button" className="cv-newpill" onClick={jumpToNewest}>
+                ↓ {unseen === 1 ? '1 new message' : `${unseen} new messages`}
+              </button>
+            </div>
+          )}
+
           {attachmentPreview && (
             <div className="cv-attach">
               <img src={attachmentPreview} alt="" />
@@ -1314,6 +1420,15 @@ export default function ConversationView() {
               <button type="button" className="btn btn--ghost btn--sm" onClick={clearAttachment}>Remove</button>
             </div>
           )}
+
+          <div className="cv-typing" role="status" aria-live="polite">
+            {typingLine && (
+              <span className="cv-typing__pill">
+                <span className="cv-typing__dots" aria-hidden="true"><span>●</span><span>●</span><span>●</span></span>
+                {typingLine}
+              </span>
+            )}
+          </div>
 
           <div className="cv-composer-wrap">
             {paletteOpen && (
@@ -1347,7 +1462,7 @@ export default function ConversationView() {
                 rows={1}
                 enterKeyHint="send"
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => { setDraft(e.target.value); if (e.target.value) sendTyping(); }}
                 onKeyDown={onDraftKeyDown}
                 maxLength={4000}
               />

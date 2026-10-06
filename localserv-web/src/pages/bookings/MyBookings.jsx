@@ -3,7 +3,7 @@ import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as bookingsApi from '../../api/bookings';
-import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
+import { ErrorAlert, ChillLoader, Spinner, StatusPill } from '../../components/ui';
 import { formatPrice } from '../../utils/money';
 
 export default function MyBookings() {
@@ -25,7 +25,7 @@ export default function MyBookings() {
         <button className={role === 'provider' ? 'active' : ''} onClick={() => setRole('provider')}>Hosting</button>
       </div>
       <ErrorAlert error={error} />
-      {!bookings && <Spinner />}
+      {!bookings && <ChillLoader kind="plans" />}
       {bookings?.length === 0 && (
         <div className="empty-state">
           <p>

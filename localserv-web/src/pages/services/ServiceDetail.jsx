@@ -61,7 +61,7 @@ export default function ServiceDetail() {
 
   return (
     <div className="page page--narrow">
-      {service.category?.name && <span className="pill pill--accent">{service.category.name}</span>}
+      {service.category?.name && <span className="pill pill--accent">{service.category.icon ? `${service.category.icon} ` : ''}{service.category.name}</span>}
       <h1 className="break" style={{ marginTop: 'var(--space-3)' }}>{service.title}</h1>
 
       <div className="e-detail-head">

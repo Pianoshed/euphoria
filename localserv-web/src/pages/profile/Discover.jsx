@@ -5,13 +5,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
 import { useAuth } from '../../context/AuthContext';
-import { ErrorAlert, Spinner } from '../../components/ui';
+import { ErrorAlert, ChillLoader, Spinner } from '../../components/ui';
 
 // Where a signed-in person edits their privacy toggles (MyProfile page).
 // Change this if your router mounts MyProfile somewhere else.
 const PRIVACY_SETTINGS_PATH = '/profile/me';
 
 // On phones the two notes start folded so people are one swipe away, not four.
+const ROLE_FILTERS = [
+  { value: '', label: 'Everyone' },
+  { value: 'PROVIDER', label: 'Providers' },
+  { value: 'CUSTOMER', label: 'Consumers' },
+];
+const ROLE_LABEL = { PROVIDER: 'Provider', CUSTOMER: 'Consumer' };
+
 const startsOpen = () => !window.matchMedia('(max-width: 720px)').matches;
 
 /* ------------------------------------------------------------------ */
@@ -85,6 +92,9 @@ export default function Discover() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const q = params.get('q') || '';
+  // Everyone by default. "Providers" and "Consumers" narrow it down; both kinds of people are findable.
+  const roleParam = params.get('role');
+  const role = ROLE_FILTERS.some((f) => f.value === roleParam) ? roleParam : '';
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const [shuffle, setShuffle] = useState(0);
@@ -92,11 +102,19 @@ export default function Discover() {
 
   useEffect(() => {
     let cancelled = false;
-    accountsApi.discoverProfiles({ role: 'PROVIDER', q })
+    setResults(null);
+    setError(null);
+    accountsApi.discoverProfiles({ role: role || undefined, q })
       .then((data) => { if (!cancelled) setResults(data.results); })
       .catch((err) => { if (!cancelled) setError(err); });
     return () => { cancelled = true; };
-  }, [q]);
+  }, [q, role]);
+
+  const pickRole = (value) => {
+    const next = new URLSearchParams(params);
+    if (value) next.set('role', value); else next.delete('role');
+    setParams(next, { replace: true });
+  };
 
   const looks = useMemo(
     () => Object.fromEntries((results || []).map((p) => [p.id, lookFor(p.id, shuffle)])),
@@ -130,8 +148,8 @@ export default function Discover() {
         <input
           type="search"
           className="input"
-          aria-label="Search by name"
-          placeholder="Search by name…"
+          aria-label="Search by name or area"
+          placeholder="Search by name or area…"
           enterKeyHint="search"
           defaultValue={q}
           onChange={(e) => {
@@ -140,6 +158,19 @@ export default function Discover() {
             setParams(next, { replace: true });
           }}
         />
+        <div className="e-chip-row" role="group" aria-label="Who to show">
+          {ROLE_FILTERS.map((f) => (
+            <button
+              key={f.value || 'all'}
+              type="button"
+              className={role === f.value ? 'active' : ''}
+              aria-pressed={role === f.value}
+              onClick={() => pickRole(f.value)}
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <section className="dp-notes" aria-label="Chat safety and privacy">
@@ -174,8 +205,8 @@ export default function Discover() {
       </section>
 
       <ErrorAlert error={error} />
-      {!results && <Spinner />}
-      {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name.</p></div>}
+      {!results && <ChillLoader kind="people" />}
+      {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name, area or filter.</p></div>}
 
       <div className="dp-field">
         {results?.map((p) => {
@@ -205,6 +236,7 @@ export default function Discover() {
               </span>
               <span className="dp-card__text">
                 <strong className="dp-card__name">{name}</strong>
+                {ROLE_LABEL[p.role] && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{ROLE_LABEL[p.role]}</span>}
                 {p.general_location && <span className="dp-card__line">{p.general_location}</span>}
                 {p.availability && <span className="dp-card__line dp-card__line--soft">{p.availability}</span>}
                 {p.bio && <span className="dp-card__bio">{p.bio}</span>}

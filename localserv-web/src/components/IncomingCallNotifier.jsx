@@ -37,7 +37,8 @@ function quickSignal(conversationId, type) {
 export default function IncomingCallNotifier() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  const { acceptIncoming, activeId } = useCall();
+  const { acceptIncoming, activeId, joinGroupCall } = useCall();
+  const dismissedRef = useRef(new Map()); // group call ring -> when it was dismissed, so a poll does not ring it again
   const activeIdRef = useRef(activeId);
   activeIdRef.current = activeId;
   const [ring, setRing] = useState(null); // { conversationId, mode, name, avatar }
@@ -56,10 +57,20 @@ export default function IncomingCallNotifier() {
   const onIncoming = useCallback((info) => {
     const cid = String(info.conversation_id);
     if (ringRef.current?.conversationId === cid) return; // already ringing for this one
-    if (activeIdRef.current === cid) return; // that conversation's own call socket rings itself
-    if (isInCall() || ringRef.current) { quickSignal(cid, 'busy'); return; }
+    if (info.group) {
+      // A group call has no single person to tell "busy": just don't ring someone who is on a call.
+      const dismissedAt = dismissedRef.current.get(cid);
+      if (dismissedAt && Date.now() - dismissedAt < RING_MS) return;
+      if (isInCall() || ringRef.current) return;
+    } else {
+      if (activeIdRef.current === cid) return; // that conversation's own call socket rings itself
+      if (isInCall() || ringRef.current) { quickSignal(cid, 'busy'); return; }
+    }
 
-    const next = { conversationId: cid, mode: info.mode, name: 'Incoming call', avatar: null };
+    const next = {
+      conversationId: cid, mode: info.mode, name: 'Incoming call', avatar: null,
+      group: Boolean(info.group), title: info.title || 'Group call',
+    };
     ringRef.current = next;
     setRing(next);
     timerRef.current = setTimeout(() => clear(cid), RING_MS);
@@ -153,30 +164,41 @@ export default function IncomingCallNotifier() {
 
   const voice = ring.mode === 'voice';
   const accept = () => {
-    const { conversationId: cid, name, avatar } = ring;
+    const { conversationId: cid, name, avatar, group, title } = ring;
     clear();
-    acceptIncoming(cid, { name, avatar }); // the call screen opens over whatever page this is
+    if (group) joinGroupCall(cid, ring.mode === 'voice' ? 'voice' : 'video', { title });
+    else acceptIncoming(cid, { name, avatar }); // the call screen opens over whatever page this is
   };
   const decline = () => {
     const cid = ring.conversationId;
     clear();
-    quickSignal(cid, 'reject');
+    if (ring.group) dismissedRef.current.set(cid, Date.now()); // nobody to tell: it just stops ringing for me
+    else quickSignal(cid, 'reject');
   };
 
   return (
     <div className="vc-backdrop">
       <div className="vc-ring" role="alertdialog" aria-modal="true"
-        aria-label={`Incoming ${voice ? 'voice' : 'video'} call from ${ring.name}`}>
+        aria-label={ring.group
+          ? `${ring.name} started a ${voice ? 'voice' : 'video'} call in ${ring.title}`
+          : `Incoming ${voice ? 'voice' : 'video'} call from ${ring.name}`}>
         {ring.avatar
           ? <img className="vc-face vc-face--pulse" src={ring.avatar} alt="" />
           : <span className="vc-face vc-face--pulse" aria-hidden="true">{(ring.name || '?')[0].toUpperCase()}</span>}
-        <h2>{ring.name}</h2>
-        <p>{voice ? 'is calling you' : 'is calling you on video'}</p>
+        <h2>{ring.group ? ring.title : ring.name}</h2>
+        <p>
+          {ring.group
+            ? `${ring.name} started a ${voice ? 'voice' : 'video'} call in this group`
+            : (voice ? 'is calling you' : 'is calling you on video')}
+        </p>
         <div className="vc-ring__actions">
-          <button type="button" className="vc-btn vc-btn--decline" onClick={decline}>Decline</button>
-          <button type="button" className="vc-btn vc-btn--accept" onClick={accept} autoFocus>Accept</button>
+          <button type="button" className="vc-btn vc-btn--decline" onClick={decline}>{ring.group ? 'Not now' : 'Decline'}</button>
+          <button type="button" className="vc-btn vc-btn--accept" onClick={accept} autoFocus>{ring.group ? 'Join' : 'Accept'}</button>
         </div>
-        <small>{voice ? 'Your microphone turns on when you accept.' : 'Your camera and microphone turn on when you accept.'}</small>
+        <small>
+          {ring.group ? 'Everyone in the group can join. ' : ''}
+          {voice ? 'Your microphone turns on when you accept.' : 'Your camera and microphone turn on when you accept.'}
+        </small>
       </div>
     </div>
   );

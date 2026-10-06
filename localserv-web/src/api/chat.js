@@ -67,6 +67,9 @@ export const deleteMessage = (messageId) =>
 // Short-lived STUN/TURN credentials for video calls.
 export const getIceServers = () => apiFetch('/api/chat/ice-servers/');
 
+// Is a call going on in this group, and who is on it? { active, call_id, mode, participants, in_call, full, ... }
+export const getGroupCall = (conversationId) => apiFetch(`/api/chat/conversations/${conversationId}/group-call/`);
+
 // Calls ringing for me right now. Fallback for the site-wide call socket (see IncomingCallNotifier).
 export const listIncomingCalls = () => apiFetch('/api/chat/calls/incoming/');
 

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as servicesApi from '../../api/services';
 import { useAuth } from '../../context/AuthContext';
-import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
+import { ErrorAlert, ChillLoader, Spinner, StatusPill } from '../../components/ui';
 import { formatPrice } from '../../utils/money';
 
 const NEXT_STATUS = {
@@ -55,7 +55,7 @@ export default function MyListings() {
         <Link to="/services/mine/new" className="btn btn--primary">Post an activity</Link>
       </div>
       <ErrorAlert error={error} />
-      {!listings && <Spinner />}
+      {!listings && <ChillLoader kind="plans" />}
       {listings?.length === 0 && (
         <div className="empty-state">
           <p>Nothing posted yet — put up an activity and let people find their way to it.</p>
@@ -69,7 +69,7 @@ export default function MyListings() {
           <div key={s.id} className="card listing-card">
             <div className="listing-card__main">
               <p className="listing-card__title"><strong className="break">{s.title}</strong> <StatusPill status={s.status} /></p>
-              <p className="text-sm muted">{s.category.name} · {formatPrice(s.price)}</p>
+              <p className="text-sm muted">{s.category.icon ? `${s.category.icon} ` : ''}{s.category.name} · {formatPrice(s.price)}</p>
             </div>
             <div className="listing-card__actions">
               <Link to={`/services/${s.id}`} className="btn btn--ghost btn--sm">View</Link>

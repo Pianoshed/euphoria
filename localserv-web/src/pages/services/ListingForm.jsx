@@ -62,7 +62,7 @@ export default function ListingForm() {
           <label htmlFor="category">Category</label>
           <select id="category" className="select" required value={form.category_id} onChange={update('category_id')}>
             <option value="" disabled>What kind of activity is this?</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.icon ? `${c.icon} ` : ''}{c.name}</option>)}
           </select>
         </div>
         <div className="field">

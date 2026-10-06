@@ -3,7 +3,7 @@ import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import * as servicesApi from '../../api/services';
-import { ErrorAlert, Spinner } from '../../components/ui';
+import { ErrorAlert, ChillLoader, Spinner } from '../../components/ui';
 import { formatPrice } from '../../utils/money';
 
 export default function ServiceBrowse() {
@@ -79,7 +79,7 @@ export default function ServiceBrowse() {
                 onClick={() => toggleCategory(c.id)}
                 type="button"
               >
-                {c.name}
+                {c.icon ? `${c.icon} ` : ''}{c.name}
               </button>
             ))}
           </div>
@@ -87,7 +87,7 @@ export default function ServiceBrowse() {
       </div>
 
       <ErrorAlert error={error} />
-      {loading && <Spinner />}
+      {loading && <ChillLoader kind="plans" />}
       {!loading && results?.length === 0 && (
         <div className="empty-state">
           <p>Nothing matches yet. Try a different category, or be the first to post one.</p>
@@ -98,7 +98,7 @@ export default function ServiceBrowse() {
         {results?.map((service) => (
           <Link key={service.id} to={`/services/${service.id}`} className="card card--link stack-sm">
             <div className="e-service-card__top">
-              {service.category?.name && <span className="pill pill--accent">{service.category.name}</span>}
+              {service.category?.name && <span className="pill pill--accent">{service.category.icon ? `${service.category.icon} ` : ''}{service.category.name}</span>}
               <span className="price">{formatPrice(service.price)}</span>
             </div>
             <h3 className="m-0 break">{service.title}</h3>

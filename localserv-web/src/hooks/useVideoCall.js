@@ -37,7 +37,7 @@ const offerIsVoice = (sdp) => !/^m=video/m.test(sdp || '');
 const FALLBACK_ICE = [{ urls: import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302' }];
 let iceCache = null; // { servers, expiresAt }
 
-async function loadIceServers() {
+export async function loadIceServers() {
   if (iceCache && iceCache.expiresAt > Date.now() + 60_000) return iceCache.servers;
   try {
     const data = await getIceServers();
@@ -52,7 +52,7 @@ async function loadIceServers() {
   return FALLBACK_ICE;
 }
 
-function friendlyMediaError(err) {
+export function friendlyMediaError(err) {
   switch (err?.name) {
     case 'NotAllowedError':
     case 'SecurityError':

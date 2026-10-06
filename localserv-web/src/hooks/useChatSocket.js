@@ -116,5 +116,14 @@ export function useChatSocket(conversationId, { onMessage, onOpen } = {}) {
     return false;
   };
 
-  return { connected, sendOverSocket };
+  // "I am typing" ping. Throttled here too, so a fast typist sends one every couple of seconds.
+  const lastTypingRef = useRef(0);
+  const sendTyping = () => {
+    const now = Date.now();
+    if (now - lastTypingRef.current < 2000 || socketRef.current?.readyState !== WebSocket.OPEN) return;
+    lastTypingRef.current = now;
+    socketRef.current.send(JSON.stringify({ type: 'typing' }));
+  };
+
+  return { connected, sendOverSocket, sendTyping };
 }

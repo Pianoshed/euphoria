@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import * as accountsApi from '../../api/accounts';
-import { ErrorAlert } from '../../components/ui';
+import { ChillLoader, ErrorAlert } from '../../components/ui';
 import PeoplePicker from '../../components/PeoplePicker';
 import { useDataSaver } from '../../hooks/useDataSaver';
 import { useAuth } from '../../context/AuthContext';
@@ -178,7 +178,7 @@ export default function ConversationList() {
       )}
 
       {!conversations && !error && (
-        <p className="inbox__loading" role="status">Chopper is circling the block…</p>
+        <ChillLoader kind="chat" rows={4} />
       )}
 
       {conversations?.length === 0 && (

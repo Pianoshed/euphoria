@@ -276,3 +276,18 @@
   .dp-actions { gap: 4px; }
   .dp-btn { padding: 6px 9px; font-size: 0.76rem; }
 }
+
+/* Provider / Consumer tag on a person's card */
+.dp-card__role {
+  align-self: flex-start;
+  margin: 2px 0 4px;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1.5px solid currentColor;
+  background: rgba(255, 255, 255, 0.55);
+}
+.dp-card__role--provider { color: #b8470a; }
+.dp-card__role--customer { color: #2f7fc4; }
