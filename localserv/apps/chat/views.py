@@ -12,7 +12,7 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsActiveAccount
 
-from . import call_logs, services
+from . import call_logs, group_calls, services
 from .models import CallLog, Message
 from .serializers import (
     AddMembersSerializer,
@@ -322,7 +322,35 @@ class CallIncomingView(APIView):
                 "mode": c.mode, "started_at": c.started_at,
             }
             for c in calls if c.conversation_id
+        ] + [
+            {
+                "conversation_id": str(g.conversation_id), "caller_id": str(g.started_by_id), "mode": g.mode,
+                "started_at": g.started_at, "group": True, "title": g.conversation.title or "Group call",
+            }
+            for g in group_calls.ringing_for(request.user.id) if g.conversation_id
         ])
+
+
+class GroupCallStateView(APIView):
+    """
+    GET /api/chat/conversations/<id>/group-call/
+
+    Is there a call going on in this group right now, and who is on it? The chat page shows a
+    'Call in progress - Join' bar from this. Live updates arrive as a `group_call_changed` event
+    on the chat socket; this is what that event (and the page's slow poll) re-reads.
+    """
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def get(self, request, conversation_id):
+        conversation = _get_conversation_or_404(conversation_id, request.user)
+        if not conversation.is_group:
+            raise NotFound("Conversation not found.")
+        state = group_calls.active_call(conversation.id)
+        if state is None:
+            return Response({"active": False})
+        return Response({**state, "active": True, "in_call": str(request.user.id) in state["participants"],
+                         "max_participants": group_calls.MAX_PARTICIPANTS})
 
 
 # ---------------------------------------------------------------------------

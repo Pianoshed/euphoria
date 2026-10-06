@@ -306,3 +306,58 @@ class CallLog(BaseModel):
 
     def __str__(self):
         return f"Call({self.caller_id} -> {self.callee_id}, {self.outcome})"
+
+
+class GroupCall(BaseModel):
+    """
+    One row per call in a GROUP conversation. Group calls are a mesh: every browser connects
+    straight to every other browser, and the server (apps.chat.group_call_consumers) only relays
+    signaling, exactly like 1-to-1 calls. Nothing is recorded; this row keeps who started it,
+    when, how long it ran and the most people on it at once.
+
+    Open (ended_at NULL) while anyone is still on it; at most one open call per group.
+    """
+
+    class Mode(models.TextChoices):
+        VOICE = "voice", "Voice"
+        VIDEO = "video", "Video"
+
+    conversation = models.ForeignKey(Conversation, on_delete=models.SET_NULL, null=True, blank=True, related_name="group_calls")
+    started_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
+    mode = models.CharField(max_length=5, choices=Mode.choices, default=Mode.VIDEO)
+    started_at = models.DateTimeField(default=timezone.now)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    peak_participants = models.PositiveSmallIntegerField(default=0)
+    duration_seconds = models.PositiveIntegerField(default=0)
+
+    class Meta(BaseModel.Meta):
+        db_table = "chat_group_call"
+        indexes = [models.Index(fields=["-started_at"], name="chat_gcall_started_idx")]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conversation"], condition=models.Q(ended_at__isnull=True), name="one_open_group_call_per_conversation"
+            ),
+        ]
+
+    def __str__(self):
+        return f"GroupCall({self.conversation_id}, {self.mode})"
+
+
+class GroupCallParticipant(BaseModel):
+    """A seat on a group call. Open (left_at NULL) while the person is on it."""
+
+    call = models.ForeignKey(GroupCall, on_delete=models.CASCADE, related_name="participants")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    joined_at = models.DateTimeField(default=timezone.now)
+    left_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        db_table = "chat_group_call_participant"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["call", "user"], condition=models.Q(left_at__isnull=True), name="one_open_seat_per_user_per_group_call"
+            ),
+        ]
+
+    def __str__(self):
+        return f"Seat({self.call_id}, {self.user_id})"

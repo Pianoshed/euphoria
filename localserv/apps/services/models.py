@@ -16,6 +16,8 @@ class ServiceCategory(models.Model):
     name = models.CharField(max_length=60, unique=True)
     slug = models.SlugField(max_length=70, unique=True)
     description = models.CharField(max_length=200, blank=True)
+    # One emoji shown next to the name in the app, so categories are easy to tell apart at a glance.
+    icon = models.CharField(max_length=8, blank=True, default="")
     is_active = models.BooleanField(default=True)
 
     class Meta:

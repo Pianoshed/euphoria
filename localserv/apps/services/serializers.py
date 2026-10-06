@@ -10,7 +10,7 @@ from .models import Review, Service, ServiceCategory
 class ServiceCategorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ServiceCategory
-        fields = ["id", "name", "slug", "description"]
+        fields = ["id", "name", "slug", "description", "icon"]
         read_only_fields = fields
 
 

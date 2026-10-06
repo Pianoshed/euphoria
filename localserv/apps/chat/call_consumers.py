@@ -7,7 +7,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
 from apps.common.constants import AccountStatus
 
-from . import call_logs, services
+from . import call_logs, group_calls, services
 from .consumers import (
     CLOSE_ACCOUNT_NOT_ACTIVE,
     CLOSE_BLOCKED,
@@ -278,6 +278,12 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
                         "type": "incoming", "conversation_id": str(call.conversation_id),
                         "caller_id": str(call.caller_id), "mode": call.mode,
                     })
+            for gcall in await database_sync_to_async(group_calls.ringing_for)(user.id):
+                await self.send_json({
+                    "type": "incoming", "conversation_id": str(gcall.conversation_id),
+                    "caller_id": str(gcall.started_by_id), "mode": gcall.mode,
+                    "group": True, "title": gcall.conversation.title or "Group call",
+                })
         except Exception:
             log.warning("Could not catch up the call inbox", exc_info=True)
 
@@ -292,6 +298,7 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json({
             "type": "incoming", "conversation_id": event["conversation_id"],
             "caller_id": event["caller_id"], "mode": event["mode"],
+            "group": bool(event.get("group")), "title": event.get("title", ""),
         })
 
     async def call_ended(self, event):

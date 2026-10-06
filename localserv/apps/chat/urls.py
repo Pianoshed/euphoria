@@ -33,6 +33,7 @@ urlpatterns = [
     ),
     path("groups/join/<str:code>/", views.GroupJoinPreviewView.as_view(), name="group-join"),
     path("conversations/<uuid:conversation_id>/mood/", views.ConversationMoodView.as_view(), name="conversation-mood"),
+    path("conversations/<uuid:conversation_id>/group-call/", views.GroupCallStateView.as_view(), name="group-call-state"),
     path("calls/", views.CallLogListView.as_view(), name="call-log"),
     path("calls/incoming/", views.CallIncomingView.as_view(), name="call-incoming"),
     path("ice-servers/", IceServersView.as_view(), name="ice-servers"),

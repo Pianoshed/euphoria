@@ -5,7 +5,7 @@ from .models import Review, Service, ServiceCategory
 
 @admin.register(ServiceCategory)
 class ServiceCategoryAdmin(admin.ModelAdmin):
-    list_display = ["name", "slug", "is_active"]
+    list_display = ["icon", "name", "slug", "is_active"]
     prepopulated_fields = {"slug": ("name",)}
     search_fields = ["name"]
 

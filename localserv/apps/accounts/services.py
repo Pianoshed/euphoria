@@ -502,6 +502,9 @@ def list_discoverable_profiles(viewer, *, role: str | None, query: str, ordering
 
     if role:
         qs = qs.filter(role=role)
+    else:
+        # "Everyone" means people you can meet: consumers and providers, never staff accounts.
+        qs = qs.filter(role__in=[AccountRole.CUSTOMER, AccountRole.PROVIDER])
 
     if viewer and viewer.is_authenticated:
         qs = qs.exclude(id=viewer.id)
@@ -517,7 +520,11 @@ def list_discoverable_profiles(viewer, *, role: str | None, query: str, ordering
 
     query = (query or "").strip()[:100]  # bound search input length
     if query:
-        qs = qs.filter(Q(username__icontains=query) | Q(profile__display_name__icontains=query))
+        qs = qs.filter(
+            Q(username__icontains=query)
+            | Q(profile__display_name__icontains=query)
+            | Q(profile__general_location__icontains=query)
+        )
 
     order = whitelist_ordering(ordering, DISCOVER_ALLOWED_ORDERING, default="-created_at")
     qs = qs.order_by(order)

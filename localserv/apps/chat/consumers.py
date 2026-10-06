@@ -1,3 +1,5 @@
+import time
+
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
 
@@ -51,6 +53,7 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
 
         self.conversation = conversation
         self.user = user
+        self._last_typing = 0.0
         self.group_name = f"conversation_{conversation.id}"
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
@@ -60,6 +63,16 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive_json(self, content, **kwargs):
+        if content.get("type") == "typing":
+            # "X is typing...": relayed to everyone else, at most once every 1.5 s per person.
+            now = time.monotonic()
+            if now - self._last_typing >= 1.5:
+                self._last_typing = now
+                await self.channel_layer.group_send(self.group_name, {
+                    "type": "chat.typing", "user_id": str(self.user.id), "sender_channel": self.channel_name,
+                })
+            return
+
         if content.get("type") != "message":
             await self.send_json({"type": "error", "detail": "Unknown message type."})
             return
@@ -86,6 +99,11 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             await self.close(code=CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT)
             return
         await self.send_json(payload)
+
+    async def chat_typing(self, event):
+        if event["sender_channel"] == self.channel_name:
+            return
+        await self.send_json({"type": "typing", "user_id": event["user_id"]})
 
     # --- sync ORM access, wrapped for the async consumer ---------------------------
 
