@@ -18,6 +18,7 @@ import { presenceLabel } from '../../utils/presence';
 import { playMessageSound } from '../../utils/notifySound';
 import PeoplePicker from '../../components/PeoplePicker';
 import GroupPanel, { MOODS, moodOf, MoodPicker, VibeBar } from './GroupPanel';
+import ChatHeaderActions, { useIsMobile } from './ChatHeaderActions';
 import './group.css';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
@@ -98,20 +99,9 @@ function mergeMessages(prev, fresh) {
   return changed ? sortOldestFirst([...byId.values()]) : prev;
 }
 
-const PhoneIcon = () => (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <path d="M5 4h4l2 5-2.5 1.5a11 11 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2z" />
-  </svg>
-);
 const DataSaverIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M8 20V5M8 5L4.5 8.5M8 5l3.5 3.5M16 4v15M16 19l-3.5-3.5M16 19l3.5-3.5" />
-  </svg>
-);
-const VideoIcon = () => (
-  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    <rect x="3" y="6" width="12" height="12" rx="2" />
-    <path d="M15 10l6-3v10l-6-3" />
   </svg>
 );
 
@@ -316,6 +306,7 @@ export default function ConversationView() {
   // The call itself lives above the routes (see CallContext), so it keeps going when this page closes.
   const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer, joinGroupCall, groupBusy: onGroupCall } = useCall();
   const saver = useDataSaver();
+  const isMobile = useIsMobile();
   const [missing, setMissing] = useState(false); // the server says this conversation does not exist for this account
   const [shownPhotos, setShownPhotos] = useState({}); // photos the person tapped to load while Data saver is on
   const [messages, setMessages] = useState(null);
@@ -1061,7 +1052,10 @@ export default function ConversationView() {
         <section className="cv-chat" aria-label={`Conversation with ${displayName}`}>
           <header className={`cv-head${isGroup ? ' cv-head--group' : ''}`}>
             {isGroup ? (
-              <span className="cv-head__avatar cv-head__avatar--group" aria-hidden="true">👥</span>
+              <span className="cv-head__avatar-wrap">
+                <span className="cv-head__avatar cv-head__avatar--group" aria-hidden="true">👥</span>
+                {isMobile && joinRequests.length > 0 && <span className="cv-head__avatar-dot" aria-hidden="true" />}
+              </span>
             ) : otherUserId ? (
               <Link to={`/profile/${otherUserId}`} className="cv-head__avatar" aria-label={`${displayName}'s profile`}>
                 {otherProfile?.avatar
@@ -1069,75 +1063,55 @@ export default function ConversationView() {
                   : <span aria-hidden="true">{initialOf(otherProfile)}</span>}
               </Link>
             ) : null}
-            <div className="cv-head__text">
-              <h1 className="cv-head__name" title={displayName}>{displayName}</h1>
-              {isGroup ? (
-                <p className="cv-status cv-status--small">{memberCount} {memberCount === 1 ? 'person' : 'people'}</p>
+
+            {(() => {
+              const titleBlock = (
+                <>
+                  <span className="cv-head__namerow">
+                    <h1 className="cv-head__name" title={displayName}>{displayName}</h1>
+                    {isGroup && isMobile && (
+                      <svg className="cv-head__chev" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6" /></svg>
+                    )}
+                  </span>
+                  <p className={`cv-status cv-status--small${connected ? '' : ' cv-status--warn'}`} role="status">
+                    <span className={`cv-dot${connected ? (isGroup || online ? ' cv-dot--on' : '') : ' cv-dot--warn'}`} aria-hidden="true" />
+                    {!connected
+                      ? 'Reconnecting…'
+                      : isGroup
+                        ? `${memberCount} ${memberCount === 1 ? 'person' : 'people'}`
+                        : (online ? 'Online now' : (presence?.text || 'Offline'))}
+                  </p>
+                </>
+              );
+              // On phones the group title is the way into the member list.
+              return isGroup && isMobile ? (
+                <div className="cv-head__text cv-head__text--btn" role="button" tabIndex={0}
+                  aria-label={`${displayName}, ${memberCount} members. Open member list`}
+                  onClick={() => setShowMembers(true)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMembers(true); } }}>
+                  {titleBlock}
+                </div>
               ) : (
-                <p className="cv-status cv-status--small">
-                  <span className={`cv-dot${online ? ' cv-dot--on' : ''}`} aria-hidden="true" />
-                  {online ? 'Online now' : (presence?.text || 'Offline')}
-                </p>
-              )}
-            </div>
-            <div className="cv-head__actions">
-              {!isGroup && (
-                <>
-              <button
-                type="button"
-                className="cv-call-btn"
-                onClick={() => startCallIn(id, 'voice', peerInfo)}
-                disabled={callBusy}
-                aria-label={`Start a voice call with ${displayName}`}
-              >
-                <PhoneIcon /><span className="cv-call-btn__text">Voice</span>
-              </button>
-              <button
-                type="button"
-                className="cv-call-btn"
-                onClick={() => startCallIn(id, 'video', peerInfo)}
-                disabled={callBusy}
-                aria-label={`Start a video call with ${displayName}`}
-              >
-                <VideoIcon /><span className="cv-call-btn__text">Video</span>
-              </button>
-                </>
-              )}
-              {isGroup && (
-                <>
-                  <button type="button" className="cv-call-btn" disabled={callBusy || onGroupCall}
-                    onClick={() => joinGroupCall(id, 'voice', { title: groupName, people: peopleForCall })}
-                    aria-label={`Start a group voice call in ${displayName}`}>
-                    <PhoneIcon /><span className="cv-call-btn__text">Voice</span>
-                  </button>
-                  <button type="button" className="cv-call-btn" disabled={callBusy || onGroupCall}
-                    onClick={() => joinGroupCall(id, 'video', { title: groupName, people: peopleForCall })}
-                    aria-label={`Start a group video call in ${displayName}`}>
-                    <VideoIcon /><span className="cv-call-btn__text">Video</span>
-                  </button>
-                </>
-              )}
-              {isGroup && (
-                <button type="button" className="cv-members-btn" aria-expanded={showMembers}
-                  aria-label={`Members (${memberCount})${joinRequests.length ? `, ${joinRequests.length} waiting to join` : ''}`}
-                  onClick={() => setShowMembers((v) => !v)}>
-                  <span aria-hidden="true" className="cv-members-btn__icon">👥</span>
-                  <span className="cv-members-btn__count">{memberCount}</span>
-                  {joinRequests.length > 0 && <span className="cv-members-btn__dot" aria-hidden="true" />}
-                </button>
-              )}
-              <button type="button" className={`cv-call-btn${saver.active ? ' is-on' : ''}`} aria-pressed={saver.active}
-                onClick={() => saver.setSetting(saver.active ? 'off' : 'on')}
-                aria-label={`Data saver is ${saver.active ? 'on' : 'off'}. Tap to turn it ${saver.active ? 'off' : 'on'}.`}
-                title="Data saver: smaller photos, lower call quality, slower refresh">
-                <DataSaverIcon />
-                {saver.active && <span className="cv-saver-badge" aria-hidden="true">ON</span>}
-                <span className="cv-call-btn__text">Data saver</span>
-              </button>
-              <span className={`cv-live${connected ? ' cv-live--on' : ''}`} role="status">
-                <span className="cv-live__text">{connected ? 'Live' : 'Reconnecting…'}</span>
-              </span>
-            </div>
+                <div className="cv-head__text">{titleBlock}</div>
+              );
+            })()}
+
+            <ChatHeaderActions
+              name={displayName}
+              isGroup={isGroup}
+              callDisabled={isGroup ? (callBusy || onGroupCall) : callBusy}
+              onVoice={() => (isGroup
+                ? joinGroupCall(id, 'voice', { title: groupName, people: peopleForCall })
+                : startCallIn(id, 'voice', peerInfo))}
+              onVideo={() => (isGroup
+                ? joinGroupCall(id, 'video', { title: groupName, people: peopleForCall })
+                : startCallIn(id, 'video', peerInfo))}
+              saver={saver}
+              memberCount={memberCount}
+              waitingCount={joinRequests.length}
+              onOpenMembers={() => setShowMembers(true)}
+            />
           </header>
 
           {saver.active && (
