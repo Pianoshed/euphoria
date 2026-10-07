@@ -16,8 +16,8 @@ const PRIVACY_SETTINGS_PATH = '/profile/me';
 // On phones the two notes start folded so people are one swipe away, not four.
 const ROLE_FILTERS = [
   { value: '', label: 'Everyone' },
-  { value: 'PROVIDER', label: `${ROLE_META.PROVIDER.emoji} ${ROLE_META.PROVIDER.plural}` },
-  { value: 'CUSTOMER', label: `${ROLE_META.CUSTOMER.emoji} ${ROLE_META.CUSTOMER.plural}` },
+  { value: 'PROVIDER', label: ROLE_META.PROVIDER.plural },
+  { value: 'CUSTOMER', label: ROLE_META.CUSTOMER.plural },
 ];
 
 const startsOpen = () => !window.matchMedia('(max-width: 720px)').matches;
@@ -272,7 +272,7 @@ export default function Discover() {
             >
               <Avatar person={p} name={name} />
               <strong className="dp-card__name">{name}</strong>
-              {meta && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{meta.emoji} {meta.label}</span>}
+              {meta && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{meta.label}</span>}
             </button>
           );
         })}
@@ -293,7 +293,7 @@ export default function Discover() {
             <h2 className="dp-pop__name">{active.name}</h2>
             {ROLE_META[active.p.role] && (
               <p className="dp-pop__role">
-                {ROLE_META[active.p.role].emoji} {ROLE_META[active.p.role].label} · {ROLE_META[active.p.role].blurb}
+                {ROLE_META[active.p.role].label} · {ROLE_META[active.p.role].blurb}
               </p>
             )}
             {active.p.general_location && <p className="dp-pop__line">📍 {active.p.general_location}</p>}

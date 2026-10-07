@@ -87,6 +87,7 @@ export function NavBar() {
               <NavLink to="/calls" onClick={closeMenu}>Call log</NavLink>
               <NavLink to="/wallet" onClick={closeMenu}>Wallet</NavLink>
               <NavLink to="/providers" onClick={closeMenu}>Find people</NavLink>
+              <NavLink to="/square" onClick={closeMenu}>Square</NavLink>
               {isStaff(user) && <NavLink to="/moderation" onClick={closeMenu}>Moderation</NavLink>}
 
               <div className="navbar__user navbar__user--menu">

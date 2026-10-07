@@ -12,3 +12,11 @@ export const reactThought = (id, emoji) =>
   apiFetch(`/api/square/thoughts/${id}/react/`, { method: 'POST', body: { emoji } });
 
 export const getTrending = () => apiFetch('/api/square/trending/');
+
+// Friend trees: only the owner and tagged people ever get these back.
+export const listTrees = () => apiFetch('/api/square/trees/');
+export const createTree = (title, members, note = '') =>
+  apiFetch('/api/square/trees/', { method: 'POST', body: { title, members, note } });
+export const updateTree = (id, fields) => apiFetch(`/api/square/trees/${id}/`, { method: 'PATCH', body: fields });
+// Owner: deletes the tree. Tagged friend: removes themselves from it.
+export const removeTree = (id) => apiFetch(`/api/square/trees/${id}/`, { method: 'DELETE' });

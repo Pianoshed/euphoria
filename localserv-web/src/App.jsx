@@ -37,6 +37,7 @@ import Sessions from './pages/profile/Sessions';
 import TwoFactorSettings from './pages/profile/TwoFactorSettings';
 import ModerationDashboard from './pages/profile/ModerationDashboard';
 
+import Square from './pages/square/Square';
 import Home from './pages/Home';
 import NotFound from './pages/NotFound';
 
@@ -73,6 +74,8 @@ function AppRoutes() {
       <Route path="/profile/sessions" element={<ProtectedRoute><Sessions /></ProtectedRoute>} />
       <Route path="/profile/2fa" element={<ProtectedRoute><TwoFactorSettings /></ProtectedRoute>} />
       <Route path="/profile/:id" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
+
+      <Route path="/square" element={<ProtectedRoute><Square /></ProtectedRoute>} />
 
       <Route path="/moderation" element={<ProtectedRoute><ModerationDashboard /></ProtectedRoute>} />
 

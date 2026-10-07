@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import PeoplePicker from '../../components/PeoplePicker';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/square';
 import { shrinkImage, shrinkVideo, MAX_VIDEO_SECONDS } from './shrinkMedia';
+import { treeBlob, treeFileName } from './treeImage';
 import './square.css';
 
 const EMOJI = ['🔥', '😂', '❤️', '😮', '👏'];
@@ -50,6 +53,69 @@ function Viewer({ status, onClose, onReact }) {
         <div className="sq-vfoot"><Reactions mine={status.my_reaction} onPick={(e) => onReact(status, e)} /></div>
       </div>
     </div>
+  );
+}
+
+function Bubble({ person, big }) {
+  return (
+    <Link to={`/profile/${person.id}`} className={`sq-bub${big ? ' sq-bub--big' : ''}`}>
+      <i>{initial(person.name)}</i>
+      <small>{person.name}</small>
+    </Link>
+  );
+}
+
+function Tree({ tree, onLeave, onStatus, pop }) {
+  const [busy, setBusy] = useState('');
+  const canShare = typeof navigator !== 'undefined' && !!navigator.share;
+
+  const download = async () => {
+    try {
+      const url = URL.createObjectURL(await treeBlob(tree));
+      const a = document.createElement('a');
+      a.href = url; a.download = treeFileName(tree); a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 2000);
+    } catch { pop('Could not make the image'); }
+  };
+  const share = async () => {
+    try {
+      const file = new File([await treeBlob(tree)], treeFileName(tree), { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: tree.title });
+      else await navigator.share({ title: tree.title, text: `${tree.title} on Euphoria` });
+    } catch (e) { if (e?.name !== 'AbortError') pop('Could not share'); }
+  };
+  const asStatus = async () => {
+    if (!window.confirm('Post this tree as a status? Everyone on the Square can see it for 24 hours.')) return;
+    setBusy('Posting…');
+    try {
+      const file = new File([await treeBlob(tree)], 'tree.png', { type: 'image/png' });
+      const fd = new FormData();
+      fd.append('text', tree.title.slice(0, 140));
+      fd.append('file', await shrinkImage(file), 'status.jpg');
+      onStatus(await api.createStatus(fd));
+      pop('Posted to your status');
+    } catch (e) { pop(e.body?.detail || 'Could not post'); }
+    setBusy('');
+  };
+
+  return (
+    <article className="sq-card sq-tree">
+      <header>
+        <h3>{tree.title}</h3>
+        {tree.note && <p className="sq-hint">{tree.note}</p>}
+      </header>
+      <Bubble person={tree.owner} big />
+      <div className="sq-branch" aria-hidden="true" />
+      <div className="sq-bubs">
+        {tree.members.map((m) => <Bubble key={m.id} person={m} />)}
+      </div>
+      <div className="sq-tree__acts">
+        <button type="button" className="sq-ghost" onClick={download}>Download image</button>
+        {canShare && <button type="button" className="sq-ghost" onClick={share}>Share</button>}
+        <button type="button" className="sq-ghost" disabled={!!busy} onClick={asStatus}>{busy || 'Post as status'}</button>
+        <button type="button" className="sq-ghost" onClick={() => onLeave(tree)}>{tree.mine ? 'Delete tree' : 'Leave tree'}</button>
+      </div>
+    </article>
   );
 }
 
@@ -109,6 +175,8 @@ export default function Square() {
   const [thoughtErr, setThoughtErr] = useState('');
   const [viewing, setViewing] = useState(null);
   const [composing, setComposing] = useState(false);
+  const [trees, setTrees] = useState([]);
+  const [treeOpen, setTreeOpen] = useState(false);
   const [seen, setSeen] = useState({});
   const [pops, setPops] = useState([]);
   const prev = useRef(null);
@@ -121,7 +189,10 @@ export default function Square() {
 
   const load = useCallback(async () => {
     try {
-      const [s, t, tr] = await Promise.all([api.listStatuses(), api.listThoughts(), api.getTrending()]);
+      const [s, t, tr, tt] = await Promise.all([
+        api.listStatuses(), api.listThoughts(), api.getTrending(), api.listTrees().catch(() => null),
+      ]);
+      if (tt) setTrees(tt);
       const p = prev.current;
       if (p && user) {
         s.forEach((x) => {
@@ -155,6 +226,17 @@ export default function Square() {
     try { const t = await api.createThought(draft.trim()); setThoughts([t, ...thoughts]); setDraft(''); load(); }
     catch (err) { setThoughtErr(err.body?.text?.[0] || err.body?.detail || 'Could not post.'); }
   };
+  const makeTree = async (ids, title) => {
+    if (!title) throw new Error('Give your tree a name.');
+    const t = await api.createTree(title, ids);
+    setTrees((cur) => [t, ...cur]);
+    setTreeOpen(false);
+  };
+  const leaveTree = async (t) => {
+    if (!window.confirm(t.mine ? 'Delete this tree for everyone?' : 'Leave this tree?')) return;
+    try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); }
+    catch { pop('Could not do that'); }
+  };
   const open = (s) => { setSeen((x) => ({ ...x, [s.id]: true })); setViewing(s); };
 
   const shown = sort === 'top' ? [...thoughts].sort((a, b) => b.total - a.total) : thoughts;
@@ -185,6 +267,17 @@ export default function Square() {
             ))}
           </div>
         </div>
+
+        <div className="sq-card">
+          <div className="sq-split">
+            <h2>Friend trees</h2>
+            <button type="button" className="sq-cta" onClick={() => setTreeOpen(true)}>+ New tree</button>
+          </div>
+          <p className="sq-hint">Only you and the people you tag can see a tree.</p>
+          {trees.length === 0 && <p className="sq-hint">No trees yet. Make one and tag your people.</p>}
+        </div>
+        {trees.map((t) => <Tree key={t.id} tree={t} onLeave={leaveTree} pop={pop}
+          onStatus={(st) => { setStatuses((cur) => [st, ...cur]); load(); }} />)}
 
         <form className="sq-card sq-compose" onSubmit={postThought}>
           <textarea rows={2} maxLength={280} placeholder="What's on your mind?" value={draft}
@@ -226,6 +319,10 @@ export default function Square() {
       </aside>
 
       <div className="sq-pops" aria-live="polite">{pops.map((p) => <div key={p.id} className="sq-pop">{p.msg}</div>)}</div>
+      {treeOpen && (
+        <PeoplePicker title="New friend tree" submitLabel="Create tree" askTitle titlePlaceholder="Tree name"
+          onSubmit={makeTree} onClose={() => setTreeOpen(false)} />
+      )}
       {viewing && <Viewer status={viewing} onClose={() => setViewing(null)} onReact={reactStatus} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={(s) => { setStatuses([s, ...statuses]); load(); }} />}
     </main>

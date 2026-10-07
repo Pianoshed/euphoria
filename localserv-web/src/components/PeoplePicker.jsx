@@ -18,7 +18,7 @@ const toPerson = (p) => ({
  */
 export default function PeoplePicker({
   title, submitLabel, minPick = 1, maxPick = 19, excludeIds = [], suggestions = [],
-  saver = false, askTitle = false, onSubmit, onClose,
+  saver = false, askTitle = false, titlePlaceholder = 'Group name (optional)', onSubmit, onClose,
 }) {
   const { user } = useAuth();
   const [q, setQ] = useState('');
@@ -89,7 +89,7 @@ export default function PeoplePicker({
         </header>
 
         {askTitle && (
-          <input className="gp-input" placeholder="Group name (optional)" aria-label="Group name"
+          <input className="gp-input" placeholder={titlePlaceholder} aria-label={titlePlaceholder}
             value={groupTitle} maxLength={80} onChange={(e) => setGroupTitle(e.target.value)} />
         )}
 
