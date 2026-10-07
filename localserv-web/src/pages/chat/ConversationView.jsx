@@ -1258,20 +1258,23 @@ export default function ConversationView() {
             {messages.map((m, i) => {
               const mine = m.sender === user.id;
               const prev = messages[i - 1];
-              const next = messages[i + 1];
               const newDay = !prev || new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString();
               const joinsPrev = prev && !newDay && prev.sender === m.sender
                 && new Date(m.created_at) - new Date(prev.created_at) < GROUP_GAP_MS;
-              const joinsNext = next && next.sender === m.sender
-                && new Date(next.created_at).toDateString() === new Date(m.created_at).toDateString()
-                && new Date(next.created_at) - new Date(m.created_at) < GROUP_GAP_MS;
               const mineReactions = reactions[m.id] || [];
               const pickerHere = reactTarget?.id === m.id;
 
               return (
                 <div key={m.id} data-mid={m.id}>
                   {newDay && <p className="cv-day"><span>{dayLabel(m.created_at)}</span></p>}
-                  <div className={`cv-msg${mine ? ' cv-msg--mine' : ''}${joinsPrev ? ' cv-msg--joined' : ''}`}>
+                  <div className={`cv-msg${mine ? ' cv-msg--mine' : ''}${joinsPrev ? ' cv-msg--joined' : ''}${isGroup && !mine ? ' cv-msg--gother' : ''}`}>
+                    {isGroup && !mine && !joinsPrev && !m.is_deleted && (
+                      <span className="cv-avatar" aria-hidden="true">
+                        {memberProfiles[m.sender]?.avatar && !saver.active
+                          ? <img src={memberProfiles[m.sender].avatar} alt="" loading="lazy" />
+                          : (nameOfSender(m.sender)[0] || '?').toUpperCase()}
+                      </span>
+                    )}
                     {isGroup && !mine && !joinsPrev && !m.is_deleted && (
                       <p className="cv-sender" style={{ color: colorFor(m.sender) }}>
                         <span className="cv-sender__name">{nameOfSender(m.sender)}</span>
@@ -1283,7 +1286,7 @@ export default function ConversationView() {
                     )}
                     <div className="cv-msg__row">
                       <div
-                        className={`cv-bubble${m.is_deleted ? ' cv-bubble--deleted' : ''}${!m.is_deleted && isAudioMessage(m) ? ' cv-bubble--voice' : ''}`}
+                        className={`cv-bubble${m.is_deleted ? ' cv-bubble--deleted' : ''}${!m.is_deleted && isAudioMessage(m) ? ' cv-bubble--voice' : ''}${!m.is_deleted && m.body && !m.attachment_url && !m.attachment_view_once ? ' cv-bubble--text' : ''}`}
                         data-msg-menu
                         tabIndex={m.is_deleted ? undefined : 0}
                         aria-expanded={m.is_deleted ? undefined : menuFor === m.id}
@@ -1337,6 +1340,12 @@ export default function ConversationView() {
                                 className={m.attachment_url || m.attachment_view_once ? 'cv-bubble__caption' : undefined} />
                             )}
                           </>
+                        )}
+                        {!m.is_deleted && (
+                          <span className="cv-bubble__meta">
+                            {m.edited_at && <em>edited </em>}
+                            {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         )}
                       </div>
 
@@ -1400,12 +1409,6 @@ export default function ConversationView() {
                       </div>
                     )}
 
-                    {!joinsNext && (
-                      <p className="cv-time">
-                        {new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {m.edited_at && ' (edited)'}
-                      </p>
-                    )}
                   </div>
                 </div>
               );
