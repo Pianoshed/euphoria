@@ -1,9 +1,11 @@
 import '../../styles/index.css';
 import './discover.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
+import * as chatApi from '../../api/chat';
+import { ROLE_META } from '../../utils/roles';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, ChillLoader, Spinner } from '../../components/ui';
 
@@ -14,10 +16,9 @@ const PRIVACY_SETTINGS_PATH = '/profile/me';
 // On phones the two notes start folded so people are one swipe away, not four.
 const ROLE_FILTERS = [
   { value: '', label: 'Everyone' },
-  { value: 'PROVIDER', label: 'Providers' },
-  { value: 'CUSTOMER', label: 'Consumers' },
+  { value: 'PROVIDER', label: `${ROLE_META.PROVIDER.emoji} ${ROLE_META.PROVIDER.plural}` },
+  { value: 'CUSTOMER', label: `${ROLE_META.CUSTOMER.emoji} ${ROLE_META.CUSTOMER.plural}` },
 ];
-const ROLE_LABEL = { PROVIDER: 'Provider', CUSTOMER: 'Consumer' };
 
 const startsOpen = () => !window.matchMedia('(max-width: 720px)').matches;
 
@@ -44,9 +45,6 @@ const TINTS = [
   { name: 'mint', bg: 'linear-gradient(145deg, #dcf7ea, #a5e3c6)', ring: '#1f9d6a' },
   { name: 'sky', bg: 'linear-gradient(145deg, #dff0ff, #a9d3f7)', ring: '#2f7fc4' },
 ];
-
-const WIDTHS = [236, 272, 312, 348];
-const LAYOUTS = ['row', 'row-reverse', 'stack'];
 
 function hashString(str) {
   let h = 2166136261;
@@ -75,10 +73,7 @@ function lookFor(id, shuffle) {
     shape: SHAPES[shapeIndex],
     avatarShape: SHAPES[(shapeIndex + 3) % SHAPES.length],
     tint: pick(TINTS),
-    width: pick(WIDTHS),
-    layout: pick(LAYOUTS),
-    rotate: (rand() * 6 - 3).toFixed(1),
-    drop: Math.round(rand() * 36),
+    rotate: (rand() * 4 - 2).toFixed(1), // a gentle tilt, nothing wild
   };
 }
 
@@ -99,6 +94,11 @@ export default function Discover() {
   const [error, setError] = useState(null);
   const [shuffle, setShuffle] = useState(0);
   const [notesOpen] = useState(startsOpen);
+  const [openId, setOpenId] = useState(null);
+  const [messaging, setMessaging] = useState(false);
+  const [popupError, setPopupError] = useState(null);
+  const lastTrigger = useRef(null);
+  const closeRef = useRef(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,11 +121,53 @@ export default function Discover() {
     [results, shuffle],
   );
 
+  const openPerson = (id, el) => {
+    lastTrigger.current = el;
+    setPopupError(null);
+    setOpenId(id);
+  };
+  const closePerson = () => {
+    setOpenId(null);
+    lastTrigger.current?.focus?.();
+  };
+
+  // Esc closes the popup; the page behind it doesn't scroll while it is open.
+  useEffect(() => {
+    if (!openId) return undefined;
+    closeRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') closePerson(); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prev;
+    };
+  }, [openId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sayHi = async (person) => {
+    setMessaging(true);
+    setPopupError(null);
+    try {
+      const conversation = await chatApi.startConversation(person.id);
+      navigate(`/chat/${conversation.id}`);
+    } catch (err) {
+      setPopupError(err);
+    } finally {
+      setMessaging(false);
+    }
+  };
+
   const surpriseMe = () => {
     if (!results?.length) return;
     const pick = results[Math.floor(Math.random() * results.length)];
     navigate(`/profile/${pick.id}`);
   };
+
+  const active = useMemo(() => {
+    const p = results?.find((r) => r.id === openId);
+    return p ? { p, name: p.display_name || p.username || 'Someone', look: looks[p.id] } : null;
+  }, [results, openId, looks]);
 
   return (
     <div className="page dp">
@@ -212,39 +254,74 @@ export default function Discover() {
         {results?.map((p) => {
           const look = looks[p.id];
           const name = p.display_name || p.username || 'Someone';
+          const meta = ROLE_META[p.role];
           return (
-            <Link
+            <button
               key={p.id}
-              to={`/profile/${p.id}`}
-              className={`dp-card dp-card--${look.layout}`}
-              data-size={look.width >= 348 ? 'wide' : 'small'}
+              type="button"
+              className="dp-card"
+              aria-haspopup="dialog"
+              onClick={(e) => openPerson(p.id, e.currentTarget)}
               style={{
                 '--shape': look.shape,
                 '--avatar-shape': look.avatarShape,
                 '--tint': look.tint.bg,
                 '--ring': look.tint.ring,
-                '--w': `${look.width}px`,
                 '--rot': `${look.rotate}deg`,
-                '--drop': `${look.drop}px`,
               }}
             >
-              <span className="dp-avatar">
-                {p.avatar
-                  ? <img src={p.avatar} alt="" loading="lazy" />
-                  : <span aria-hidden="true">{name[0].toUpperCase()}</span>}
-                {p.online && <span className="dp-online" role="img" aria-label="Online" />}
-              </span>
-              <span className="dp-card__text">
-                <strong className="dp-card__name">{name}</strong>
-                {ROLE_LABEL[p.role] && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{ROLE_LABEL[p.role]}</span>}
-                {p.general_location && <span className="dp-card__line">{p.general_location}</span>}
-                {p.availability && <span className="dp-card__line dp-card__line--soft">{p.availability}</span>}
-                {p.bio && <span className="dp-card__bio">{p.bio}</span>}
-              </span>
-            </Link>
+              <Avatar person={p} name={name} />
+              <strong className="dp-card__name">{name}</strong>
+              {meta && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{meta.emoji} {meta.label}</span>}
+            </button>
           );
         })}
       </div>
+
+      {active && (
+        <div className="dp-pop" onClick={closePerson}>
+          <div
+            className="dp-pop__card"
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${active.name}'s card`}
+            onClick={(e) => e.stopPropagation()}
+            style={{ '--tint': active.look.tint.bg, '--ring': active.look.tint.ring, '--avatar-shape': active.look.avatarShape }}
+          >
+            <button ref={closeRef} type="button" className="dp-pop__close" aria-label="Close" onClick={closePerson}>×</button>
+            <Avatar person={active.p} name={active.name} large />
+            <h2 className="dp-pop__name">{active.name}</h2>
+            {ROLE_META[active.p.role] && (
+              <p className="dp-pop__role">
+                {ROLE_META[active.p.role].emoji} {ROLE_META[active.p.role].label} · {ROLE_META[active.p.role].blurb}
+              </p>
+            )}
+            {active.p.general_location && <p className="dp-pop__line">📍 {active.p.general_location}</p>}
+            {active.p.availability && <p className="dp-pop__line">🕒 {active.p.availability}</p>}
+            {active.p.bio && <p className="dp-pop__bio">{active.p.bio}</p>}
+            <ErrorAlert error={popupError} />
+            <div className="dp-pop__actions">
+              <Link className="dp-btn" to={`/profile/${active.p.id}`}>View profile</Link>
+              {active.p.id !== user?.id && (
+                <button type="button" className="dp-btn dp-btn--solid" disabled={messaging} onClick={() => sayHi(active.p)}>
+                  {messaging ? <Spinner /> : '👋 Say hi'}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+  );
+}
+
+function Avatar({ person, name, large = false }) {
+  return (
+    <span className={`dp-avatar${large ? ' dp-avatar--lg' : ''}`}>
+      {person.avatar
+        ? <img src={person.avatar} alt="" loading="lazy" />
+        : <span aria-hidden="true">{name[0].toUpperCase()}</span>}
+      {person.online && <span className="dp-online" role="img" aria-label="Online" />}
+    </span>
   );
 }

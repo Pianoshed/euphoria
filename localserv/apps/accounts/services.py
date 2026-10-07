@@ -54,6 +54,10 @@ GENERIC_VERIFICATION_SENT = "If an account exists for this email and is unverifi
 
 # --- Registration & email verification -------------------------------------
 
+EMAIL_TAKEN_MESSAGE = "An account with this email already exists. Try logging in, or reset your password."
+USERNAME_TAKEN_MESSAGE = "That username is taken. Try another one."
+
+
 @transaction.atomic
 def register_user(*, email: str, username: str, password: str, role: str = AccountRole.CUSTOMER) -> User:
     try:
@@ -61,9 +65,47 @@ def register_user(*, email: str, username: str, password: str, role: str = Accou
     except DjangoValidationError as exc:
         raise ValidationError({"password": list(exc.messages)}) from exc
 
-    user = User.objects.create_user(email=email, username=username, password=password, role=role)
-    _issue_email_verification_token(user)
+    # Check up front so duplicates come back as a clean 400 with a friendly,
+    # per-field message instead of reaching the database (and a 500).
+    errors = {}
+    if User.objects.filter(email__iexact=email).exists():
+        errors["email"] = [EMAIL_TAKEN_MESSAGE]
+    if User.objects.filter(username__iexact=username).exists():
+        errors["username"] = [USERNAME_TAKEN_MESSAGE]
+    if errors:
+        raise ValidationError(errors)
+
+    try:
+        with transaction.atomic():  # savepoint, so a failure here can't poison the outer transaction
+            user = User.objects.create_user(email=email, username=username, password=password, role=role)
+    except DjangoValidationError as exc:
+        # Model validation (e.g. a username the validators reject, or a duplicate that
+        # slipped past the check above). Turn it into the same shape DRF returns.
+        raise ValidationError(_friendly_model_errors(exc)) from exc
+    except IntegrityError as exc:
+        # Two people submitting the same email/username at the same instant.
+        raise ValidationError({"email": [EMAIL_TAKEN_MESSAGE]}) from exc
+
+    try:
+        _issue_email_verification_token(user)
+    except Exception:
+        # The account exists; a mail hiccup must not turn signup into a 500. The user
+        # can request another link from the "check your email" screen.
+        logging.getLogger("apps").error("Verification email failed for user %s", user.pk, exc_info=True)
     return user
+
+
+def _friendly_model_errors(exc: DjangoValidationError) -> dict:
+    """Swap Django's stock "already exists" wording for something a person would say."""
+    friendly = {"email": EMAIL_TAKEN_MESSAGE, "username": USERNAME_TAKEN_MESSAGE}
+    messages = getattr(exc, "message_dict", None) or {"non_field_errors": exc.messages}
+    out = {}
+    for field, msgs in messages.items():
+        if field in friendly and any("already exists" in m for m in msgs):
+            out[field] = [friendly[field]]
+        else:
+            out[field] = list(msgs)
+    return out
 
 
 def _issue_email_verification_token(user: User) -> str:

@@ -44,6 +44,33 @@ def test_register_weak_password_rejected(client):
     assert resp.status_code == 400
 
 
+def test_register_duplicate_email_and_username_is_a_clean_400(client):
+    make_verified_user(email="taken@example.com", username="takenname")
+    resp = client.post(
+        reverse("accounts:register"),
+        {"email": "Taken@Example.com", "username": "TakenName", "password": "a-strong-password-1"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 400
+    body = resp.json()
+    assert "already exists" in body["email"][0]
+    assert "taken" in body["username"][0]
+
+
+def test_register_survives_verification_email_failure(client, monkeypatch):
+    def boom(*args, **kwargs):
+        raise OSError("smtp down")
+
+    monkeypatch.setattr("apps.accounts.emails.send_verification_email", boom)
+    resp = client.post(
+        reverse("accounts:register"),
+        {"email": "mail@example.com", "username": "mailuser", "password": "a-strong-password-1"},
+        content_type="application/json",
+    )
+    assert resp.status_code == 201
+    assert User.objects.filter(email="mail@example.com").exists()
+
+
 def test_register_defaults_to_customer_role(client):
     resp = client.post(
         reverse("accounts:register"),

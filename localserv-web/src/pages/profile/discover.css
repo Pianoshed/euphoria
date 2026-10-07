@@ -91,49 +91,42 @@
   color: var(--dp-indigo);
 }
 
-/* ---------- Scattered field of people ---------- */
+/* ---------- Field of people: small, same-size bubbles ---------- */
 
 .dp-field {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  align-items: flex-start;
-  gap: 26px 22px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 18px 16px;
+  justify-items: center;
   padding: 8px 0 56px;
 }
 
 .dp-card {
-  --pad-y: 30px;
-  --pad-x: 34px;
-
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
-  flex: 0 1 var(--w);
-  min-width: 0;
-  margin-top: var(--drop);
-  padding: var(--pad-y) var(--pad-x);
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  max-width: 170px;
+  height: 148px;              /* fixed: the bubble never grows with the info inside it */
+  padding: 14px 12px;
+  border: 0;
   border-radius: var(--shape);
   background: var(--tint);
   color: var(--dp-ink);
-  text-decoration: none;
-  box-shadow: 0 16px 28px -18px rgba(31, 29, 61, 0.55);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  box-shadow: 0 12px 22px -16px rgba(31, 29, 61, 0.55);
   transform: rotate(var(--rot));
-  transition: transform 220ms ease, box-shadow 220ms ease;
+  transition: transform 200ms ease, box-shadow 200ms ease;
 }
 .dp-card:hover,
 .dp-card:focus-visible {
-  transform: rotate(0deg) translateY(-4px);
-  box-shadow: 0 22px 34px -18px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--ring);
-}
-
-.dp-card--row-reverse { flex-direction: row-reverse; text-align: right; }
-.dp-card--stack {
-  flex-direction: column;
-  text-align: center;
-  --pad-y: 34px;
-  --pad-x: 30px;
+  transform: rotate(0deg) translateY(-3px);
+  box-shadow: 0 18px 28px -16px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--ring);
 }
 
 .dp-avatar {
@@ -141,54 +134,121 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 64px;
-  height: 64px;
-  overflow: visible;
+  width: 52px;
+  height: 52px;
   border-radius: var(--avatar-shape);
   background: rgba(255, 255, 255, 0.7);
   font-family: var(--dp-display);
-  font-size: 1.6rem;
+  font-size: 1.3rem;
   font-weight: 700;
   box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
 }
-.dp-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: inherit;
-}
-.dp-card--stack .dp-avatar { width: 96px; height: 96px; font-size: 2.2rem; }
+.dp-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.dp-avatar--lg { width: 84px; height: 84px; font-size: 2rem; }
 
 .dp-online {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
+  right: 0;
+  bottom: 0;
+  width: 13px;
+  height: 13px;
   border-radius: 50%;
   background: var(--dp-green);
   box-shadow: 0 0 0 3px #fff;
 }
 
-.dp-card__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .dp-card__name {
+  max-width: 100%;
   font-family: var(--dp-display);
-  font-size: 1.15rem;
+  font-size: 1rem;
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Host / Explorer tag */
+.dp-card__role {
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+  border: 1.5px solid currentColor;
+  background: rgba(255, 255, 255, 0.6);
+}
+.dp-card__role--provider { color: #b8470a; }
+.dp-card__role--customer { color: #2f7fc4; }
+
+/* ---------- Popup: the details live here, not in the bubble ---------- */
+
+.dp-pop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  background: rgba(31, 29, 61, 0.45);
+  animation: dp-fade 140ms ease-out;
+}
+.dp-pop__card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(360px, 100%);
+  max-height: min(80vh, 560px);
+  overflow-y: auto;
+  padding: 28px 22px 20px;
+  border-radius: 28px;
+  background: var(--tint);
+  box-shadow: 0 24px 60px -20px rgba(31, 29, 61, 0.7), 0 0 0 3px var(--ring);
+  text-align: center;
+  color: var(--dp-ink);
+  animation: dp-pop 180ms cubic-bezier(.2, .9, .3, 1.2);
+}
+.dp-pop__close {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.7);
+  font-size: 1.4rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--dp-ink);
+}
+.dp-pop__name { margin: 4px 0 0; font-family: var(--dp-display); font-size: 1.4rem; overflow-wrap: anywhere; }
+.dp-pop__role { margin: 0; font-size: 0.85rem; font-weight: 600; }
+.dp-pop__line { margin: 0; font-size: 0.9rem; overflow-wrap: anywhere; }
+.dp-pop__bio {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.6);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: var(--dp-ink);
   overflow-wrap: anywhere;
 }
-.dp-card__line { font-size: 0.86rem; overflow-wrap: anywhere; }
-.dp-card__line--soft { color: var(--dp-muted); }
-.dp-card__bio {
-  margin-top: 4px;
-  font-size: 0.82rem;
-  line-height: 1.4;
-  color: var(--dp-muted);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.dp-pop__actions { display: flex; gap: 8px; margin-top: 10px; width: 100%; }
+.dp-pop__actions .dp-btn {
+  flex: 1;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.7);
 }
+.dp-pop__actions .dp-btn--solid { background: var(--dp-ink); }
+
+@keyframes dp-fade { from { opacity: 0; } }
+@keyframes dp-pop { from { opacity: 0; transform: translateY(12px) scale(0.96); } }
 
 /* ---------- Focus, motion, small screens ---------- */
 
@@ -202,6 +262,7 @@
 @media (prefers-reduced-motion: reduce) {
   .dp-card, .dp-btn { transition: none; }
   .dp-card:hover, .dp-card:focus-visible { transform: rotate(var(--rot)); }
+  .dp-pop, .dp-pop__card { animation: none; }
 }
 
 @media (max-width: 720px) {
@@ -235,40 +296,23 @@
   .dp-note ul { gap: 4px; }
   .dp-note li { font-size: 0.86rem; line-height: 1.4; }
 
-  /* people: a small scatter of pebbles, two to a row. Each keeps its own colour, shape,
-     tilt and drop, so the field still looks random. A few "wide" pebbles take a whole row. */
-  .dp-field { gap: 10px; padding-bottom: 32px; }
-  .dp-card,
-  .dp-card--row-reverse,
-  .dp-card--stack {
-    flex: 0 0 calc(50% - 5px);
-    flex-direction: column;
-    justify-content: center;
-    text-align: center;
-    gap: 6px;
-    margin-top: calc(var(--drop) * 0.4);
-    --pad-x: 12px;
-    --pad-y: 20px;
-  }
-  .dp-avatar,
-  .dp-card--stack .dp-avatar { width: 54px; height: 54px; font-size: 1.35rem; }
-  .dp-card__name { font-size: 0.95rem; }
-  .dp-card__line { font-size: 0.8rem; }
-  .dp-card:not([data-size='wide']) .dp-card__line--soft,
-  .dp-card:not([data-size='wide']) .dp-card__bio { display: none; }
+  /* people: small bubbles, two or three to a row; the popup becomes a bottom sheet */
+  .dp-field { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; padding-bottom: 32px; }
+  .dp-card { height: 124px; padding: 10px 8px; gap: 4px; }
+  .dp-avatar { width: 46px; height: 46px; font-size: 1.15rem; }
+  .dp-card__name { font-size: 0.9rem; }
+  .dp-card__role { font-size: 0.66rem; padding: 0 7px; }
 
-  .dp-card[data-size='wide'] {
-    flex-basis: 100%;
-    flex-direction: row;
-    text-align: left;
-    gap: 12px;
-    margin-top: 0;
-    --pad-x: 26px;
-    --pad-y: 16px;
+  .dp-pop { place-items: end center; padding: 0; }
+  .dp-pop__card {
+    width: 100%;
+    max-height: 78vh;
+    border-radius: 26px 26px 0 0;
+    padding-bottom: calc(20px + env(safe-area-inset-bottom, 0px));
+    animation-name: dp-sheet;
   }
-  .dp-card--row-reverse[data-size='wide'] { flex-direction: row-reverse; text-align: right; }
-  .dp-card[data-size='wide'] .dp-card__bio { -webkit-line-clamp: 1; }
 }
+@keyframes dp-sheet { from { transform: translateY(40px); opacity: 0; } }
 
 @media (max-width: 380px) {
   .dp-head > div:first-child { min-width: 0; }
@@ -276,18 +320,3 @@
   .dp-actions { gap: 4px; }
   .dp-btn { padding: 6px 9px; font-size: 0.76rem; }
 }
-
-/* Provider / Consumer tag on a person's card */
-.dp-card__role {
-  align-self: flex-start;
-  margin: 2px 0 4px;
-  padding: 1px 9px;
-  border-radius: 999px;
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  border: 1.5px solid currentColor;
-  background: rgba(255, 255, 255, 0.55);
-}
-.dp-card__role--provider { color: #b8470a; }
-.dp-card__role--customer { color: #2f7fc4; }
