@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as accountsApi from '../api/accounts';
 import { useAuth } from '../context/AuthContext';
 import { ErrorAlert } from './ui';
 import '../pages/chat/group.css';
+import './people-picker.css';
 
 const toPerson = (p) => ({
   id: String(p.id),
@@ -15,6 +16,7 @@ const toPerson = (p) => ({
  * Modal for choosing several people: used to start a group and to add people to one.
  * `suggestions` are people the user already talks to; typing 2+ letters searches everyone.
  * Data saver: no avatar images are downloaded (initials only) and nothing is searched until you type.
+ * Mobile: opens as a bottom sheet; desktop: centred card. Smooth enter/exit, shadows, safe-area aware.
  */
 export default function PeoplePicker({
   title, submitLabel, minPick = 1, maxPick = 19, excludeIds = [], suggestions = [],
@@ -28,17 +30,36 @@ export default function PeoplePicker({
   const [groupTitle, setGroupTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
+  const [leaving, setLeaving] = useState(false);
   const searchRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const closeTimer = useRef(null);
 
   const hidden = useMemo(() => new Set([String(user.id), ...excludeIds.map(String)]), [user.id, excludeIds]);
   const query = q.trim();
 
-  useEffect(() => { searchRef.current?.focus(); }, []);
+  // animated close (works for backdrop, Escape and the X button)
+  const close = useCallback(() => {
+    if (closeTimer.current) return;
+    setLeaving(true);
+    closeTimer.current = setTimeout(() => onCloseRef.current(), 190);
+  }, []);
+
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    // avoid popping the keyboard open on phones before the sheet has slid in
+    const t = setTimeout(() => searchRef.current?.focus({ preventScroll: true }), 250);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, [onClose]);
+    return () => {
+      clearTimeout(t);
+      clearTimeout(closeTimer.current);
+      document.body.style.overflow = prevOverflow;
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [close]);
 
   useEffect(() => {
     if (query.length < 2) { setResults(null); return undefined; }
@@ -81,37 +102,39 @@ export default function PeoplePicker({
   };
 
   return (
-    <div className="gp-overlay" role="dialog" aria-modal="true" aria-label={title} onClick={onClose}>
-      <form className="gp-box" onClick={(e) => e.stopPropagation()} onSubmit={submit}>
-        <header className="gp-head">
+    <div className={`gp-overlay pp${leaving ? ' is-leaving' : ''}`} role="dialog" aria-modal="true" aria-label={title}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      <form className="gp-box pp-box" onSubmit={submit}>
+        <span className="pp-grab" aria-hidden="true" />
+        <header className="gp-head pp-head">
           <h2>{title}</h2>
-          <button type="button" className="gp-x" onClick={onClose} aria-label="Close">×</button>
+          <button type="button" className="gp-x pp-x" onClick={close} aria-label="Close">×</button>
         </header>
 
         {askTitle && (
-          <input className="gp-input" placeholder={titlePlaceholder} aria-label={titlePlaceholder}
+          <input className="gp-input pp-input" placeholder={titlePlaceholder} aria-label={titlePlaceholder}
             value={groupTitle} maxLength={80} onChange={(e) => setGroupTitle(e.target.value)} />
         )}
 
         {count > 0 && (
-          <ul className="gp-chips" aria-label="Selected people">
+          <ul className="gp-chips pp-chips" aria-label="Selected people">
             {pickedList.map((p) => (
               <li key={p.id}>
-                <button type="button" className="gp-chip" onClick={() => toggle(p)} aria-label={`Remove ${p.name}`}>
-                  {p.name} <span aria-hidden="true">×</span>
+                <button type="button" className="gp-chip pp-chip" onClick={() => toggle(p)} aria-label={`Remove ${p.name}`}>
+                  <span className="pp-chip__name">{p.name}</span> <span aria-hidden="true">×</span>
                 </button>
               </li>
             ))}
           </ul>
         )}
 
-        <input ref={searchRef} className="gp-input" type="search" placeholder="Search people…" aria-label="Search people"
+        <input ref={searchRef} className="gp-input pp-input" type="search" placeholder="Search people…" aria-label="Search people"
           value={q} onChange={(e) => setQ(e.target.value)} />
 
-        <ul className="gp-list">
-          {searching && <li className="gp-note">Searching…</li>}
+        <ul className="gp-list pp-list">
+          {searching && <li className="gp-note pp-note">Searching…</li>}
           {!searching && list.length === 0 && (
-            <li className="gp-note">
+            <li className="gp-note pp-note">
               {query.length >= 2 ? 'Nobody found.' : saver ? 'Type a name to search (Data saver is on).' : 'Search for someone to add.'}
             </li>
           )}
@@ -119,12 +142,13 @@ export default function PeoplePicker({
             const on = Boolean(picked[p.id]);
             return (
               <li key={p.id}>
-                <label className={`gp-row${on ? ' is-on' : ''}`}>
+                <label className={`gp-row pp-row${on ? ' is-on' : ''}${!on && full ? ' is-off' : ''}`}>
                   <input type="checkbox" checked={on} disabled={!on && full} onChange={() => toggle(p)} />
-                  <span className="gp-avatar" aria-hidden="true">
+                  <span className="gp-avatar pp-avatar" aria-hidden="true">
                     {p.avatar && !saver ? <img src={p.avatar} alt="" loading="lazy" /> : p.name[0]?.toUpperCase()}
                   </span>
-                  <span className="gp-who"><strong>{p.name}</strong>{p.handle && <small>@{p.handle}</small>}</span>
+                  <span className="gp-who pp-who"><strong>{p.name}</strong>{p.handle && <small>@{p.handle}</small>}</span>
+                  <span className="pp-tick" aria-hidden="true">{on ? '✓' : ''}</span>
                 </label>
               </li>
             );
@@ -132,11 +156,11 @@ export default function PeoplePicker({
         </ul>
 
         <ErrorAlert error={error} />
-        <footer className="gp-foot">
-          <span className="gp-count" role="status">
+        <footer className="gp-foot pp-foot">
+          <span className="gp-count pp-count" role="status">
             {count} picked{minPick > 1 && count < minPick ? ` · pick at least ${minPick}` : ''}{full ? ' · limit reached' : ''}
           </span>
-          <button type="submit" className="btn btn--primary" disabled={count < minPick || busy}>
+          <button type="submit" className="btn btn--primary pp-submit" disabled={count < minPick || busy}>
             {busy ? 'Working…' : submitLabel}
           </button>
         </footer>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PeoplePicker from '../../components/PeoplePicker';
 import { useAuth } from '../../context/AuthContext';
@@ -29,30 +29,87 @@ function Reactions({ mine, counts, onPick }) {
   );
 }
 
-function Viewer({ status, onClose, onReact }) {
+// Shared modal shell: backdrop click, Escape, scroll lock, smooth enter + exit animation.
+function Overlay({ onClose, label, sheet, children }) {
+  const [leaving, setLeaving] = useState(false);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const timer = useRef(null);
+  const close = useCallback(() => {
+    if (timer.current) return;
+    setLeaving(true);
+    timer.current = setTimeout(() => onCloseRef.current(), 180);
+  }, []);
+  useEffect(() => {
+    const key = (e) => e.key === 'Escape' && close();
+    window.addEventListener('keydown', key);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      window.removeEventListener('keydown', key);
+      document.body.style.overflow = prevOverflow;
+      clearTimeout(timer.current);
+    };
+  }, [close]);
+  return (
+    <div className={`sq-viewer${sheet ? ' sq-viewer--sheet' : ''}${leaving ? ' is-leaving' : ''}`}
+      role="dialog" aria-modal="true" aria-label={label}
+      onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
+      {children(close)}
+    </div>
+  );
+}
+
+function ViewerBody({ status, close, onReact }) {
   const isVideo = status.kind === 'video';
   const ms = isVideo ? Math.min(status.duration || MAX_VIDEO_SECONDS, MAX_VIDEO_SECONDS) * 1000 : 6000;
   useEffect(() => {
-    const t = setTimeout(onClose, ms + 300);
-    const key = (e) => e.key === 'Escape' && onClose();
-    window.addEventListener('keydown', key);
-    return () => { clearTimeout(t); window.removeEventListener('keydown', key); };
-  }, [status.id, ms, onClose]);
+    const t = setTimeout(close, ms + 300);
+    return () => clearTimeout(t);
+  }, [status.id, ms, close]);
   return (
-    <div className="sq-viewer" role="dialog" aria-modal="true" aria-label={`${status.user.name}'s status`}>
-      <div className="sq-stage">
-        <div className="sq-bar"><span key={status.id} style={{ animationDuration: `${ms}ms` }} /></div>
-        <div className="sq-vhead">
-          <b>{status.user.name} · {hoursLeft(status.expires_at)}h left</b>
-          <button type="button" onClick={onClose} aria-label="Close">✕</button>
+    <div className="sq-stage">
+      <div className="sq-bar"><span key={status.id} style={{ animationDuration: `${ms}ms` }} /></div>
+      <div className="sq-vhead">
+        <div className="sq-vwho">
+          <span className="sq-av sq-av--sm">{initial(status.user.name)}</span>
+          <div className="sq-vname"><b>{status.user.name}</b><small>{hoursLeft(status.expires_at)}h left</small></div>
         </div>
-        {status.kind === 'image' && <img src={status.file} alt="" />}
-        {isVideo && <video src={status.file} autoPlay playsInline controls={false} onEnded={onClose} />}
-        {status.kind === 'text' && <p className="sq-big">{status.text}</p>}
-        {status.kind !== 'text' && status.text && <p className="sq-cap">{status.text}</p>}
-        <div className="sq-vfoot"><Reactions mine={status.my_reaction} onPick={(e) => onReact(status, e)} /></div>
+        <button type="button" className="sq-x" onClick={close} aria-label="Close">✕</button>
       </div>
+      {status.kind === 'image' && <img src={status.file} alt="" />}
+      {isVideo && <video src={status.file} autoPlay playsInline controls={false} onEnded={close} />}
+      {status.kind === 'text' && <p className="sq-big">{status.text}</p>}
+      {status.kind !== 'text' && status.text && <p className="sq-cap">{status.text}</p>}
+      <div className="sq-vfoot"><Reactions mine={status.my_reaction} onPick={(e) => onReact(status, e)} /></div>
     </div>
+  );
+}
+
+function Viewer({ status, onClose, onReact }) {
+  return (
+    <Overlay label={`${status.user.name}'s status`} onClose={onClose}>
+      {(close) => <ViewerBody status={status} close={close} onReact={onReact} />}
+    </Overlay>
+  );
+}
+
+function ConfirmDialog({ title, body, okLabel = 'Confirm', danger, onOk, onClose }) {
+  return (
+    <Overlay sheet label={title} onClose={onClose}>
+      {(close) => (
+        <div className="sq-sheet sq-sheet--confirm">
+          <span className="sq-grab" aria-hidden="true" />
+          <h2>{title}</h2>
+          <p className="sq-hint">{body}</p>
+          <div className="sq-row">
+            <button type="button" className="sq-ghost" onClick={close}>Cancel</button>
+            <button type="button" className={`sq-cta${danger ? ' sq-cta--danger' : ''}`}
+              onClick={() => { close(); setTimeout(onOk, 190); }}>{okLabel}</button>
+          </div>
+        </div>
+      )}
+    </Overlay>
   );
 }
 
@@ -65,7 +122,7 @@ function Bubble({ person, big }) {
   );
 }
 
-function Tree({ tree, onLeave, onStatus, pop }) {
+function Tree({ tree, onLeave, onStatus, pop, ask }) {
   const [busy, setBusy] = useState('');
   const canShare = typeof navigator !== 'undefined' && !!navigator.share;
 
@@ -84,8 +141,13 @@ function Tree({ tree, onLeave, onStatus, pop }) {
       else await navigator.share({ title: tree.title, text: `${tree.title} on Euphoria` });
     } catch (e) { if (e?.name !== 'AbortError') pop('Could not share'); }
   };
-  const asStatus = async () => {
-    if (!window.confirm('Post this tree as a status? Everyone on the Square can see it for 24 hours.')) return;
+  const asStatus = () => ask({
+    title: 'Post this tree as a status?',
+    body: 'Everyone on the Square can see it for 24 hours.',
+    okLabel: 'Post it',
+    onOk: postStatus,
+  });
+  const postStatus = async () => {
     setBusy('Posting…');
     try {
       const file = new File([await treeBlob(tree)], 'tree.png', { type: 'image/png' });
@@ -102,6 +164,7 @@ function Tree({ tree, onLeave, onStatus, pop }) {
     <article className="sq-card sq-tree">
       <header>
         <h3>{tree.title}</h3>
+        <span className="sq-count">{tree.members.length} {tree.members.length === 1 ? 'person' : 'people'}</span>
         {tree.note && <p className="sq-hint">{tree.note}</p>}
       </header>
       <Bubble person={tree.owner} big />
@@ -124,16 +187,21 @@ function Composer({ onClose, onPosted }) {
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const submit = async () => {
+  const preview = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
+  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
+  const isImg = file?.type.startsWith('image/');
+  const isVid = file?.type.startsWith('video/');
+
+  const submit = async (close) => {
     setErr('');
     if (!file && !text.trim()) return setErr('Add a photo, a video or some text.');
     try {
       const fd = new FormData();
       fd.append('text', text.trim());
-      if (file?.type.startsWith('image/')) {
+      if (isImg) {
         setBusy('Shrinking photo…');
         fd.append('file', await shrinkImage(file), 'status.jpg');
-      } else if (file?.type.startsWith('video/')) {
+      } else if (isVid) {
         setBusy(`Trimming video (up to ${MAX_VIDEO_SECONDS}s)…`);
         const { blob, duration } = await shrinkVideo(file);
         fd.append('file', blob, 'status.webm');
@@ -141,27 +209,47 @@ function Composer({ onClose, onPosted }) {
       } else if (file) return setErr('Choose a photo or a video.');
       setBusy('Posting…');
       onPosted(await api.createStatus(fd));
-      onClose();
+      close();
     } catch (e) {
       setErr(e.body?.file?.[0] || e.body?.detail || e.message || 'Could not post. Try again.');
       setBusy('');
     }
   };
   return (
-    <div className="sq-viewer" role="dialog" aria-modal="true" aria-label="New status">
-      <div className="sq-sheet">
-        <h2>New status</h2>
-        <input type="text" maxLength={140} placeholder="Say something (optional)" value={text}
-          onChange={(e) => setText(e.target.value)} />
-        <input type="file" accept="image/*,video/*" onChange={(e) => setFile(e.target.files[0] || null)} />
-        <p className="sq-hint">Photos are shrunk before upload. Videos are cut to {MAX_VIDEO_SECONDS} seconds. Statuses disappear after 24 hours.</p>
-        {err && <p className="sq-err" role="alert">{err}</p>}
-        <div className="sq-row">
-          <button type="button" className="sq-cta" disabled={!!busy} onClick={submit}>{busy || 'Post for 24 hours'}</button>
-          <button type="button" className="sq-ghost" disabled={!!busy} onClick={onClose}>Cancel</button>
+    <Overlay sheet label="New status" onClose={onClose}>
+      {(close) => (
+        <div className="sq-sheet">
+          <span className="sq-grab" aria-hidden="true" />
+          <h2>New status</h2>
+          <div className="sq-field">
+            <input type="text" maxLength={140} placeholder="Say something (optional)" value={text}
+              onChange={(e) => setText(e.target.value)} />
+            <small className="sq-counter">{text.length}/140</small>
+          </div>
+          {preview ? (
+            <div className="sq-preview">
+              {isImg && <img src={preview} alt="Selected" />}
+              {isVid && <video src={preview} muted playsInline />}
+              {!isImg && !isVid && <p className="sq-hint">Unsupported file</p>}
+              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => setFile(null)}>✕</button>
+            </div>
+          ) : (
+            <label className="sq-drop">
+              <span aria-hidden="true">📷</span>
+              <b>Add a photo or video</b>
+              <small>Tap to choose from your phone</small>
+              <input type="file" accept="image/*,video/*" onChange={(e) => setFile(e.target.files[0] || null)} />
+            </label>
+          )}
+          <p className="sq-hint">Photos are shrunk before upload. Videos are cut to {MAX_VIDEO_SECONDS} seconds. Statuses disappear after 24 hours.</p>
+          {err && <p className="sq-err" role="alert">{err}</p>}
+          <div className="sq-row">
+            <button type="button" className="sq-ghost" disabled={!!busy} onClick={close}>Cancel</button>
+            <button type="button" className="sq-cta" disabled={!!busy} onClick={() => submit(close)}>{busy || 'Post for 24 hours'}</button>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </Overlay>
   );
 }
 
@@ -179,6 +267,8 @@ export default function Square() {
   const [treeOpen, setTreeOpen] = useState(false);
   const [seen, setSeen] = useState({});
   const [pops, setPops] = useState([]);
+  const [confirm, setConfirm] = useState(null);
+  const [loaded, setLoaded] = useState(false);
   const prev = useRef(null);
 
   const pop = useCallback((msg) => {
@@ -205,6 +295,7 @@ export default function Square() {
       prev.current = { s, t };
       setStatuses(s); setThoughts(t); setTrending(tr);
     } catch { /* keep what is on screen; the next poll retries */ }
+    setLoaded(true);
   }, [user, pop]);
 
   useEffect(() => {
@@ -232,11 +323,16 @@ export default function Square() {
     setTrees((cur) => [t, ...cur]);
     setTreeOpen(false);
   };
-  const leaveTree = async (t) => {
-    if (!window.confirm(t.mine ? 'Delete this tree for everyone?' : 'Leave this tree?')) return;
-    try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); }
-    catch { pop('Could not do that'); }
-  };
+  const leaveTree = (t) => setConfirm({
+    title: t.mine ? 'Delete this tree?' : 'Leave this tree?',
+    body: t.mine ? 'It will be removed for everyone in it.' : 'You will no longer see it or appear in it.',
+    okLabel: t.mine ? 'Delete tree' : 'Leave tree',
+    danger: true,
+    onOk: async () => {
+      try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); pop(t.mine ? 'Tree deleted' : 'You left the tree'); }
+      catch { pop('Could not do that'); }
+    },
+  });
   const open = (s) => { setSeen((x) => ({ ...x, [s.id]: true })); setViewing(s); };
 
   const shown = sort === 'top' ? [...thoughts].sort((a, b) => b.total - a.total) : thoughts;
@@ -245,7 +341,7 @@ export default function Square() {
     <main className="sq">
       <aside className="sq-side">
         <h1 className="sq-title">The Square</h1>
-        <button type="button" className="sq-cta" onClick={() => setComposing(true)}>+ Add status</button>
+        <button type="button" className="sq-cta sq-cta--side" onClick={() => setComposing(true)}>+ Add status</button>
         <div className="sq-tabs" role="group" aria-label="Sort thoughts">
           <button type="button" aria-pressed={sort === 'new'} onClick={() => setSort('new')}>Newest</button>
           <button type="button" aria-pressed={sort === 'top'} onClick={() => setSort('top')}>Most reacted</button>
@@ -257,12 +353,13 @@ export default function Square() {
         <div className="sq-card">
           <h2>Status updates</h2>
           <div className="sq-rings">
-            {statuses.length === 0 && <p className="sq-hint">No statuses right now. Be the first.</p>}
+            {!loaded && [0, 1, 2, 3, 4].map((n) => <span key={n} className="sq-skel" aria-hidden="true" />)}
+            {loaded && statuses.length === 0 && <p className="sq-hint">No statuses right now. Be the first.</p>}
             {statuses.map((s) => (
               <button key={s.id} type="button" className={`sq-ring${seen[s.id] ? ' sq-ring--seen' : ''}`} onClick={() => open(s)}>
                 <i>{s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? '🎬' : initial(s.user.name)}</i>
-                <small>{s.user.id === user?.id ? 'You' : s.user.name}</small>
-                <small>{hoursLeft(s.expires_at)}h left</small>
+                <small className="sq-ring__name">{s.user.id === user?.id ? 'You' : s.user.name}</small>
+                <small className="sq-ring__time">{hoursLeft(s.expires_at)}h left</small>
               </button>
             ))}
           </div>
@@ -276,7 +373,7 @@ export default function Square() {
           <p className="sq-hint">Only you and the people you tag can see a tree.</p>
           {trees.length === 0 && <p className="sq-hint">No trees yet. Make one and tag your people.</p>}
         </div>
-        {trees.map((t) => <Tree key={t.id} tree={t} onLeave={leaveTree} pop={pop}
+        {trees.map((t) => <Tree key={t.id} tree={t} onLeave={leaveTree} pop={pop} ask={setConfirm}
           onStatus={(st) => { setStatuses((cur) => [st, ...cur]); load(); }} />)}
 
         <form className="sq-card sq-compose" onSubmit={postThought}>
@@ -302,14 +399,14 @@ export default function Square() {
           <h2>🔥 Most liked statuses</h2>
           {trending.statuses.length === 0 && <p className="sq-hint">Nothing yet.</p>}
           <ul>{trending.statuses.map((s) => (
-            <li key={s.id}><button type="button" onClick={() => open(s)}>{s.user.name}: {s.text || (s.kind === 'video' ? 'Video' : 'Photo')}</button><b>❤️ {s.likes}</b></li>
+            <li key={s.id}><button type="button" onClick={() => open(s)}><strong>{s.user.name}</strong> {s.text || (s.kind === 'video' ? 'Video' : 'Photo')}</button><b>❤️ {s.likes}</b></li>
           ))}</ul>
         </div>
         <div className="sq-card">
           <h2>💬 Trending thoughts</h2>
           {trending.thoughts.length === 0 && <p className="sq-hint">Nothing yet.</p>}
           <ul>{trending.thoughts.map((t) => (
-            <li key={t.id}><span>{t.text.length > 40 ? `${t.text.slice(0, 40)}…` : t.text}</span><b>{t.total}</b></li>
+            <li key={t.id}><span>{t.text.length > 60 ? `${t.text.slice(0, 60)}…` : t.text}</span><b>{t.total}</b></li>
           ))}</ul>
         </div>
         <div className="sq-card">
@@ -318,11 +415,19 @@ export default function Square() {
         </div>
       </aside>
 
-      <div className="sq-pops" aria-live="polite">{pops.map((p) => <div key={p.id} className="sq-pop">{p.msg}</div>)}</div>
+      <button type="button" className="sq-fab" aria-label="Add status" onClick={() => setComposing(true)}>＋</button>
+      <div className="sq-pops" aria-live="polite">
+        {pops.map((p) => (
+          <button key={p.id} type="button" className="sq-pop" onClick={() => setPops((c) => c.filter((x) => x.id !== p.id))}>
+            <span aria-hidden="true">{/could not/i.test(p.msg) ? '⚠️' : '✨'}</span>{p.msg}
+          </button>
+        ))}
+      </div>
       {treeOpen && (
         <PeoplePicker title="New friend tree" submitLabel="Create tree" askTitle titlePlaceholder="Tree name"
           onSubmit={makeTree} onClose={() => setTreeOpen(false)} />
       )}
+      {confirm && <ConfirmDialog {...confirm} onClose={() => setConfirm(null)} />}
       {viewing && <Viewer status={viewing} onClose={() => setViewing(null)} onReact={reactStatus} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={(s) => { setStatuses([s, ...statuses]); load(); }} />}
     </main>
