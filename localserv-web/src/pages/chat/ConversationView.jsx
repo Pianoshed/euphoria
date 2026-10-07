@@ -20,6 +20,7 @@ import PeoplePicker from '../../components/PeoplePicker';
 import GroupPanel, { MOODS, moodOf, MoodPicker, VibeBar } from './GroupPanel';
 import ChatHeaderActions, { useIsMobile } from './ChatHeaderActions';
 import './group.css';
+import './chat-mobile.css';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
 // Resolve against the API host so the image loads from the backend, not the frontend.
@@ -99,6 +100,21 @@ function mergeMessages(prev, fresh) {
   return changed ? sortOldestFirst([...byId.values()]) : prev;
 }
 
+const SendIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 19V5M5.5 11.5L12 5l6.5 6.5" />
+  </svg>
+);
+const SmileIcon = () => (
+  <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <circle cx="12" cy="12" r="9" /><path d="M8.5 14.2c.9 1.1 2 1.7 3.5 1.7s2.6-.6 3.5-1.7" /><path d="M9 9.8h.01M15 9.8h.01" strokeWidth="2.6" />
+  </svg>
+);
+const ArrowDownIcon = () => (
+  <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M12 5v14M5.5 12.5L12 19l6.5-6.5" />
+  </svg>
+);
 const DataSaverIcon = () => (
   <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
     <path d="M8 20V5M8 5L4.5 8.5M8 5l3.5 3.5M16 4v15M16 19l-3.5-3.5M16 19l3.5-3.5" />
@@ -307,6 +323,36 @@ export default function ConversationView() {
   const { call, startCallIn, setViewedConversation, clearViewedConversation, setPeer, joinGroupCall, groupBusy: onGroupCall } = useCall();
   const saver = useDataSaver();
   const isMobile = useIsMobile();
+  const [composerFocus, setComposerFocus] = useState(false); // keyboard is (probably) open
+  const [showDown, setShowDown] = useState(false);           // scrolled well up: offer a "back to newest" button
+
+  // Phones: make the chat an app-style screen. The page itself stops scrolling, the header and
+  // the composer stay put, and ONLY the message list scrolls. The height follows the visual
+  // viewport, so when the keyboard opens the composer rides on top of it instead of hiding.
+  useEffect(() => {
+    if (!isMobile) return undefined;
+    const html = document.documentElement;
+    html.classList.add('cv-lock');
+    const vv = window.visualViewport;
+    const apply = () => {
+      const nav = document.querySelector('.navbar');
+      const navH = nav ? nav.getBoundingClientRect().height : 0;
+      const vh = vv ? vv.height : window.innerHeight;
+      html.style.setProperty('--cv-h', `${Math.max(260, Math.round(vh - navH))}px`);
+      if (window.scrollY) window.scrollTo(0, 0);
+    };
+    apply();
+    vv?.addEventListener('resize', apply);
+    vv?.addEventListener('scroll', apply);
+    window.addEventListener('resize', apply);
+    return () => {
+      html.classList.remove('cv-lock');
+      html.style.removeProperty('--cv-h');
+      vv?.removeEventListener('resize', apply);
+      vv?.removeEventListener('scroll', apply);
+      window.removeEventListener('resize', apply);
+    };
+  }, [isMobile]);
   const [missing, setMissing] = useState(false); // the server says this conversation does not exist for this account
   const [shownPhotos, setShownPhotos] = useState({}); // photos the person tapped to load while Data saver is on
   const [messages, setMessages] = useState(null);
@@ -441,7 +487,11 @@ export default function ConversationView() {
   // so a message arriving doesn't throw someone out of the history they're reading.
   const onLogScroll = () => {
     const log = logRef.current;
-    if (log) stickRef.current = log.scrollHeight - log.scrollTop - log.clientHeight < 160;
+    if (log) {
+      const away = log.scrollHeight - log.scrollTop - log.clientHeight;
+      stickRef.current = away < 160;
+      setShowDown(away > 420);
+    }
     if (stickRef.current) setUnseen(0);
   };
   const jumpToNewest = () => {
@@ -1047,7 +1097,7 @@ export default function ConversationView() {
   const callBar = isGroup && groupCall?.active ? groupCall : null;
 
   return (
-    <div className="page cv">
+    <div className={`page cv${composerFocus && recState !== 'recording' ? ' cv--typing' : ''}`}>
       <div className="cv-shell">
         <section className="cv-chat" aria-label={`Conversation with ${displayName}`}>
           <header className={`cv-head${isGroup ? ' cv-head--group' : ''}`}>
@@ -1374,6 +1424,14 @@ export default function ConversationView() {
             )}
           </div>
 
+          {unseen === 0 && showDown && (
+            <div className="cv-newrow">
+              <button type="button" className="cv-downbtn" onClick={jumpToNewest} aria-label="Scroll to the newest message">
+                <ArrowDownIcon />
+              </button>
+            </div>
+          )}
+
           {unseen > 0 && (
             <div className="cv-newrow">
               <button type="button" className="cv-newpill" onClick={jumpToNewest}>
@@ -1424,37 +1482,45 @@ export default function ConversationView() {
               </div>
             ) : (
             <form onSubmit={handleSend} className="cv-composer">
-              <label className="cv-icon-btn" aria-label="Attach an image">
-                <PaperclipIcon />
-                <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
-              </label>
-              <textarea
-                ref={inputRef}
-                className="cv-composer__input"
-                placeholder="Write a message…"
-                aria-label="Message"
-                rows={1}
-                enterKeyHint="send"
-                value={draft}
-                onChange={(e) => { setDraft(e.target.value); if (e.target.value) sendTyping(); }}
-                onKeyDown={onDraftKeyDown}
-                maxLength={4000}
-              />
-              {draft.length > 3500 && (
-                <span className={`cv-count${draft.length >= 3950 ? ' is-max' : ''}`} aria-live="polite">{4000 - draft.length}</span>
-              )}
-              <button
-                type="button"
-                className={`cv-icon-btn cv-icon-btn--emoji${paletteOpen ? ' is-open' : ''}`}
-                aria-label="Open emoji palette"
-                aria-expanded={paletteOpen}
-                data-emoji-pop
-                onClick={() => { setReactTarget(null); setPaletteOpen((o) => !o); }}
-              >☺</button>
+              <div className="cv-composer__field">
+                <button
+                  type="button"
+                  className={`cv-icon-btn cv-icon-btn--emoji${paletteOpen ? ' is-open' : ''}`}
+                  aria-label="Open emoji palette"
+                  aria-expanded={paletteOpen}
+                  data-emoji-pop
+                  onPointerDown={(e) => e.preventDefault()}
+                  onClick={() => { setReactTarget(null); setPaletteOpen((o) => !o); }}
+                ><SmileIcon /></button>
+                <textarea
+                  ref={inputRef}
+                  className="cv-composer__input"
+                  placeholder={isGroup ? 'Message the group' : 'Message'}
+                  aria-label="Message"
+                  rows={1}
+                  enterKeyHint="send"
+                  value={draft}
+                  onChange={(e) => { setDraft(e.target.value); if (e.target.value) sendTyping(); }}
+                  onKeyDown={onDraftKeyDown}
+                  onFocus={() => setComposerFocus(true)}
+                  onBlur={() => setComposerFocus(false)}
+                  maxLength={4000}
+                />
+                {draft.length > 3500 && (
+                  <span className={`cv-count${draft.length >= 3950 ? ' is-max' : ''}`} aria-live="polite">{4000 - draft.length}</span>
+                )}
+                <label className="cv-icon-btn" aria-label="Attach an image">
+                  <PaperclipIcon />
+                  <input ref={fileInputRef} type="file" accept="image/*" hidden onChange={handleFileChange} />
+                </label>
+              </div>
               {draft.trim() || attachment ? (
-                <button className="cv-send" type="submit">Send</button>
+                <button className="cv-action cv-action--send" type="submit" aria-label="Send message"
+                  onPointerDown={(e) => e.preventDefault()}>
+                  <SendIcon />
+                </button>
               ) : (
-                <button className="cv-icon-btn cv-mic" type="button" onClick={startRecording}
+                <button className="cv-action cv-action--mic" type="button" onClick={startRecording}
                   aria-label="Record a voice message" title="Record a voice message">
                   <MicIcon />
                 </button>
