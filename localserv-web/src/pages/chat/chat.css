@@ -484,6 +484,7 @@
   color: var(--cv-muted);
   display: -webkit-box;
   -webkit-line-clamp: 4;
+  line-clamp: 4;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
@@ -611,10 +612,11 @@
 .cv-longtext {
   display: -webkit-box;
   -webkit-line-clamp: 8;
+  line-clamp: 8;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.cv-longtext.is-open { display: block; -webkit-line-clamp: unset; }
+.cv-longtext.is-open { display: block; -webkit-line-clamp: unset; line-clamp: unset;}
 .cv-more {
   margin-top: 4px;
   padding: 0;

@@ -5,12 +5,12 @@ import '../../styles/index.css';
 export const ROLE_OPTIONS = [
   {
     value: 'CUSTOMER',
-    title: "🧭 I'm an Explorer",
+    title: "I'm just Exploring",
     description: 'Find hangouts near you, meet new people and jump into the fun.',
   },
   {
     value: 'PROVIDER',
-    title: "✨ I'm a Host",
+    title: "I'm a Host",
     description: 'Plan a hangout, set the vibe and let people come to you.',
   },
 ];
