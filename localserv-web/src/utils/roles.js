@@ -5,4 +5,4 @@ export const ROLE_META = {
   CUSTOMER: { label: 'Explorer', plural: 'Explorers', blurb: 'Looking for plans to join' },
 };
 
-export const roleLabel = (role) => (ROLE_META[role] ? `${ROLE_META[role].label}` : '');
+export const roleLabel = (role) => (ROLE_META[role] ? `${ROLE_META[role]} ${ROLE_META[role].label}` : '');
