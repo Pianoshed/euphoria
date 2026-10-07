@@ -326,6 +326,20 @@ export default function ConversationView() {
   const [composerFocus, setComposerFocus] = useState(false); // keyboard is (probably) open
   const [showDown, setShowDown] = useState(false);           // scrolled well up: offer a "back to newest" button
 
+  // Publish the navbar's height as --cv-nav-h (any screen size) so the sticky side panel can sit
+  // just below the navbar instead of underneath it.
+  useEffect(() => {
+    const html = document.documentElement;
+    const nav = document.querySelector('.navbar');
+    if (!nav) return undefined;
+    const set = () => html.style.setProperty('--cv-nav-h', `${Math.round(nav.getBoundingClientRect().height)}px`);
+    set();
+    let ro;
+    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(set); ro.observe(nav); }
+    window.addEventListener('resize', set);
+    return () => { ro?.disconnect(); window.removeEventListener('resize', set); html.style.removeProperty('--cv-nav-h'); };
+  }, []);
+
   // Phones: make the chat an app-style screen. The page itself stops scrolling, the header and
   // the composer stay put, and ONLY the message list scrolls. The height follows the visual
   // viewport, so when the keyboard opens the composer rides on top of it instead of hiding.

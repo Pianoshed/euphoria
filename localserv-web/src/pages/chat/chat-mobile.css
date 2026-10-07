@@ -119,3 +119,21 @@
 @media (prefers-reduced-motion: reduce) {
   .cv-action, .cv-composer__field { transition: none; }
 }
+
+/* ================= Desktop: group side panel placement ================= */
+/* It used to stick 1rem from the top of the screen (underneath the sticky navbar), shrink to its
+   content width, and had no height limit, so on short screens its bottom buttons were unreachable. */
+@media (min-width: 861px) {
+  .page.cv .cv-canvas--group {
+    top: calc(var(--cv-nav-h, 64px) + 16px);          /* just below the navbar */
+    align-items: stretch;                              /* fill the whole 300px column */
+    width: 100%;
+    max-height: calc(100dvh - var(--cv-nav-h, 64px) - 32px);
+  }
+  .page.cv .cv-canvas--group > .gpanel {
+    box-sizing: border-box; width: 100%; max-height: 100%;
+    overflow-y: auto; overscroll-behavior: contain;   /* long member lists scroll inside the panel */
+    box-shadow: 0 18px 50px -30px rgba(31, 29, 61, 0.45);
+  }
+  .page.cv .cv-canvas--group .gpanel__list { max-height: min(320px, 38dvh); }
+}
