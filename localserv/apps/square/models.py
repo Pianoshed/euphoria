@@ -1,0 +1,76 @@
+import os
+import uuid
+from datetime import timedelta
+
+from django.conf import settings
+from django.db import models
+from django.utils import timezone
+
+from apps.common.models import BaseModel
+
+STATUS_TTL = timedelta(hours=24)
+REACTION_EMOJI = ["🔥", "😂", "❤️", "😮", "👏"]
+
+
+def status_upload_path(instance, filename):
+    # Extension comes from OUR sniffed type (see media.py), never the client's filename.
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in (".jpg", ".webm", ".mp4"):
+        ext = ".jpg"
+    return f"square_status/{instance.user_id}/{uuid.uuid4().hex}{ext}"
+
+
+def default_expiry():
+    return timezone.now() + STATUS_TTL
+
+
+class Status(BaseModel):
+    """A 24-hour picture, short video (max 15s) or text status. Hidden by every query once
+    expires_at passes; files are deleted by services.purge_expired()."""
+
+    class Kind(models.TextChoices):
+        TEXT = "text", "Text"
+        IMAGE = "image", "Image"
+        VIDEO = "video", "Video"
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=5, choices=Kind.choices, default=Kind.TEXT)
+    text = models.CharField(max_length=140, blank=True)
+    file = models.FileField(upload_to=status_upload_path, blank=True)
+    duration_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
+    expires_at = models.DateTimeField(default=default_expiry)
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_status"
+        indexes = [models.Index(fields=["expires_at"])]
+
+
+class StatusReaction(BaseModel):
+    """One emoji per person per status. Tapping the same emoji again removes it."""
+
+    status = models.ForeignKey(Status, on_delete=models.CASCADE, related_name="reactions")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    emoji = models.CharField(max_length=8)
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_status_reaction"
+        constraints = [models.UniqueConstraint(fields=["status", "user"], name="unique_status_reaction")]
+
+
+class Thought(BaseModel):
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    text = models.CharField(max_length=280)
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_thought"
+        indexes = [models.Index(fields=["-created_at"], name="square_thought_recent_idx")]
+
+
+class ThoughtReaction(BaseModel):
+    thought = models.ForeignKey(Thought, on_delete=models.CASCADE, related_name="reactions")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    emoji = models.CharField(max_length=8)
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_thought_reaction"
+        constraints = [models.UniqueConstraint(fields=["thought", "user"], name="unique_thought_reaction")]
