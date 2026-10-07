@@ -1,6 +1,9 @@
 from datetime import timedelta
 
-from django.db.models import Count
+from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import status as http
 from rest_framework.exceptions import NotFound, ValidationError
@@ -11,10 +14,13 @@ from rest_framework.views import APIView
 from apps.common.permissions import IsActiveAccount
 
 from . import media
-from .models import REACTION_EMOJI, Status, StatusReaction, Thought, ThoughtReaction
+from .models import (REACTION_EMOJI, FriendTree, FriendTreeMember, Status, StatusReaction, Thought,
+                     ThoughtReaction)
 
 MAX_STATUSES_PER_DAY = 20
 MAX_THOUGHTS_PER_DAY = 30
+MAX_TREES_PER_DAY = 10
+MAX_TREE_MEMBERS = 30
 
 
 def _who(u):
@@ -147,3 +153,93 @@ class TrendingView(_Base):
             "thoughts": [_thought(request, t) for t in top_t],
             "emoji": emoji,
         })
+
+
+# ---------- Friend trees: visible only to the owner and the people tagged in them ----------
+
+def _visible(user):
+    return (FriendTree.objects.filter(Q(owner=user) | Q(members__user=user)).distinct()
+            .select_related("owner").prefetch_related("members__user"))
+
+
+def _tree(request, t):
+    return {
+        "id": str(t.id), "title": t.title, "note": t.note, "created_at": t.created_at,
+        "owner": _who(t.owner), "mine": t.owner_id == request.user.id,
+        "members": [_who(m.user) for m in t.members.all()],
+    }
+
+
+def _member_users(request, raw):
+    if not isinstance(raw, list) or not raw:
+        raise ValidationError({"members": ["Tag at least one friend."]})
+    if len(raw) > MAX_TREE_MEMBERS:
+        raise ValidationError({"members": [f"You can tag up to {MAX_TREE_MEMBERS} people."]})
+    try:
+        users = list(get_user_model().objects.filter(pk__in=[str(x) for x in raw], is_active=True)
+                     .exclude(pk=request.user.pk))
+    except (DjangoValidationError, ValueError):
+        raise ValidationError({"members": ["One of those people could not be found."]})
+    if not users:
+        raise ValidationError({"members": ["Tag at least one friend."]})
+    return users
+
+
+class FriendTreeListCreateView(_Base):
+    def get(self, request):
+        return Response([_tree(request, t) for t in _visible(request.user).order_by("-created_at")[:50]])
+
+    def post(self, request):
+        since = timezone.now() - timedelta(hours=24)
+        if FriendTree.objects.filter(owner=request.user, created_at__gte=since).count() >= MAX_TREES_PER_DAY:
+            raise ValidationError({"detail": "You've reached today's limit for trees."})
+        title = (request.data.get("title") or "").strip()[:60]
+        if not title:
+            raise ValidationError({"title": ["Give your tree a name."]})
+        users = _member_users(request, request.data.get("members"))
+        with transaction.atomic():
+            t = FriendTree.objects.create(owner=request.user, title=title,
+                                          note=(request.data.get("note") or "").strip()[:140])
+            FriendTreeMember.objects.bulk_create([FriendTreeMember(tree=t, user=u) for u in users])
+        return Response(_tree(request, _visible(request.user).get(pk=t.pk)), status=http.HTTP_201_CREATED)
+
+
+class FriendTreeDetailView(_Base):
+    def _get(self, request, tree_id):
+        t = _visible(request.user).filter(pk=tree_id).first()
+        if t is None:  # same answer for "missing" and "not yours to see"
+            raise NotFound("Tree not found.")
+        return t
+
+    def get(self, request, tree_id):
+        return Response(_tree(request, self._get(request, tree_id)))
+
+    def patch(self, request, tree_id):
+        t = self._get(request, tree_id)
+        if t.owner_id != request.user.id:
+            raise NotFound("Tree not found.")
+        with transaction.atomic():
+            if "title" in request.data:
+                title = (request.data.get("title") or "").strip()[:60]
+                if not title:
+                    raise ValidationError({"title": ["Give your tree a name."]})
+                t.title = title
+            if "note" in request.data:
+                t.note = (request.data.get("note") or "").strip()[:140]
+            t.save()
+            if "members" in request.data:
+                users = _member_users(request, request.data.get("members"))
+                keep = {u.pk for u in users}
+                t.members.exclude(user_id__in=keep).delete()
+                have = set(t.members.values_list("user_id", flat=True))
+                FriendTreeMember.objects.bulk_create(
+                    [FriendTreeMember(tree=t, user=u) for u in users if u.pk not in have])
+        return Response(_tree(request, self._get(request, tree_id)))
+
+    def delete(self, request, tree_id):
+        t = self._get(request, tree_id)
+        if t.owner_id == request.user.id:
+            t.delete()  # owner deletes the whole tree
+        else:
+            t.members.filter(user=request.user).delete()  # a tagged friend just leaves it
+        return Response(status=http.HTTP_204_NO_CONTENT)

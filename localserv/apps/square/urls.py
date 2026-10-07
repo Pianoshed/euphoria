@@ -9,5 +9,7 @@ urlpatterns = [
     path("statuses/<uuid:status_id>/react/", views.StatusReactView.as_view(), name="status-react"),
     path("thoughts/", views.ThoughtListCreateView.as_view(), name="thought-list"),
     path("thoughts/<uuid:thought_id>/react/", views.ThoughtReactView.as_view(), name="thought-react"),
+    path("trees/", views.FriendTreeListCreateView.as_view(), name="tree-list"),
+    path("trees/<uuid:tree_id>/", views.FriendTreeDetailView.as_view(), name="tree-detail"),
     path("trending/", views.TrendingView.as_view(), name="trending"),
 ]

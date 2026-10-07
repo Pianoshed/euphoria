@@ -74,3 +74,24 @@ class ThoughtReaction(BaseModel):
     class Meta(BaseModel.Meta):
         db_table = "square_thought_reaction"
         constraints = [models.UniqueConstraint(fields=["thought", "user"], name="unique_thought_reaction")]
+
+
+class FriendTree(BaseModel):
+    """A link-tree of friend bubbles. Anyone can make one; only the owner and the people
+    tagged in it can ever see it (every query filters on that, see views._visible)."""
+
+    owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    title = models.CharField(max_length=60)
+    note = models.CharField(max_length=140, blank=True)
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_friend_tree"
+
+
+class FriendTreeMember(BaseModel):
+    tree = models.ForeignKey(FriendTree, on_delete=models.CASCADE, related_name="members")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_friend_tree_member"
+        constraints = [models.UniqueConstraint(fields=["tree", "user"], name="unique_tree_member")]
