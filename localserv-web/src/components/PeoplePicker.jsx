@@ -21,12 +21,15 @@ const toPerson = (p) => ({
 export default function PeoplePicker({
   title, submitLabel, minPick = 1, maxPick = 19, excludeIds = [], suggestions = [],
   saver = false, askTitle = false, titlePlaceholder = 'Group name (optional)', onSubmit, onClose,
+  // Optional: give every picked person a label (e.g. Family, Workmates). onSubmit gets {id: key} as a 3rd argument.
+  labelOptions = null, defaultLabel = '', compact = false,
 }) {
   const { user } = useAuth();
   const [q, setQ] = useState('');
   const [results, setResults] = useState(null);
   const [searching, setSearching] = useState(false);
   const [picked, setPicked] = useState({});
+  const [labels, setLabels] = useState({});
   const [groupTitle, setGroupTitle] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -86,6 +89,7 @@ export default function PeoplePicker({
       else if (Object.keys(next).length < maxPick) next[p.id] = p;
       return next;
     });
+    if (labelOptions) setLabels((cur) => (cur[p.id] ? cur : { ...cur, [p.id]: defaultLabel || labelOptions[0].key }));
   };
 
   const submit = async (e) => {
@@ -94,7 +98,9 @@ export default function PeoplePicker({
     setBusy(true);
     setError(null);
     try {
-      await onSubmit(pickedList.map((p) => p.id), groupTitle.trim());
+      const ids = pickedList.map((p) => p.id);
+      const chosen = labelOptions ? Object.fromEntries(ids.map((id) => [id, labels[id] || defaultLabel || labelOptions[0].key])) : undefined;
+      await onSubmit(ids, groupTitle.trim(), chosen);
     } catch (err) {
       setError(err);
       setBusy(false);
@@ -102,7 +108,7 @@ export default function PeoplePicker({
   };
 
   return (
-    <div className={`gp-overlay pp${leaving ? ' is-leaving' : ''}`} role="dialog" aria-modal="true" aria-label={title}
+    <div className={`gp-overlay pp${compact ? ' pp--compact' : ''}${leaving ? ' is-leaving' : ''}`} role="dialog" aria-modal="true" aria-label={title}
       onMouseDown={(e) => { if (e.target === e.currentTarget) close(); }}>
       <form className="gp-box pp-box" onSubmit={submit}>
         <span className="pp-grab" aria-hidden="true" />
@@ -141,7 +147,7 @@ export default function PeoplePicker({
           {list.map((p) => {
             const on = Boolean(picked[p.id]);
             return (
-              <li key={p.id}>
+              <li key={p.id} className="pp-item">
                 <label className={`gp-row pp-row${on ? ' is-on' : ''}${!on && full ? ' is-off' : ''}`}>
                   <input type="checkbox" checked={on} disabled={!on && full} onChange={() => toggle(p)} />
                   <span className="gp-avatar pp-avatar" aria-hidden="true">
@@ -150,6 +156,17 @@ export default function PeoplePicker({
                   <span className="gp-who pp-who"><strong>{p.name}</strong>{p.handle && <small>@{p.handle}</small>}</span>
                   <span className="pp-tick" aria-hidden="true">{on ? '✓' : ''}</span>
                 </label>
+                {on && labelOptions && (
+                  <div className="pp-labels" role="radiogroup" aria-label={`How do you know ${p.name}?`}>
+                    {labelOptions.map((o) => (
+                      <button key={o.key} type="button" role="radio" aria-checked={labels[p.id] === o.key}
+                        className={`pp-lab${labels[p.id] === o.key ? ' is-on' : ''}`} style={{ '--c': o.color }}
+                        onClick={() => setLabels((cur) => ({ ...cur, [p.id]: o.key }))}>
+                        <span aria-hidden="true">{o.emoji}</span> {o.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </li>
             );
           })}

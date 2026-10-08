@@ -1,4 +1,6 @@
 // Draws a friend tree to a PNG with plain canvas (no libraries, initials only, no remote images).
+import { circleMeta, labelFor } from './circles';
+
 const W = 1080;
 const PAL = ['#f2740f', '#3d3b94', '#1f9d6a', '#e2394a', '#b7791f', '#2b7fb8'];
 const INK = '#1f1d3d';
@@ -81,10 +83,15 @@ export function drawTree(tree) {
     const start = (W - inRow * cell) / 2;
     const x = start + (i - row * cols) * cell + cell / 2;
     const y = gridTop + row * 250;
-    bubble(ctx, x, y, 66, m.name, PAL[i % PAL.length]);
+    const circle = tree.mine ? circleMeta(labelFor(tree, m)) : null;   // labels are the owner's view, only drawn on their own tree
+    bubble(ctx, x, y, 66, m.name, circle ? circle.color : PAL[i % PAL.length]);
     ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
     ctx.font = '600 28px system-ui, sans-serif';
     ctx.fillText(fit(ctx, m.name, cell - 16), x, y + 118);
+    if (circle) {
+      ctx.fillStyle = circle.color; ctx.font = '700 24px system-ui, sans-serif';
+      ctx.fillText(fit(ctx, circle.label, cell - 16), x, y + 150);
+    }
   });
 
   ctx.fillStyle = '#5f5d7a'; ctx.font = '600 28px system-ui, sans-serif'; ctx.textAlign = 'center';

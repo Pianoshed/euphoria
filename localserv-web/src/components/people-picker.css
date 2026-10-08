@@ -79,3 +79,26 @@
   .gp-overlay.pp,.pp .pp-box,.pp .pp-chip{animation-duration:.01ms!important}
   .pp *{transition-duration:.01ms!important}
 }
+
+/* ---- optional label pills (friend trees): shown under a picked person ---- */
+.pp .pp-item{list-style:none}
+.pp .pp-labels{display:flex;gap:6px;overflow-x:auto;padding:8px 2px 4px;scrollbar-width:none;-webkit-overflow-scrolling:touch;animation:pp-chip .25s cubic-bezier(.22,1,.36,1) both}
+.pp .pp-labels::-webkit-scrollbar{display:none}
+.pp .pp-lab{flex:none;display:inline-flex;align-items:center;gap:4px;border:1.5px solid color-mix(in srgb,var(--c) 30%,transparent);border-radius:99px;padding:5px 10px;min-height:30px;
+  background:color-mix(in srgb,var(--c) 9%,var(--color-surface));color:var(--c);font:inherit;font-size:.78rem;font-weight:700;cursor:pointer;-webkit-tap-highlight-color:transparent;transition:transform .15s,background .2s,color .2s}
+.pp .pp-lab:active{transform:scale(.94)}
+.pp .pp-lab.is-on{background:var(--c);border-color:var(--c);color:#fff}
+
+/* ---- compact mobile type (opt-in via the `compact` prop) ---- */
+.pp--compact .pp-box{gap:10px;padding:16px}
+.pp--compact .pp-head h2{font-size:1.0625rem}
+.pp--compact .pp-x{width:34px;height:34px;font-size:1.2rem}
+.pp--compact .pp-input{padding:10px 12px;border-radius:12px}              /* stays 16px: smaller makes iOS zoom the page on focus */
+.pp--compact .pp-chip{font-size:.78rem;padding:5px 10px}
+.pp--compact .pp-row{min-height:48px;padding:8px 10px;gap:10px;border-radius:14px}
+.pp--compact .pp-avatar{width:36px;height:36px;font-size:.9rem}
+.pp--compact .pp-who strong{font-size:.875rem}
+.pp--compact .pp-who small{font-size:.72rem}
+.pp--compact .pp-tick{width:22px;height:22px;font-size:.75rem}
+.pp--compact .pp-count,.pp--compact .pp-note{font-size:.78rem}
+.pp--compact .pp-submit{font-size:.875rem;padding:11px 18px}
