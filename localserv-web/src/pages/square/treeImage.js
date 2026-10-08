@@ -2,7 +2,6 @@
 import { circleMeta, labelFor } from './circles';
 
 const W = 1080;
-const PAL = ['#f2740f', '#3d3b94', '#1f9d6a', '#e2394a', '#b7791f', '#2b7fb8'];
 const INK = '#1f1d3d';
 
 const fit = (ctx, text, max) => {
@@ -34,14 +33,27 @@ function bubble(ctx, x, y, r, name, color) {
 
 export function drawTree(tree) {
   const members = tree.members || [];
-  const cols = Math.min(Math.max(members.length, 1), 5);
-  const rows = Math.ceil(members.length / cols);
-  const cell = (W - 120) / cols;
-  const ROW = 170;                       // row height (was 250)
-  const oy = tree.note ? 330 : 270;      // owner bubble
-  const top = oy + 120;                  // rail the branches hang from
-  const gridTop = top + 56;
-  const H = Math.max(900, gridTop + rows * ROW + 90);
+  const mine = !!tree.mine;
+  const partners = mine ? members.filter((m) => labelFor(tree, m) === 'partner') : [];
+  // tiers hang down the trunk, closest first (family, besties, friends...); partner is attached to the owner instead
+  const tiers = (mine
+    ? CIRCLES.filter((c) => c.key !== 'partner').map((c) => ({ label: c.label, color: c.color, people: members.filter((m) => labelFor(tree, m) === c.key) }))
+    : [{ label: 'In this tree', color: '#3d3b94', people: members }]
+  ).filter((t) => t.people.length);
+
+  const oy = tree.note ? 330 : 270;       // owner + partner row
+  const tierR = (ti) => Math.max(26, 38 - ti * 2);
+  let y = oy + 120;
+  const layout = tiers.map((t, ti) => {
+    const r = tierR(ti);
+    const cell = r * 2 + 44;
+    const perRow = Math.max(1, Math.floor((W - 120) / cell));
+    const rows = Math.ceil(t.people.length / perRow);
+    const L = { ...t, r, cell, perRow, rows, headY: y, firstY: y + 46 + r };
+    y += 46 + rows * (r * 2 + 58) + 26;
+    return L;
+  });
+  const H = Math.max(900, y + 60);
 
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -59,46 +71,44 @@ export function drawTree(tree) {
     wrap(ctx, tree.note, W - 200).forEach((l, i) => ctx.fillText(l, W / 2, 160 + i * 34));
   }
 
-  const pos = (i) => {
-    const row = Math.floor(i / cols);
-    const inRow = row === rows - 1 ? members.length - row * cols : cols;
-    const start = (W - inRow * cell) / 2;
-    return { x: start + (i - row * cols) * cell + cell / 2, y: gridTop + row * ROW };
-  };
-
-  // branches: trunk down from the owner, one rail per row, a twig to each person
-  ctx.strokeStyle = INK; ctx.globalAlpha = 0.3; ctx.lineWidth = 4; ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(W / 2, oy + 60);
-  ctx.lineTo(W / 2, gridTop + (rows - 1) * ROW - 70);
-  for (let r = 0; r < rows; r += 1) {
-    const ids = members.map((_, i) => i).filter((i) => Math.floor(i / cols) === r);
-    const railY = r === 0 ? top : gridTop + r * ROW - 70;
-    const xs = ids.map((i) => pos(i).x);
-    ctx.moveTo(Math.min(...xs, W / 2), railY); ctx.lineTo(Math.max(...xs, W / 2), railY);
-    ids.forEach((i) => { const p = pos(i); ctx.moveTo(p.x, railY); ctx.lineTo(p.x, p.y - 46); });
+  // trunk from the owner through every tier, with a knot where each tier attaches
+  if (layout.length) {
+    ctx.strokeStyle = INK; ctx.globalAlpha = 0.3; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(W / 2, oy + 60); ctx.lineTo(W / 2, layout[layout.length - 1].headY + 4); ctx.stroke();
+    ctx.globalAlpha = 1;
+    layout.forEach((L) => { ctx.beginPath(); ctx.arc(W / 2, L.headY - 8, 8, 0, Math.PI * 2); ctx.fillStyle = L.color; ctx.fill(); });
   }
-  ctx.stroke();
-  ctx.globalAlpha = 1;
 
-  bubble(ctx, W / 2, oy, 60, tree.owner.name, '#e2394a');
-  ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.font = '700 24px system-ui, sans-serif';
-  ctx.fillText(fit(ctx, tree.owner.name, 420), W / 2, oy + 98);
+  // owner, with partner bubble(s) attached on either side
+  partners.forEach((m, k) => {
+    const side = k % 2 === 0 ? 1 : -1;
+    const x = W / 2 + side * (82 + Math.floor(k / 2) * 76);
+    bubble(ctx, x, oy + 10, 42, m.name, circleMeta('partner').color);
+    ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 21px system-ui, sans-serif';
+    ctx.fillText(fit(ctx, m.name, 150), x, oy + 86);
+    const jx = x - side * 46;                                   // little heart where the two bubbles meet
+    ctx.beginPath(); ctx.arc(jx, oy - 24, 14, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.fillStyle = '#c2275f'; ctx.font = '700 18px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('♥', jx, oy - 23);
+  });
+  bubble(ctx, W / 2, oy, 58, tree.owner.name, '#e2394a');
+  ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '700 24px system-ui, sans-serif';
+  ctx.fillText(fit(ctx, tree.owner.name, 300), W / 2, oy + 98);
 
-  members.forEach((m, i) => {
-    const { x, y } = pos(i);
-    const circle = tree.mine ? circleMeta(labelFor(tree, m)) : null;   // labels are the owner's view, only drawn on their own tree
-    bubble(ctx, x, y, 38, m.name, circle ? circle.color : PAL[i % PAL.length]);
-    ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-    ctx.font = '600 21px system-ui, sans-serif';
-    ctx.fillText(fit(ctx, m.name, cell - 14), x, y + 76);
-    if (circle) {
-      ctx.fillStyle = circle.color; ctx.font = '700 17px system-ui, sans-serif';
-      ctx.fillText(fit(ctx, circle.label, cell - 14), x, y + 99);
-    }
+  layout.forEach((L) => {
+    ctx.fillStyle = L.color; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '800 24px system-ui, sans-serif';
+    ctx.fillText(`${L.label} · ${L.people.length}`, W / 2, L.headY + 24);
+    L.people.forEach((m, i) => {
+      const row = Math.floor(i / L.perRow);
+      const inRow = row === L.rows - 1 ? L.people.length - row * L.perRow : L.perRow;
+      const x = (W - inRow * L.cell) / 2 + (i - row * L.perRow) * L.cell + L.cell / 2;
+      const yy = L.firstY + row * (L.r * 2 + 58);
+      bubble(ctx, x, yy, L.r, m.name, L.color);
+      ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 20px system-ui, sans-serif';
+      ctx.fillText(fit(ctx, m.name, L.cell - 8), x, yy + L.r + 30);
+    });
   });
 
-  ctx.fillStyle = '#5f5d7a'; ctx.font = '600 22px system-ui, sans-serif'; ctx.textAlign = 'center';
+  ctx.fillStyle = '#5f5d7a'; ctx.font = '600 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
   ctx.fillText('Euphoria · friend tree', W / 2, H - 38);
   return c;
 }

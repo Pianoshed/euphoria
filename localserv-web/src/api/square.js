@@ -6,6 +6,9 @@ export const createStatus = (formData) => apiFetch('/api/square/statuses/', { me
 export const reactStatus = (id, emoji) =>
   apiFetch(`/api/square/statuses/${id}/react/`, { method: 'POST', body: { emoji } });
 
+// Marks a status as watched (saved on the server so it survives refreshes and other devices).
+export const markSeen = (id) => apiFetch(`/api/square/statuses/${id}/seen/`, { method: 'POST' });
+
 export const listThoughts = () => apiFetch('/api/square/thoughts/');
 export const createThought = (text) => apiFetch('/api/square/thoughts/', { method: 'POST', body: { text } });
 export const reactThought = (id, emoji) =>

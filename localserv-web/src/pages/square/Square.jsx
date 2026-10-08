@@ -15,6 +15,10 @@ const ago = (iso) => {
   const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 60000));
   return m < 60 ? `${m}m ago` : `${Math.round(m / 60)}h ago`;
 };
+// Which statuses I've watched survives a refresh (per account, this device). Statuses last 24h, so old ids are pruned.
+const SEEN_KEY = 'sq-seen-v1';
+const readSeen = (uid) => { try { return JSON.parse(localStorage.getItem(`${SEEN_KEY}:${uid}`) || '{}') || {}; } catch { return {}; } };
+const writeSeen = (uid, map) => { try { localStorage.setItem(`${SEEN_KEY}:${uid}`, JSON.stringify(map)); } catch { /* private mode: in-memory only */ } };
 const initial = (name) => (name || '?').charAt(0).toUpperCase();
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -161,9 +165,9 @@ function ConfirmDialog({ title, body, okLabel = 'Confirm', danger, onOk, onClose
 }
 
 /* ---------- friend trees ---------- */
-function Bubble({ person, color, big, live, edit, onClick }) {
+function Bubble({ person, color, big, mid, live, edit, onClick }) {
   return (
-    <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}`}
+    <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${mid ? ' sq-bub--mid' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}`}
       style={color ? { '--c': color } : undefined} onClick={onClick}
       aria-label={edit ? `Remove ${person.name}` : `${person.name}${live ? ', has a status' : ''}`}>
       <i>{initial(person.name)}{edit && <em className="sq-bub__x" aria-hidden="true">✕</em>}</i>
@@ -216,10 +220,13 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
   });
   const canShare = typeof navigator !== 'undefined' && !!navigator.share;
 
-  // Branches by label on my own trees; one plain branch on trees I was tagged in (those labels are the owner's view).
+  // Hierarchy on my own trees: partner(s) are attached to me, then tiers hang down the trunk in order of closeness
+  // (family, besties, friends...). One plain tier on trees I was tagged in (those labels are the owner's view).
+  const partners = useMemo(() => (tree.mine ? tree.members.filter((m) => labelFor(tree, m) === 'partner') : []), [tree]);
   const groups = useMemo(() => {
     if (!tree.mine) return [{ key: 'in', label: 'In this tree', emoji: '🌳', color: 'var(--color-violet)', people: tree.members }];
-    return CIRCLES.map((c) => ({ ...c, people: tree.members.filter((m) => labelFor(tree, m) === c.key) })).filter((g) => g.people.length);
+    return CIRCLES.filter((c) => c.key !== 'partner')
+      .map((c) => ({ ...c, people: tree.members.filter((m) => labelFor(tree, m) === c.key) })).filter((g) => g.people.length);
   }, [tree]);
 
   const download = async () => {
@@ -264,7 +271,7 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
           <header className="sq-sheet__head">
             <div className="sq-sheet__title">
               {edit
-                ? <input type="text" className="sq-rename" value={name} maxLength={80} aria-label="Tree name"
+                ? <input type="text" className="sq-rename" value={name} maxLength={60} aria-label="Tree name"
                     onChange={(e) => setName(e.target.value)} onBlur={saveName}
                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
                 : <h2>{tree.title}</h2>}
@@ -278,11 +285,20 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
           </header>
           {tree.note && <p className="sq-hint">{tree.note}</p>}
           <div className={`sq-tree${edit ? ' is-editing' : ''}`}>
-            <Bubble person={tree.owner} big live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
-            <span className="sq-trunk" aria-hidden="true" />
-            <div className={`sq-branches${groups.length === 1 ? ' sq-branches--one' : ''}`}>
-              {groups.map((g) => (
-                <section key={g.key} className="sq-branch" style={{ '--c': g.color }}>
+            <div className="sq-core">
+              <Bubble person={tree.owner} big live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
+              {partners.map((m) => (
+                <span key={m.id} className="sq-mate">
+                  <span className="sq-mate__link" aria-hidden="true">💞</span>
+                  <Bubble person={m} color={circleMeta('partner').color} mid edit={edit} live={!edit && !!statusByUser[m.id]}
+                    onClick={() => (edit ? drop(m) : onMember(m))} />
+                </span>
+              ))}
+            </div>
+            {groups.length > 0 && <span className="sq-trunk" aria-hidden="true" />}
+            <div className="sq-branches">
+              {groups.map((g, gi) => (
+                <section key={g.key} className="sq-branch" style={{ '--c': g.color, '--bs': `${Math.max(28, 38 - gi * 2)}px` }}>
                   <h4><span aria-hidden="true">{g.emoji}</span>{g.label}<b>{g.people.length}</b></h4>
                   <div className="sq-bubs">
                     {g.people.map((m) => (
@@ -498,7 +514,7 @@ export default function Square() {
   const [sheetId, setSheetId] = useState(null);
   const [member, setMember] = useState(null);
   const [addingTo, setAddingTo] = useState(null);
-  const [seen, setSeen] = useState({});
+  const [seen, setSeen] = useState(() => readSeen(user?.id));
   const [pops, setPops] = useState([]);
   const [confirm, setConfirm] = useState(null);
   const [loaded, setLoaded] = useState(false);
@@ -528,6 +544,15 @@ export default function Square() {
       }
       prev.current = { s, t };
       setStatuses(s); setThoughts(t); setTrending(tr);
+      setSeen((cur) => {
+        // the server's word wins; the local copy covers the moment before a save lands (or an older backend)
+        const merged = { ...cur };
+        s.forEach((x) => { if (x.seen) merged[x.id] = true; });
+        const live = new Set(s.map((x) => x.id));
+        const keep = Object.fromEntries(Object.entries(merged).filter(([id]) => live.has(id)));
+        if (user) writeSeen(user.id, keep);
+        return keep;
+      });
     } catch { /* keep what is on screen; the next poll retries */ }
     setLoaded(true);
   }, [user, pop]);
@@ -578,7 +603,11 @@ export default function Square() {
 
   /* ----- actions ----- */
   const swap = (setList) => (item) => setList((cur) => cur.map((x) => (x.id === item.id ? item : x)));
-  const open = (s) => { setSeen((x) => ({ ...x, [s.id]: true })); setViewing(s); setDrawer(null); };
+  const open = (s) => {
+    setSeen((x) => { const n = { ...x, [s.id]: true }; if (user) writeSeen(user.id, n); return n; });
+    if (!s.seen && s.user.id !== user?.id) api.markSeen(s.id).catch(() => { /* local copy still marks it */ });
+    setViewing(s); setDrawer(null);
+  };
   const reactStatus = async (s, emoji) => {
     try { const u = await api.reactStatus(s.id, emoji); swap(setStatuses)(u); setViewing((v) => (v?.id === u.id ? u : v)); load(); } catch { pop('Could not send that reaction'); }
   };
@@ -610,6 +639,7 @@ export default function Square() {
   };
   const removeMember = async (t, person) => {
     const rest = t.members.filter((m) => String(m.id) !== String(person.id));
+    if (rest.length === 0) { setMember(null); pop('A tree needs at least one person. Delete the tree instead.'); return; }
     const labels = Object.fromEntries(rest.map((m) => [m.id, labelFor(t, m)]));
     const before = trees;
     setTrees((cur) => cur.map((x) => (x.id === t.id ? { ...x, members: rest, labels } : x)));
@@ -828,7 +858,7 @@ export default function Square() {
       )}
       {addingTo && sheetTree && (
         <PeoplePicker title="Add people" submitLabel="Add to tree" labelOptions={CIRCLES} defaultLabel="friends" compact
-          excludeIds={[sheetTree.owner.id, ...sheetTree.members.map((m) => m.id)]} maxPick={Math.max(1, 19 - sheetTree.members.length)}
+          excludeIds={[sheetTree.owner.id, ...sheetTree.members.map((m) => m.id)]} maxPick={Math.max(1, 30 - sheetTree.members.length)}
           onSubmit={addPeople} onClose={() => setAddingTo(null)} />
       )}
       {sheetTree && (

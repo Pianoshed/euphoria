@@ -20,6 +20,8 @@ const ROLE_FILTERS = [
   { value: 'CUSTOMER', label: ROLE_META.CUSTOMER.plural },
 ];
 
+// Bubbles per page: fewer on phones so the page stays short.
+const pageSizeNow = () => (window.matchMedia('(max-width: 720px)').matches ? 12 : 24);
 const startsOpen = () => !window.matchMedia('(max-width: 720px)').matches;
 
 /* ------------------------------------------------------------------ */
@@ -94,6 +96,8 @@ export default function Discover() {
   const [error, setError] = useState(null);
   const [shuffle, setShuffle] = useState(0);
   const [notesOpen] = useState(startsOpen);
+  const [page, setPage] = useState(0);
+  const [pageSize] = useState(pageSizeNow);
   const [openId, setOpenId] = useState(null);
   const [messaging, setMessaging] = useState(false);
   const [popupError, setPopupError] = useState(null);
@@ -104,6 +108,7 @@ export default function Discover() {
     let cancelled = false;
     setResults(null);
     setError(null);
+    setPage(0);
     accountsApi.discoverProfiles({ role: role || undefined, q })
       .then((data) => { if (!cancelled) setResults(data.results); })
       .catch((err) => { if (!cancelled) setError(err); });
@@ -115,6 +120,10 @@ export default function Discover() {
     if (value) next.set('role', value); else next.delete('role');
     setParams(next, { replace: true });
   };
+
+  const pages = Math.max(1, Math.ceil((results?.length || 0) / pageSize));
+  const safePage = Math.min(page, pages - 1);
+  const shownPeople = useMemo(() => (results || []).slice(safePage * pageSize, (safePage + 1) * pageSize), [results, safePage, pageSize]);
 
   const looks = useMemo(
     () => Object.fromEntries((results || []).map((p) => [p.id, lookFor(p.id, shuffle)])),
@@ -254,7 +263,7 @@ export default function Discover() {
 
       {results?.length > 0 && <p className="dp-count">{results.length} {results.length === 1 ? 'person' : 'people'}</p>}
       <div className="dp-field">
-        {results?.map((p) => {
+        {shownPeople.map((p) => {
           const look = looks[p.id];
           const name = p.display_name || p.username || 'Someone';
           const meta = ROLE_META[p.role];
@@ -280,6 +289,19 @@ export default function Discover() {
           );
         })}
       </div>
+
+      {pages > 1 && (
+        <nav className="dp-pager" aria-label="More people">
+          <button type="button" className="dp-pager__btn" disabled={safePage === 0}
+            onClick={() => { setPage(safePage - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Previous page">‹</button>
+          <span className="dp-pager__dots" aria-hidden="true">
+            {Array.from({ length: Math.min(pages, 7) }, (_, i) => <i key={i} className={i === Math.min(safePage, 6) ? 'on' : ''} />)}
+          </span>
+          <span className="dp-pager__txt" role="status">Page {safePage + 1} of {pages}</span>
+          <button type="button" className="dp-pager__btn" disabled={safePage >= pages - 1}
+            onClick={() => { setPage(safePage + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Next page">›</button>
+        </nav>
+      )}
 
       {active && (
         <div className="dp-pop" onClick={closePerson}>

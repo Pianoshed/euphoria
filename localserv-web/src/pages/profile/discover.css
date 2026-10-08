@@ -98,8 +98,8 @@
 
 .dp-field {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  gap: 18px 16px;
+  grid-template-columns: repeat(auto-fill, minmax(124px, 1fr));
+  gap: 14px 12px;
   justify-items: center;
   padding: 8px 0 56px;
 }
@@ -112,8 +112,8 @@
   justify-content: center;
   gap: 6px;
   width: 100%;
-  max-width: 170px;
-  height: 148px;              /* fixed: the bubble never grows with the info inside it */
+  max-width: 144px;
+  height: 124px;              /* fixed: the bubble never grows with the info inside it */
   padding: 14px 12px;
   border: 0;
   border-radius: var(--shape);
@@ -377,22 +377,30 @@
 
   .dp-count { display: block; margin: 0 12px 8px; font-size: 0.6875rem; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dp-muted); }
 
-  /* people: tidy square-style cards instead of tilted blobs */
-  .dp-field { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 0 0 24px; justify-items: stretch; }
-  .dp-card {
-    max-width: none; height: auto; min-height: 118px; padding: 14px 8px 12px; gap: 6px;
-    border-radius: 18px; transform: none; background: var(--color-surface, #fff);
-    border: 1px solid var(--color-line, rgba(31, 29, 61, 0.12));
-    box-shadow: 0 1px 2px rgba(20, 12, 50, 0.06), 0 2px 8px rgba(20, 12, 50, 0.06);
-    animation: dp-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; -webkit-tap-highlight-color: transparent;
-  }
-  .dp-card:hover, .dp-card:focus-visible { transform: none; box-shadow: 0 0 0 2px var(--ring), 0 2px 8px rgba(20, 12, 50, 0.1); }
-  .dp-card:active { transform: scale(0.97); }
-  .dp-avatar { width: 44px; height: 44px; border-radius: 50%; font-size: 1.05rem; background: var(--tint); box-shadow: 0 0 0 2px var(--color-surface, #fff), 0 0 0 3.5px var(--ring); }
-  .dp-card__name { font-size: 0.9375rem; }
-  .dp-card__role { font-size: 0.6875rem; }
+  /* people: keep the bubble shapes, just smaller, three to a row */
+  .dp-field { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 6px; padding: 0 0 12px; }
+  .dp-card { max-width: 128px; height: 96px; padding: 8px 6px; gap: 3px; box-shadow: 0 8px 14px -12px rgba(31, 29, 61, 0.55); }
+  .dp-avatar { width: 36px; height: 36px; font-size: 0.95rem; }
+  .dp-online { width: 10px; height: 10px; box-shadow: 0 0 0 2px #fff; }
+  .dp-card__name { font-size: 0.78rem; }
+  .dp-card__role { font-size: 0.6rem; padding: 0 6px; border-width: 1px; }
 
   .dp-pop__card { border-radius: 24px 24px 0 0; }
 }
-@keyframes dp-rise { from { opacity: 0; transform: translateY(10px); } }
-@media (min-width: 560px) and (max-width: 720px) { .dp-field { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (min-width: 520px) and (max-width: 720px) { .dp-field { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* ---------- Pager ---------- */
+.dp-pager { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 4px 0 40px; }
+.dp-pager__btn {
+  width: 40px; height: 40px; border: 1.5px solid var(--dp-ink); border-radius: 50%;
+  background: transparent; color: var(--dp-ink); font: inherit; font-size: 1.3rem; line-height: 1; cursor: pointer;
+  transition: transform 140ms, background 140ms;
+}
+.dp-pager__btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.6); }
+.dp-pager__btn:active:not(:disabled) { transform: scale(0.92); }
+.dp-pager__btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.dp-pager__txt { min-width: 92px; text-align: center; font-size: 0.8rem; font-weight: 700; color: var(--dp-muted); }
+.dp-pager__dots { display: none; gap: 4px; }
+.dp-pager__dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--dp-line); }
+.dp-pager__dots i.on { background: var(--dp-ink); }
+@media (max-width: 720px) { .dp-pager { margin: 0 12px; padding-bottom: 28px; } }
