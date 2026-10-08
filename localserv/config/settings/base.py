@@ -242,3 +242,5 @@ LOGGING = {
         "apps": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }
+
+"EXCEPTION_HANDLER": "apps.common.exception_handler.api_exception_handler",
