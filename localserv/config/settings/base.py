@@ -160,6 +160,7 @@ REST_FRAMEWORK = {
         "ice_servers": "30/min",
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "apps.common.exception_handler.api_exception_handler",
 }
 
 SPECTACULAR_SETTINGS = {
@@ -202,6 +203,7 @@ CSRF_COOKIE_AGE = None  # default is 1 year; None = cookie dies with the browser
 PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", default="stub")
 STUB_PAYMENT_WEBHOOK_SECRET = env("STUB_PAYMENT_WEBHOOK_SECRET", default="stub-secret-change-me")
 
+
 # --- Email ---
 # Where the React site lives. Used to build the links inside emails (verify email, reset password).
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
@@ -243,4 +245,3 @@ LOGGING = {
     },
 }
 
-"EXCEPTION_HANDLER": "apps.common.exception_handler.api_exception_handler",
