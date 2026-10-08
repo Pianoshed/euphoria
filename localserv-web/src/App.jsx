@@ -4,6 +4,7 @@ import { AuthProvider } from './context/AuthContext';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
+import SideNav from './components/SideNav';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
 import { AlertsProvider } from './context/AlertsContext';
@@ -103,6 +104,7 @@ export default function App() {
           <CallProvider>
             <AlertsProvider>
               <NavBar />
+              <SideNav />
               <MessageNotifier />
               <IncomingCallNotifier />
               <AppRoutes />

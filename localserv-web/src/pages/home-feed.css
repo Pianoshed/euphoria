@@ -245,11 +245,11 @@ body[data-backdrop='scene']::before {
   .hf-thoughts { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
 }
 /* wide screens: chats move into their own right-hand rail */
-@media (min-width: 1280px) {
+@media (min-width: 1700px) {
   .hf-layout { grid-template-columns: 250px minmax(0, 1fr) 340px; grid-template-areas: 'rail main side'; }
   .hf-side { position: sticky; top: calc(var(--cv-nav-h, 68px) + 16px); }
 }
-@media (min-width: 1500px) { .page.hf { max-width: 1400px; font-size: 1.0625rem; } .hf-layout { grid-template-columns: 270px minmax(0, 1fr) 380px; } }
+@media (min-width: 1900px) { .page.hf { max-width: 1400px; font-size: 1.0625rem; } .hf-layout { grid-template-columns: 270px minmax(0, 1fr) 380px; } }
 
 @media (prefers-reduced-motion: reduce) {
   .hf-btn, .hf-act, .hf-chat, .hf-thought, .hf-plan, .hf-stat::after, .hf-dock a::before { transition: none; }
