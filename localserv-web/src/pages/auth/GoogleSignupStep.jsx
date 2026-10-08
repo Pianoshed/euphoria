@@ -33,7 +33,7 @@ export default function GoogleSignupStep({ google, onCancel }) {
     setSubmitting(true);
     try {
       await registerWithGoogle(google.token, username.trim(), password, role);
-      navigate('/services', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err);
       setSubmitting(false);

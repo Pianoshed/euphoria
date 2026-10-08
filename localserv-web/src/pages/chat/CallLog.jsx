@@ -1,7 +1,7 @@
 import '../../styles/index.css';
 import './callLog.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import * as chatApi from '../../api/chat';
 import { useAuth } from '../../context/AuthContext';
 import { isStaff } from '../../utils/permissions';
@@ -51,8 +51,28 @@ const when = (iso) => new Date(iso).toLocaleString([], {
   year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
 });
 
+const MISSED = new Set(['no_answer', 'busy', 'cancelled']);
+const OUTCOME_ICON = { completed: '✅', no_answer: '📵', busy: '⏳', cancelled: '📵', declined: '🚫', failed: '⚠️', ringing: '🔔', in_progress: '🟢' };
+const FILTERS = [['all', 'All'], ['missed', 'Missed'], ['in', 'Incoming'], ['out', 'Outgoing']];
+const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+const dayKey = (iso) => new Date(iso).toDateString();
+function dayLabel(iso) {
+  const d = new Date(iso);
+  const diff = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Yesterday';
+  if (diff < 7) return d.toLocaleDateString([], { weekday: 'long' });
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short', year: d.getFullYear() === new Date().getFullYear() ? undefined : 'numeric' });
+}
+const TINTS = ['#fff0b8', '#ffe3dd', '#ece7ff', '#dcf7ea', '#dff0ff'];
+const tintOf = (id) => TINTS[Math.abs(Number(id) || String(id).length) % TINTS.length];
+
 export default function CallLog() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [filter, setFilter] = useState('all');
+  const [query, setQuery] = useState('');
+  const [msgBusy, setMsgBusy] = useState(null);
   const staff = isStaff(user);
   const [scope, setScope] = useState('mine'); // 'mine' | 'all'
   const [rows, setRows] = useState(null);
@@ -105,6 +125,45 @@ export default function CallLog() {
     };
   }, [rows]);
 
+  const isMissedForMe = useCallback((r) => r.callee === user.id && MISSED.has(r.outcome), [user.id]);
+  const missedCount = useMemo(() => (rows || []).filter(isMissedForMe).length, [rows, isMissedForMe]);
+
+  // Filter + search, then fold runs of identical calls with one person into a single entry ("x3").
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return (rows || []).filter((r) => {
+      const outgoing = r.caller === user.id;
+      if (filter === 'missed' && !isMissedForMe(r)) return false;
+      if (filter === 'in' && outgoing) return false;
+      if (filter === 'out' && !outgoing) return false;
+      if (!q) return true;
+      return `${r.caller_username || ''} ${r.callee_username || ''}`.toLowerCase().includes(q);
+    });
+  }, [rows, filter, query, user.id, isMissedForMe]);
+
+  const groups = useMemo(() => {
+    const days = [];
+    visible.forEach((r) => {
+      const outgoing = r.caller === user.id;
+      const otherId = outgoing ? r.callee : r.caller;
+      const key = dayKey(r.started_at);
+      let day = days[days.length - 1];
+      if (!day || day.key !== key) { day = { key, label: dayLabel(r.started_at), items: [] }; days.push(day); }
+      const last = day.items[day.items.length - 1];
+      if (scope !== 'all' && last && last.otherId === otherId && last.outgoing === outgoing && last.row.outcome === r.outcome && last.row.mode === r.mode) {
+        last.count += 1; last.secs += durationSeconds(r); last.earlier = r.started_at;
+      } else {
+        day.items.push({ row: r, outgoing, otherId, count: 1, secs: durationSeconds(r), earlier: r.started_at });
+      }
+    });
+    return days;
+  }, [visible, user.id, scope]);
+
+  const message = async (otherId) => {
+    setMsgBusy(otherId);
+    try { const c = await chatApi.startConversation(otherId); navigate(`/chat/${c.id}`); } catch (err) { setError(err); } finally { setMsgBusy(null); }
+  };
+
   return (
     <div className="page calllog">
       <header className="calllog__head">
@@ -129,7 +188,21 @@ export default function CallLog() {
           <div className="calllog__stats">
             <div className="card"><strong>{totals.calls}</strong><span>calls{hasMore ? ' loaded' : ''}</span></div>
             <div className="card"><strong>{totals.answered}</strong><span>answered</span></div>
+            {missedCount > 0 && <div className="card calllog__stat--missed"><strong>{missedCount}</strong><span>missed</span></div>}
             <div className="card"><strong>{formatDuration(totals.seconds)}</strong><span>total talk time</span></div>
+          </div>
+
+
+          <div className="calllog__tools">
+            <input type="search" className="calllog__search" placeholder="Search by name…" aria-label="Search calls by name"
+              value={query} onChange={(e) => setQuery(e.target.value)} />
+            <div className="calllog__chips" role="group" aria-label="Filter calls">
+              {FILTERS.map(([key, label]) => (
+                <button key={key} type="button" aria-pressed={filter === key} className={filter === key ? 'is-on' : ''} onClick={() => setFilter(key)}>
+                  {label}{key === 'missed' && missedCount > 0 && <b>{missedCount}</b>}
+                </button>
+              ))}
+            </div>
           </div>
 
           {rows.length === 0 ? (
@@ -139,6 +212,8 @@ export default function CallLog() {
               <Link to="/chat" className="btn btn--primary btn--sm">Go to messages</Link>
             </div>
           ) : (
+            <>
+            {visible.length === 0 && <div className="card calllog__empty"><p className="muted">No calls match that. Try another filter.</p></div>}
             <div className="calllog__scroll">
               <table className="calllog__table">
                 <thead>
@@ -151,7 +226,7 @@ export default function CallLog() {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((r) => {
+                  {visible.map((r) => {
                     const outgoing = r.caller === user.id;
                     const secs = durationSeconds(r);
                     const label = (RESULT_LABEL[r.outcome] || [r.outcome, r.outcome])[outgoing || scope === 'all' ? 0 : 1];
@@ -178,6 +253,45 @@ export default function CallLog() {
                 </tbody>
               </table>
             </div>
+
+            {/* Phones: grouped by day, one card per person, with quick actions */}
+            <div className="calllog__m">
+              {groups.map((day) => (
+                <section key={day.key} className="calllog__day" aria-label={day.label}>
+                  <h2>{day.label}<small>{day.items.reduce((n, i) => n + i.count, 0)}</small></h2>
+                  {day.items.map((it) => {
+                    const r = it.row;
+                    const missed = isMissedForMe(r);
+                    const name = scope === 'all'
+                      ? `${nameOf(r.caller, r.caller_username)} → ${nameOf(r.callee, r.callee_username)}`
+                      : nameOf(it.outgoing ? r.callee : r.caller, it.outgoing ? r.callee_username : r.caller_username);
+                    const label = (RESULT_LABEL[r.outcome] || [r.outcome, r.outcome])[it.outgoing || scope === 'all' ? 0 : 1];
+                    return (
+                      <article key={r.id} className={`calllog__card${missed ? ' is-missed' : ''}`} style={{ '--t': tintOf(it.otherId) }}>
+                        <span className="calllog__av" aria-hidden="true">{(name[0] || '?').toUpperCase()}<i>{OUTCOME_ICON[r.outcome] || '📞'}</i></span>
+                        <div className="calllog__info">
+                          <strong>{name}{it.count > 1 && <em>×{it.count}</em>}</strong>
+                          <small>
+                            <span aria-hidden="true">{it.outgoing ? '↗' : '↙'}</span>
+                            <span className="sr-only">{it.outgoing ? 'Outgoing' : 'Incoming'}</span>
+                            {r.mode === 'voice' ? ' Voice' : ' Video'} · {clock(it.count > 1 ? it.earlier : r.started_at)}{it.count > 1 ? `–${clock(r.started_at)}` : ''}
+                            {it.secs > 0 && <> · {formatDuration(it.secs)}</>}
+                          </small>
+                          <span className={`pill pill--${missed ? 'danger' : (RESULT_TONE[r.outcome] || 'neutral')}`}>{label}</span>
+                        </div>
+                        {scope !== 'all' && (
+                          <div className="calllog__acts">
+                            <button type="button" className="calllog__act" disabled={msgBusy === it.otherId} onClick={() => message(it.otherId)} aria-label={`Message ${name}`}>💬</button>
+                            <Link to={`/profile/${it.otherId}`} className="calllog__act" aria-label={`View ${name}'s profile`}>👤</Link>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </section>
+              ))}
+            </div>
+            </>
           )}
 
           {hasMore && (

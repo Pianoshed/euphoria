@@ -10,7 +10,7 @@ export default function LoginTwoFactor() {
   const navigate = useNavigate();
   const location = useLocation();
   const challenge = location.state?.challenge;
-  const redirectTo = location.state?.redirectTo || '/services';
+  const redirectTo = location.state?.redirectTo || '/';
   const [code, setCode] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);

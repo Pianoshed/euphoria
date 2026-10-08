@@ -1,4 +1,5 @@
 import '../../styles/index.css';
+import './plans.css';
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as servicesApi from '../../api/services';
@@ -9,6 +10,7 @@ import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
 import { ReportButton } from '../../components/ReportButton';
 import { StarRating } from '../../components/icons';
 import { formatPrice } from '../../utils/money';
+import { lookFor } from '../../utils/bubbleLook';
 
 export default function ServiceDetail() {
   const { id } = useParams();
@@ -58,75 +60,76 @@ export default function ServiceDetail() {
   if (!service) return <div className="page"><Spinner /></div>;
 
   const isOwnListing = user && user.id === service.provider.id;
+  const look = lookFor(service.id, 0);
 
   return (
-    <div className="page page--narrow">
-      {service.category?.name && <span className="pill pill--accent">{service.category.icon ? `${service.category.icon} ` : ''}{service.category.name}</span>}
-      <h1 className="break" style={{ marginTop: 'var(--space-3)' }}>{service.title}</h1>
-
-      <div className="e-detail-head">
-        <span className="avatar" aria-hidden="true">{service.provider.username[0].toUpperCase()}</span>
-        <div className="e-detail-host">
-          <Link to={`/profile/${service.provider.id}`}>{service.provider.username}</Link>
-          <span>
-            {service.service_area && `${service.service_area} · `}
-            <StatusPill status={service.status} />
-          </span>
+    <div className="page pl" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring, '--avatar-shape': look.avatarShape }}>
+      <header className="pl-hero">
+        <div className="pl-hero__row">
+          {service.category?.name ? <span className="pl-cat">{service.category.icon ? `${service.category.icon} ` : ''}{service.category.name}</span> : <span />}
+          <span className="pl-price">{formatPrice(service.price)}</span>
         </div>
-      </div>
+        <h1 className="pl-title">{service.title}</h1>
+        <div className="pl-host">
+          <span className="pl-av" aria-hidden="true">{service.provider.username[0].toUpperCase()}</span>
+          <div>
+            <Link to={`/profile/${service.provider.id}`}>{service.provider.username}</Link>
+            <small>{service.service_area && <span>📍 {service.service_area}</span>}<StatusPill status={service.status} /></small>
+          </div>
+        </div>
+      </header>
 
-      <p className="price" style={{ fontSize: 'var(--text-xl)' }}>{formatPrice(service.price)}</p>
-      <p className="break">{service.description}</p>
+      {service.description && <section className="pl-card"><h2>The plan</h2><p className="pl-desc">{service.description}</p></section>}
 
       {!isOwnListing && user && (
-        <div className="card stack e-book-card">
-          <h3>Want in?</h3>
+        <section className="pl-card pl-join" aria-labelledby="join-h">
+          <h2 id="join-h">Want in?</h2>
+          <p className="pl-note">Send a request. The host says yes or no, then you lock it in.</p>
           <ErrorAlert error={bookingError} />
-          <form onSubmit={handleBook} className="stack">
-            <div className="field">
+          <form onSubmit={handleBook} className="pl-form">
+            <div className="pl-field">
               <label htmlFor="note">Note for the host (optional)</label>
               <textarea id="note" className="textarea" value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="Anything the host should know before accepting" />
             </div>
-            <div className="row row--wrap stack-mobile">
-              <button className="btn btn--primary" disabled={booking} type="submit">
+            <div className="pl-actions">
+              <button className="pl-btn pl-btn--solid" disabled={booking} type="submit">
                 {booking ? 'Sending request…' : 'Request to join'}
               </button>
-              <button type="button" className="btn btn--ghost" disabled={messaging} onClick={handleMessage}>
-                {messaging ? 'Opening…' : 'Message host'}
+              <button type="button" className="pl-btn" disabled={messaging} onClick={handleMessage}>
+                {messaging ? 'Opening…' : '👋 Message host'}
               </button>
             </div>
           </form>
-        </div>
+        </section>
       )}
       {isOwnListing && (
-        <p className="text-sm muted">This is your own activity — manage it from <Link to="/services/mine">Things you're hosting</Link>.</p>
+        <p className="pl-note">This is your own plan. Manage it from <Link to="/services/mine">Your plans</Link>.</p>
       )}
       {!user && (
-        <p className="text-sm muted"><Link to="/login">Log in</Link> to join this activity.</p>
+        <p className="pl-note"><Link to="/login">Log in</Link> to join this plan.</p>
       )}
 
-      <div className="row" style={{ marginTop: 'var(--space-3)' }}>
-        <ReportButton targetType="SERVICE" targetId={service.id} />
-      </div>
+      <div className="pl-actions"><ReportButton targetType="SERVICE" targetId={service.id} /></div>
 
-      <hr className="divider" />
-      <h3>What people are saying</h3>
-      {reviews.length === 0 && <p className="muted text-sm">No reviews yet — be the first to share how it went.</p>}
-      <div className="stack">
-        {reviews.map((r) => (
-          <div key={r.id} className="card e-review">
-            <span className="avatar avatar--sm" aria-hidden="true">{r.reviewer_username[0].toUpperCase()}</span>
-            <div className="e-review__body">
-              <p className="row row--wrap text-sm" style={{ marginBottom: '0.2rem' }}>
-                <StarRating value={r.rating} />
-                <span className="muted">by {r.reviewer_username}</span>
-              </p>
-              {r.comment && <p className="m-0 break">{r.comment}</p>}
+      <section className="pl-card" style={{ marginTop: 14 }}>
+        <h2>What people are saying</h2>
+        {reviews.length === 0 && <p className="pl-note">No reviews yet. Be the first to share how it went.</p>}
+        <div className="pl-reviews">
+          {reviews.map((r) => (
+            <div key={r.id} className="pl-review">
+              <span className="pl-av" aria-hidden="true" style={{ width: 32, height: 32 }}>{r.reviewer_username[0].toUpperCase()}</span>
+              <div>
+                <p className="row row--wrap text-sm" style={{ margin: '0 0 2px' }}>
+                  <StarRating value={r.rating} />
+                  <span className="muted">by {r.reviewer_username}</span>
+                </p>
+                {r.comment && <p className="m-0 break">{r.comment}</p>}
+              </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

@@ -19,7 +19,7 @@ export default function Login() {
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
-  const redirectTo = location.state?.from?.pathname || '/services';
+  const redirectTo = location.state?.from?.pathname || '/';
 
   const handleSubmit = async (e) => {
     e.preventDefault();

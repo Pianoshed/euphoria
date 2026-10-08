@@ -61,7 +61,7 @@ export default function Register() {
         return;
       }
       // This Google email already had an account, so they're now logged in.
-      navigate('/services', { replace: true });
+      navigate('/', { replace: true });
     } catch (err) {
       setError(err);
     } finally {

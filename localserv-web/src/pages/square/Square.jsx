@@ -165,13 +165,13 @@ function ConfirmDialog({ title, body, okLabel = 'Confirm', danger, onOk, onClose
 }
 
 /* ---------- friend trees ---------- */
-function Bubble({ person, color, big, mid, live, edit, onClick }) {
+function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
   return (
-    <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${mid ? ' sq-bub--mid' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}`}
+    <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${mid ? ' sq-bub--mid' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}${you ? ' sq-bub--you' : ''}`}
       style={color ? { '--c': color } : undefined} onClick={onClick}
-      aria-label={edit ? `Remove ${person.name}` : `${person.name}${live ? ', has a status' : ''}`}>
+      aria-label={edit ? `Remove ${person.name}` : `${person.name}${you ? ' (you)' : ''}${live ? ', has a status' : ''}`}>
       <i>{initial(person.name)}{edit && <em className="sq-bub__x" aria-hidden="true">✕</em>}</i>
-      <small>{person.name}</small>
+      <small>{you ? 'You' : person.name}</small>
     </button>
   );
 }
@@ -202,9 +202,12 @@ function TreeCard({ tree, onOpen }) {
   );
 }
 
-function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, onRename, onRemove, onAdd, pop, ask }) {
+function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMember, onRename, onRemove, onAdd, pop, ask }) {
   const [busy, setBusy] = useState('');
   const [edit, setEdit] = useState(false);
+  // Only the account that planted the tree can change it. Everyone tagged in it gets a read-only view.
+  const owner = !!tree.mine && (meId == null || String(tree.owner.id) === String(meId));
+  const isMe = (p) => !owner && meId != null && String(p.id) === String(meId);
   const [name, setName] = useState(tree.title);
   const saveName = async () => {
     const t = name.trim();
@@ -277,21 +280,22 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
                 : <h2>{tree.title}</h2>}
               <small>{plural(tree.members.length, 'person', 'people')}</small>
             </div>
-            {tree.mine && (
+            {owner && (
               <button type="button" className={`sq-edit${edit ? ' is-on' : ''}`} aria-pressed={edit}
                 onClick={() => { if (edit) saveName(); setEdit((v) => !v); }}>{edit ? '✓ Done' : '✏️ Edit'}</button>
             )}
             <button type="button" className="sq-x sq-x--soft" onClick={close} aria-label="Close">✕</button>
           </header>
           {tree.note && <p className="sq-hint">{tree.note}</p>}
+          {!owner && <p className="sq-viewonly"><span aria-hidden="true">👀</span> View only. {tree.owner.name} planted this tree; your spot is the one that glows.</p>}
           <div className={`sq-tree${edit ? ' is-editing' : ''}`}>
             <div className="sq-core">
-              <Bubble person={tree.owner} big live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
+              <Bubble person={tree.owner} big you={isMe(tree.owner)} live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
               {partners.map((m) => (
                 <span key={m.id} className="sq-mate">
                   <span className="sq-mate__link" aria-hidden="true">💞</span>
-                  <Bubble person={m} color={circleMeta('partner').color} mid edit={edit} live={!edit && !!statusByUser[m.id]}
-                    onClick={() => (edit ? drop(m) : onMember(m))} />
+                  <Bubble person={m} color={circleMeta('partner').color} mid edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
+                    onClick={() => (edit && owner ? drop(m) : onMember(m))} />
                 </span>
               ))}
             </div>
@@ -302,8 +306,8 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
                   <h4><span aria-hidden="true">{g.emoji}</span>{g.label}<b>{g.people.length}</b></h4>
                   <div className="sq-bubs">
                     {g.people.map((m) => (
-                      <Bubble key={m.id} person={m} color={g.color} edit={edit} live={!edit && !!statusByUser[m.id]}
-                        onClick={() => (edit ? drop(m) : onMember(m))} />
+                      <Bubble key={m.id} person={m} color={g.color} edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
+                        onClick={() => (edit && owner ? drop(m) : onMember(m))} />
                     ))}
                   </div>
                 </section>
@@ -311,13 +315,13 @@ function TreeSheet({ tree, statusByUser, onClose, onLeave, onStatus, onMember, o
             </div>
             {tree.members.length === 0 && <p className="sq-hint">Nobody here yet.</p>}
           </div>
-          {tree.mine && edit && <button type="button" className="sq-cta sq-cta--sm sq-add" onClick={() => onAdd(tree)}>＋ Add people</button>}
-          {tree.mine && <p className="sq-hint sq-center">{edit ? 'Tap a person to remove them. Rename the tree at the top.' : 'Tap anyone to change how you know them.'}</p>}
+          {owner && edit && <button type="button" className="sq-cta sq-cta--sm sq-add" onClick={() => onAdd(tree)}>＋ Add people</button>}
+          {owner && <p className="sq-hint sq-center">{edit ? 'Tap a person to remove them. Rename the tree at the top.' : 'Tap anyone to change how you know them.'}</p>}
           <div className="sq-acts">
             <button type="button" className="sq-ghost" onClick={download}>⬇ Image</button>
             {canShare && <button type="button" className="sq-ghost" onClick={share}>↗ Share</button>}
-            <button type="button" className="sq-ghost" disabled={!!busy} onClick={asStatus}>{busy || '✨ Post as status'}</button>
-            <button type="button" className="sq-ghost sq-ghost--danger" onClick={() => onLeave(tree)}>{tree.mine ? '🗑 Delete tree' : '👋 Leave tree'}</button>
+            {owner && <button type="button" className="sq-ghost" disabled={!!busy} onClick={asStatus}>{busy || '✨ Post as status'}</button>}
+            <button type="button" className="sq-ghost sq-ghost--danger" onClick={() => onLeave(tree)}>{owner ? '🗑 Delete tree' : '👋 Leave tree'}</button>
           </div>
         </div>
       )}
@@ -614,6 +618,8 @@ export default function Square() {
   const reactThought = async (t, emoji) => {
     try { swap(setThoughts)(await api.reactThought(t.id, emoji)); load(); } catch { pop('Could not send that reaction'); }
   };
+  // a tree is editable only by the account that created it
+  const ownsTree = (t) => !!t?.mine && (!user || String(t.owner.id) === String(user.id));
   const makeTree = async (ids, title, labels) => {
     if (!title) throw new Error('Give your tree a name.');
     const t = await api.createTree(title, ids, '', labels);
@@ -623,6 +629,7 @@ export default function Square() {
     pop(`🌳 "${title}" planted`);
   };
   const setLabel = async (t, person, key) => {
+    if (!ownsTree(t)) return;
     const labels = { ...Object.fromEntries(t.members.map((m) => [m.id, labelFor(t, m)])), [person.id]: key };
     let saved = true;
     try { await api.updateTree(t.id, { labels }); } catch { saved = false; }
@@ -633,11 +640,13 @@ export default function Square() {
   };
   const refreshTrees = async () => { try { setTrees(await api.listTrees()); } catch { /* keep local copy */ } };
   const renameTree = async (t, title) => {
+    if (!ownsTree(t)) return;
     setTrees((cur) => cur.map((x) => (x.id === t.id ? { ...x, title } : x)));
     try { await api.updateTree(t.id, { title }); pop('Tree renamed'); }
     catch { setTrees((cur) => cur.map((x) => (x.id === t.id ? { ...x, title: t.title } : x))); pop('Could not rename the tree'); }
   };
   const removeMember = async (t, person) => {
+    if (!ownsTree(t)) { pop('Only the tree owner can remove people'); return; }
     const rest = t.members.filter((m) => String(m.id) !== String(person.id));
     if (rest.length === 0) { setMember(null); pop('A tree needs at least one person. Delete the tree instead.'); return; }
     const labels = Object.fromEntries(rest.map((m) => [m.id, labelFor(t, m)]));
@@ -649,7 +658,7 @@ export default function Square() {
   };
   const addPeople = async (ids, _title, newLabels) => {
     const t = trees.find((x) => x.id === addingTo);
-    if (!t) return;
+    if (!t || !ownsTree(t)) return;
     const labels = { ...Object.fromEntries(t.members.map((m) => [m.id, labelFor(t, m)])), ...newLabels };
     const members = [...new Set([...t.members.map((m) => String(m.id)), ...ids])];
     await api.updateTree(t.id, { members, labels });
@@ -659,12 +668,12 @@ export default function Square() {
     pop(`Added ${plural(ids.length, 'person', 'people')}`);
   };
   const leaveTree = (t) => setConfirm({
-    title: t.mine ? 'Delete this tree?' : 'Leave this tree?',
-    body: t.mine ? 'It will be removed for everyone in it.' : 'You will no longer see it or appear in it.',
-    okLabel: t.mine ? 'Delete tree' : 'Leave tree',
+    title: ownsTree(t) ? 'Delete this tree?' : 'Leave this tree?',
+    body: ownsTree(t) ? 'It will be removed for everyone in it.' : 'You will no longer see it or appear in it.',
+    okLabel: ownsTree(t) ? 'Delete tree' : 'Leave tree',
     danger: true,
     onOk: async () => {
-      try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); pop(t.mine ? 'Tree deleted' : 'You left the tree'); }
+      try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); pop(ownsTree(t) ? 'Tree deleted' : 'You left the tree'); }
       catch { pop('Could not do that'); }
     },
   });
@@ -862,7 +871,7 @@ export default function Square() {
           onSubmit={addPeople} onClose={() => setAddingTo(null)} />
       )}
       {sheetTree && (
-        <TreeSheet tree={sheetTree} statusByUser={statusByUser} pop={pop} ask={setConfirm}
+        <TreeSheet tree={sheetTree} meId={user?.id} statusByUser={statusByUser} pop={pop} ask={setConfirm}
           onClose={() => setSheetId(null)} onLeave={leaveTree}
           onRename={renameTree} onRemove={removeMember} onAdd={(t) => setAddingTo(t.id)}
           onMember={(person) => setMember({ treeId: sheetTree.id, person })}
@@ -870,7 +879,7 @@ export default function Square() {
       )}
       {memberTree && (
         <MemberSheet tree={memberTree} person={member.person} status={statusByUser[member.person.id]}
-          canEdit={memberTree.mine} onLabel={setLabel} onRemove={removeMember} onClose={() => setMember(null)}
+          canEdit={ownsTree(memberTree)} onLabel={setLabel} onRemove={removeMember} onClose={() => setMember(null)}
           onStatus={(st) => { setMember(null); setSheetId(null); open(st); }} />
       )}
       {thinking && <ThoughtSheet onClose={() => setThinking(false)} onPosted={(t) => { setThoughts((cur) => [t, ...cur]); setTab('thoughts'); load(); }} />}

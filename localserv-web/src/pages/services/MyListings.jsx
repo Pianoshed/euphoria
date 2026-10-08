@@ -1,4 +1,5 @@
 import '../../styles/index.css';
+import './plans.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -6,6 +7,7 @@ import * as servicesApi from '../../api/services';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, ChillLoader, Spinner, StatusPill } from '../../components/ui';
 import { formatPrice } from '../../utils/money';
+import { lookFor } from '../../utils/bubbleLook';
 
 const NEXT_STATUS = {
   DRAFT: [['PUBLISHED', 'Publish']],
@@ -39,50 +41,57 @@ export default function MyListings() {
 
   if (user && user.role !== 'PROVIDER') {
     return (
-      <div className="page">
-        <h1>Things you're hosting</h1>
-        <div className="empty-state">
-          <p>Only host accounts can put up activities for people to join. This account is set up for joining plans, not hosting them.</p>
+      <div className="page pl">
+        <header className="pl-hero"><h1 className="pl-title">Your plans</h1></header>
+        <div className="pl-empty">
+          <p>Only host accounts can post plans for people to join. This account is set up for joining plans, not hosting them.</p>
+          <Link to="/services" className="pl-btn pl-btn--solid">Browse plans</Link>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="page">
-      <div className="row row--between">
-        <h1>Things you're hosting</h1>
-        <Link to="/services/mine/new" className="btn btn--primary">Post an activity</Link>
-      </div>
+    <div className="page pl">
+      <header className="pl-hero">
+        <div className="pl-hero__row">
+          <h1 className="pl-title">Plans you're hosting</h1>
+          <Link to="/services/mine/new" className="pl-btn pl-btn--solid">＋ Post a plan</Link>
+        </div>
+        <p className="pl-sub">Publish, edit or archive what you've put up for people to join.</p>
+      </header>
       <ErrorAlert error={error} />
       {!listings && <ChillLoader kind="plans" />}
       {listings?.length === 0 && (
-        <div className="empty-state">
-          <p>Nothing posted yet — put up an activity and let people find their way to it.</p>
-          <Link to="/services/mine/new" className="btn btn--primary" style={{ marginTop: 'var(--space-3)' }}>
-            Post your first activity
-          </Link>
+        <div className="pl-empty">
+          <p>Nothing posted yet. Put up a plan and let people find their way to it.</p>
+          <Link to="/services/mine/new" className="pl-btn pl-btn--solid">Post your first plan</Link>
         </div>
       )}
-      <div className="stack">
-        {listings?.map((s) => (
-          <div key={s.id} className="card listing-card">
-            <div className="listing-card__main">
-              <p className="listing-card__title"><strong className="break">{s.title}</strong> <StatusPill status={s.status} /></p>
-              <p className="text-sm muted">{s.category.icon ? `${s.category.icon} ` : ''}{s.category.name} · {formatPrice(s.price)}</p>
+      <div className="pl-list">
+        {listings?.map((s) => {
+          const look = lookFor(s.id, 0);
+          return (
+            <div key={s.id} className="pl-row" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring }}>
+              <div className="pl-row__main">
+                <div className="pl-row__text">
+                  <strong>{s.title}</strong>
+                  <small>{s.category.icon ? `${s.category.icon} ` : ''}{s.category.name} · {formatPrice(s.price)} · <StatusPill status={s.status} /></small>
+                </div>
+              </div>
+              <div className="pl-row__acts">
+                <Link to={`/services/${s.id}`} className="pl-btn pl-btn--sm">View</Link>
+                <Link to={`/services/mine/${s.id}/edit`} className="pl-btn pl-btn--sm">Edit</Link>
+                {NEXT_STATUS[s.status]?.map(([target, label]) => (
+                  <button key={target} type="button" className="pl-btn pl-btn--sm pl-btn--solid" disabled={busyId === s.id}
+                    onClick={() => handleTransition(s.id, target)}>
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="listing-card__actions">
-              <Link to={`/services/${s.id}`} className="btn btn--ghost btn--sm">View</Link>
-              <Link to={`/services/mine/${s.id}/edit`} className="btn btn--ghost btn--sm">Edit</Link>
-              {NEXT_STATUS[s.status]?.map(([target, label]) => (
-                <button key={target} className="btn btn--sm" disabled={busyId === s.id}
-                  onClick={() => handleTransition(s.id, target)}>
-                  {label}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

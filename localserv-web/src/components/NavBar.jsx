@@ -7,6 +7,14 @@ import { isStaff } from '../utils/permissions';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
+import { useAlerts } from '../context/AlertsContext';
+import './alerts.css';
+
+const cap = (n) => (n > 99 ? '99+' : String(n));
+function Count({ n, label }) {
+  if (!n) return null;
+  return <span className="nb-count" aria-label={`${n} ${label}`}>{cap(n)}</span>;
+}
 
 // Shows the initial if the photo file is missing (e.g. media wiped by a redeploy).
 function NavAvatar({ user, initial }) {
@@ -25,6 +33,8 @@ export function NavBar() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [soundOn, setSoundOnState] = useState(isSoundOn);
+  const { messages, missedCalls } = useAlerts();
+  const attention = messages + missedCalls;
 
   usePresenceHeartbeat();
 
@@ -71,6 +81,22 @@ export function NavBar() {
 
         {user ? (
           <>
+            {/* Always-visible alerts in the header, so nothing is hidden behind the menu */}
+            <div className="nb-alerts" role="status" aria-live="polite">
+              {messages > 0 && (
+                <NavLink to="/chat" className="nb-alert nb-alert--msg" onClick={closeMenu} title="Unread messages">
+                  <span aria-hidden="true">💬</span><Count n={messages} label={messages === 1 ? 'unread message' : 'unread messages'} />
+                  <span className="nb-alert__txt">{messages === 1 ? 'New message' : 'New messages'}</span>
+                </NavLink>
+              )}
+              {missedCalls > 0 && (
+                <NavLink to="/calls" className="nb-alert nb-alert--call" onClick={closeMenu} title="Missed calls">
+                  <span aria-hidden="true">📵</span><Count n={missedCalls} label={missedCalls === 1 ? 'missed call' : 'missed calls'} />
+                  <span className="nb-alert__txt">{missedCalls === 1 ? 'Missed call' : 'Missed calls'}</span>
+                </NavLink>
+              )}
+            </div>
+
             <button
               type="button"
               className="navbar__toggle"
@@ -80,6 +106,7 @@ export function NavBar() {
               onClick={() => setMenuOpen((open) => !open)}
             >
               {menuOpen ? <CloseIcon /> : <MenuIcon />}
+              {!menuOpen && attention > 0 && <span className="nb-dot" aria-hidden="true" />}
             </button>
 
             {/* Backdrop: tap to close, sits behind the sheet */}
@@ -94,8 +121,8 @@ export function NavBar() {
               <NavLink to="/services" end onClick={closeMenu}>Browse</NavLink>
               <NavLink to="/services/mine" onClick={closeMenu}>Things you're hosting</NavLink>
               <NavLink to="/bookings" onClick={closeMenu}>Your plans</NavLink>
-              <NavLink to="/chat" onClick={closeMenu}>Messages</NavLink>
-              <NavLink to="/calls" onClick={closeMenu}>Call log</NavLink>
+              <NavLink to="/chat" onClick={closeMenu}>Messages<Count n={messages} label="unread messages" /></NavLink>
+              <NavLink to="/calls" onClick={closeMenu}>Call log<Count n={missedCalls} label="missed calls" /></NavLink>
               <NavLink to="/wallet" onClick={closeMenu}>Wallet</NavLink>
               <NavLink to="/providers" onClick={closeMenu}>Find people</NavLink>
               <NavLink to="/square" onClick={closeMenu}>Square</NavLink>

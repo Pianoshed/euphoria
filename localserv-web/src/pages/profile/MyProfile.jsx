@@ -7,25 +7,22 @@ import { API_BASE } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import PasswordPanel from './PasswordPanel';
+import Modal from '../../components/Modal';
+import { useAlerts } from '../../context/AlertsContext';
 
 /* ------------------------------------------------------------------ */
 /* Static content                                                      */
 /* ------------------------------------------------------------------ */
 
-const SECTIONS = [
-  { id: 'guide', label: 'Getting around' },
-  { id: 'details', label: 'Your details' },
-  { id: 'privacy', label: 'Privacy' },
-  { id: 'security', label: 'Security' },
-];
-
-const GUIDE_TILES = [
-  { to: '/providers', icon: '🧭', title: 'Find people', text: 'See who is hosting near you and say hi.' },
-  { to: '/services', icon: '🎟️', title: 'Browse plans', text: 'What people are hosting this week, by category.' },
-  { to: '/chat', icon: '💬', title: 'Messages', text: 'Pick up your conversations.' },
-  { to: '/bookings', icon: '📅', title: 'Bookings', text: 'Requests you have sent, and ones you are hosting.' },
-  { to: '/services/mine', icon: '🎉', title: 'Your plans', text: 'Post or edit things you are hosting.' },
-  { to: '/wallet', icon: '👛', title: 'Wallet', text: 'Add funds and see where your money is.' },
+// Sidebar shortcuts. `alert` names a live count from the header alerts.
+const GO_LINKS = [
+  { to: '/providers', icon: '🧭', title: 'Find people' },
+  { to: '/services', icon: '🎟️', title: 'Browse plans' },
+  { to: '/services/mine', icon: '🎉', title: 'Your plans' },
+  { to: '/bookings', icon: '📅', title: 'Bookings' },
+  { to: '/chat', icon: '💬', title: 'Messages', alert: 'messages' },
+  { to: '/calls', icon: '📞', title: 'Call log', alert: 'missedCalls' },
+  { to: '/wallet', icon: '👛', title: 'Wallet' },
 ];
 
 const PLAN_STEPS = [
@@ -141,6 +138,9 @@ export default function MyProfile() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingPrivacy, setSavingPrivacy] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [modal, setModal] = useState(null);      // 'details' | 'privacy' | 'security' | 'plans'
+  const [sideOpen, setSideOpen] = useState(false); // phone drawer
+  const alerts = useAlerts();
 
   useEffect(() => {
     if (user) {
@@ -155,11 +155,29 @@ export default function MyProfile() {
     accountsApi.getMyPrivacy().then(setPrivacy).catch(setError);
   }, []);
 
-  // Links like /profile/me#password should land on that section (the router doesn't scroll to hashes).
+  // Links like /profile/me#password open the right panel.
   useEffect(() => {
-    const target = window.location.hash && document.getElementById(window.location.hash.slice(1));
-    if (target && form) target.scrollIntoView();
+    const hash = window.location.hash.slice(1);
+    if (!form || !hash) return;
+    const map = { details: 'details', privacy: 'privacy', security: 'security', password: 'security', plans: 'plans' };
+    if (map[hash]) setModal(map[hash]);
   }, [form]);
+
+  const openModal = (name) => { setModal(name); setSideOpen(false); };
+  const closeModal = () => {
+    setModal(null);
+    if (window.location.hash) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+  };
+
+  // phone drawer: Escape closes it and page scroll is locked while it is open
+  useEffect(() => {
+    if (!sideOpen) return undefined;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const key = (e) => { if (e.key === 'Escape') setSideOpen(false); };
+    window.addEventListener('keydown', key);
+    return () => { document.body.style.overflow = prev; window.removeEventListener('keydown', key); };
+  }, [sideOpen]);
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
@@ -170,6 +188,7 @@ export default function MyProfile() {
       await accountsApi.updateMyProfile(form);
       await refreshSession();
       setSavedMessage('Profile updated.');
+      closeModal();
     } catch (err) {
       setError(err);
     } finally {
@@ -268,8 +287,19 @@ export default function MyProfile() {
     },
   ];
 
+  const secureOn = Boolean(user.two_factor_enabled);
+  const privacyLabel = VISIBILITY_OPTIONS.find((o) => o.value === privacy.profile_visibility)?.title || '';
+  const attention = (alerts.messages || 0) + (alerts.missedCalls || 0);
+
+  const cards = [
+    { id: 'details', icon: '🪪', title: 'Your details', text: missing.length ? `Add ${missing[0].label}` : 'Everything filled in', chip: percent === 100 ? ['good', 'Complete'] : ['review', `${percent}%`] },
+    { id: 'privacy', icon: '🙈', title: 'Privacy', text: `Visible to: ${privacyLabel.toLowerCase()}`, chip: checkup.some((c) => c.id !== 'sessions' && c.tone === 'review') ? ['review', 'Worth a look'] : ['good', 'Looks good'] },
+    { id: 'security', icon: '🔐', title: 'Security', text: secureOn ? 'Two-factor is on' : 'Two-factor is off', chip: secureOn ? ['good', 'On'] : ['review', 'Recommended'] },
+    { id: 'plans', icon: '🎟️', title: 'How a plan works', text: 'Ask to join, pay, meet, review', chip: ['info', '5 steps'] },
+  ];
+
   return (
-    <div className="page mp">
+    <div className="page mp mp--compact">
       {/* ---------- Hero ---------- */}
       <header className="mp-hero">
         <div className="mp-hero__who">
@@ -285,27 +315,17 @@ export default function MyProfile() {
             <p className="mp-hero__handle break">@{user.username}</p>
             <p className="mp-hero__chips">
               {user.role && <StatusChip tone="info">{user.role.toLowerCase()}</StatusChip>}
-              <StatusChip tone={user.two_factor_enabled ? 'good' : 'review'}>
-                Two-factor {user.two_factor_enabled ? 'on' : 'off'}
-              </StatusChip>
-              <Link to={`/profile/${user.id}`} className="mp-hero__view">See your public page</Link>
+              <Link to={`/profile/${user.id}`} className="mp-hero__view">Public page</Link>
             </p>
           </div>
         </div>
-
+        <button type="button" className="mp-menu-btn" onClick={() => setSideOpen(true)} aria-expanded={sideOpen} aria-controls="mp-side">
+          <span aria-hidden="true">☰</span> Menu{attention > 0 && <b className="nb-count">{attention > 99 ? '99+' : attention}</b>}
+        </button>
         <div className="mp-meter">
-          <div className="mp-meter__row">
-            <strong>{percent === 100 ? 'Profile complete' : `Profile ${percent}% complete`}</strong>
-          </div>
+          <div className="mp-meter__row"><strong>{percent === 100 ? 'Profile complete' : `Profile ${percent}%`}</strong></div>
           <div className="mp-meter__bar" role="progressbar" aria-valuemin={0} aria-valuemax={100}
-            aria-valuenow={percent} aria-label="Profile completeness">
-            <span style={{ width: `${percent}%` }} />
-          </div>
-          <p className="mp-meter__hint">
-            {missing.length === 0
-              ? 'People can see exactly who you are. Nice.'
-              : <>Add {missing[0].label} so people know who they are talking to. <a href="#details">Go to details</a></>}
-          </p>
+            aria-valuenow={percent} aria-label="Profile completeness"><span style={{ width: `${percent}%` }} /></div>
         </div>
       </header>
 
@@ -313,201 +333,218 @@ export default function MyProfile() {
       {savedMessage && <div className="alert alert--success" role="status">{savedMessage}</div>}
 
       <div className="mp-layout">
-        <nav className="mp-nav" aria-label="On this page">
-          {SECTIONS.map((s) => <a key={s.id} href={`#${s.id}`}>{s.label}</a>)}
-        </nav>
+        {/* ---------- Sidebar (drawer on phones) ---------- */}
+        <div className={`mp-scrim${sideOpen ? ' is-open' : ''}`} onClick={() => setSideOpen(false)} aria-hidden="true" />
+        <aside id="mp-side" className={`mp-side${sideOpen ? ' is-open' : ''}`} aria-label="Profile menu">
+          <div className="mp-side__top">
+            <strong>Menu</strong>
+            <button type="button" className="mp-side__close" onClick={() => setSideOpen(false)} aria-label="Close menu">✕</button>
+          </div>
+          <p className="mp-side__h">Settings</p>
+          {cards.filter((c) => c.id !== 'plans').map((c) => (
+            <button key={c.id} type="button" className="mp-side__item" onClick={() => openModal(c.id)}>
+              <span aria-hidden="true">{c.icon}</span>{c.title}
+            </button>
+          ))}
+          <p className="mp-side__h">Go to</p>
+          {GO_LINKS.map((l) => (
+            <Link key={l.to} to={l.to} className="mp-side__item" onClick={() => setSideOpen(false)}>
+              <span aria-hidden="true">{l.icon}</span>{l.title}
+              {l.alert && alerts[l.alert] > 0 && <b className="nb-count">{alerts[l.alert] > 99 ? '99+' : alerts[l.alert]}</b>}
+            </Link>
+          ))}
+          {isStaff && (
+            <Link to="/moderation" className="mp-side__item mp-side__item--staff" onClick={() => setSideOpen(false)}><span aria-hidden="true">🛡️</span>Moderation</Link>
+          )}
+        </aside>
 
+        {/* ---------- Main: short summary cards, each opens a panel ---------- */}
         <div className="mp-main">
-          {/* ---------- Getting around ---------- */}
-          <section id="guide" className="mp-section" aria-labelledby="guide-h">
-            <h2 id="guide-h" className="mp-h">Getting around</h2>
-            <p className="mp-lede">Everything lives a click away. Here is what each part of the site is for.</p>
+          {attention > 0 && (
+            <section className="mp-alerts" aria-label="Needs your attention">
+              {alerts.messages > 0 && <Link to="/chat" className="mp-alert mp-alert--msg">💬 {alerts.messages} unread {alerts.messages === 1 ? 'message' : 'messages'}</Link>}
+              {alerts.missedCalls > 0 && <Link to="/calls" className="mp-alert mp-alert--call">📵 {alerts.missedCalls} missed {alerts.missedCalls === 1 ? 'call' : 'calls'}</Link>}
+            </section>
+          )}
 
-            <div className="mp-tiles">
-              {GUIDE_TILES.map((t) => (
-                <Link key={t.to} to={t.to} className="mp-tile">
-                  <span className="mp-tile__icon" aria-hidden="true">{t.icon}</span>
-                  <strong>{t.title}</strong>
-                  <span>{t.text}</span>
-                </Link>
-              ))}
-              {isStaff && (
-                <Link to="/moderation" className="mp-tile mp-tile--staff">
-                  <span className="mp-tile__icon" aria-hidden="true">🛡️</span>
-                  <strong>Moderation</strong>
-                  <span>Reports and disputes waiting for review.</span>
-                </Link>
-              )}
-            </div>
-
-            <h3 className="mp-h3">How a plan works</h3>
-            <ol className="mp-steps">
-              {PLAN_STEPS.map((s, i) => (
-                <li key={s.title}>
-                  <span className="mp-steps__n" aria-hidden="true">{i + 1}</span>
-                  <strong>{s.title}</strong>
-                  <span>{s.text}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          {/* ---------- Details ---------- */}
-          <section id="details" className="mp-section" aria-labelledby="details-h">
-            <h2 id="details-h" className="mp-h">Your details</h2>
-            <p className="mp-lede">This is what appears on your public page.</p>
-
-            <form onSubmit={handleProfileSubmit} className="stack">
-              <div className="field">
-                <label htmlFor="display_name">Display name</label>
-                <input id="display_name" className="input" maxLength={50}
-                  value={form.display_name} onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))} />
-              </div>
-              <div className="field">
-                <label htmlFor="bio">Bio</label>
-                <textarea id="bio" className="textarea" maxLength={1000}
-                  value={form.bio} onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))} />
-              </div>
-              <div className="field">
-                <label htmlFor="general_location">General location</label>
-                <input id="general_location" className="input" maxLength={100} placeholder="e.g. Yaba, Lagos"
-                  value={form.general_location} onChange={(e) => setForm((f) => ({ ...f, general_location: e.target.value }))} />
-                <span className="hint">Shown publicly. Your exact address is never shared.</span>
-              </div>
-              <div className="field">
-                <label htmlFor="availability">Availability</label>
-                <input id="availability" className="input" maxLength={200} placeholder="e.g. Weekends and weekday evenings"
-                  value={form.availability} onChange={(e) => setForm((f) => ({ ...f, availability: e.target.value }))} />
-              </div>
-              <button className="btn btn--primary btn--block" disabled={savingProfile} type="submit">
-                {savingProfile ? 'Saving…' : 'Save profile'}
+          <div className="mp-cards">
+            {cards.map((c) => (
+              <button key={c.id} type="button" className="mp-card" onClick={() => openModal(c.id)}>
+                <span className="mp-card__icon" aria-hidden="true">{c.icon}</span>
+                <span className="mp-card__text"><strong>{c.title}</strong><small>{c.text}</small></span>
+                <StatusChip tone={c.chip[0]}>{c.chip[1]}</StatusChip>
+                <span className="mp-card__chev" aria-hidden="true">›</span>
               </button>
-            </form>
-          </section>
+            ))}
+          </div>
 
-          {/* ---------- Privacy ---------- */}
-          <section id="privacy" className="mp-section" aria-labelledby="privacy-h">
-            <h2 id="privacy-h" className="mp-h">Privacy</h2>
-            <p className="mp-lede">You are in charge of who can see you and who can reach you. Changes save as soon as you make them.</p>
-
-            <div className="mp-privacy">
-              <div className="mp-privacy__controls">
-                <fieldset className="mp-choices" disabled={savingPrivacy}>
-                  <legend>Who can see my profile</legend>
-                  {VISIBILITY_OPTIONS.map((o) => (
-                    <label key={o.value} className={`mp-choice${privacy.profile_visibility === o.value ? ' is-on' : ''}`}>
-                      <input type="radio" name="profile_visibility" value={o.value}
-                        checked={privacy.profile_visibility === o.value}
-                        onChange={() => handlePrivacyChange('profile_visibility', o.value)} />
-                      <strong>{o.title}</strong>
-                      <span>{o.text}</span>
-                    </label>
-                  ))}
-                </fieldset>
-
-                <fieldset className="mp-segment" disabled={savingPrivacy}>
-                  <legend>Who can message me</legend>
-                  <div>
-                    {MESSAGE_OPTIONS.map((o) => (
-                      <label key={o.value} className={privacy.who_can_message === o.value ? 'is-on' : ''}>
-                        <input type="radio" name="who_can_message" value={o.value}
-                          checked={privacy.who_can_message === o.value}
-                          onChange={() => handlePrivacyChange('who_can_message', o.value)} />
-                        {o.label}
-                      </label>
-                    ))}
-                  </div>
-                  <small>Applies when someone starts a new chat. Chats you already have stay open.</small>
-                </fieldset>
-
-                <fieldset className="mp-segment" disabled={savingPrivacy}>
-                  <legend>Who can ask to join my plans</legend>
-                  <div>
-                    {MESSAGE_OPTIONS.map((o) => (
-                      <label key={o.value} className={requestsSetting === o.value ? 'is-on' : ''}>
-                        <input type="radio" name="who_can_send_service_requests" value={o.value}
-                          checked={requestsSetting === o.value}
-                          onChange={() => handlePrivacyChange('who_can_send_service_requests', o.value)} />
-                        {o.label}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-
-                <div className="mp-switches">
-                  <Switch id="show_online_status" title="Show when I'm online"
-                    text="A green dot appears next to your name while you are active."
-                    checked={privacy.show_online_status} disabled={savingPrivacy}
-                    onChange={(v) => handlePrivacyChange('show_online_status', v)} />
-                  <Switch id="show_last_seen" title="Show when I was last seen"
-                    text="Others can see roughly when you were last here."
-                    checked={privacy.show_last_seen} disabled={savingPrivacy}
-                    onChange={(v) => handlePrivacyChange('show_last_seen', v)} />
-                </div>
-              </div>
-
-              <ProfilePreview user={user} form={form} privacy={privacy} />
-            </div>
-
-            <h3 className="mp-h3">Privacy checkup</h3>
-            <ul className="mp-checkup">
-              {checkup.map((c) => (
-                <li key={c.id} className={`mp-checkup__item mp-checkup__item--${c.tone}`}>
-                  <div>
-                    <p className="mp-checkup__title">
-                      <strong>{c.title}</strong>
-                      <StatusChip tone={c.tone}>{c.status}</StatusChip>
-                    </p>
-                    <p className="mp-checkup__text">{c.text}</p>
-                  </div>
-                  {c.to && <Link to={c.to} className="btn btn--sm">{c.cta}</Link>}
-                </li>
-              ))}
-            </ul>
-
-            <aside className="mp-callout">
-              <strong>If someone bothers you</strong>
-              <p>
-                Open their profile and choose <em>Block</em> to stop seeing each other, or <em>Report</em> so our moderators
-                can look into it. Never share your password or a login code with anyone, in chat or anywhere else.
-              </p>
-            </aside>
-          </section>
-
-          {/* ---------- Security ---------- */}
-          <section id="security" className="mp-section" aria-labelledby="security-h">
-            <h2 id="security-h" className="mp-h">Security</h2>
-            <p className="mp-lede">Keep your account yours.</p>
-
-            <div className="mp-secure">
-              <Link to="/profile/2fa" className="mp-secure__card">
-                <span className="mp-secure__icon" aria-hidden="true">🔐</span>
-                <strong>Two-factor authentication</strong>
-                <StatusChip tone={user.two_factor_enabled ? 'good' : 'review'}>
-                  {user.two_factor_enabled ? 'On' : 'Off'}
-                </StatusChip>
-                <span>{user.two_factor_enabled
-                  ? 'Signing in needs a code from your authenticator app.'
-                  : 'Use an authenticator app to add a code to every sign-in.'}</span>
-              </Link>
-              <Link to="/profile/sessions" className="mp-secure__card">
-                <span className="mp-secure__icon" aria-hidden="true">💻</span>
-                <strong>Active sessions</strong>
-                <span>See the devices that are signed in and end any you do not recognise.</span>
-              </Link>
-            </div>
-
-            <PasswordPanel />
-
-            <h3 className="mp-h3">Good habits</h3>
-            <ul className="mp-habits">
-              <li>Use a password you do not use anywhere else.</li>
-              <li>Keep plans and payments on the site, where they are protected.</li>
-              <li>Sign out on shared or public computers.</li>
-            </ul>
-          </section>
+          <ProfilePreview user={user} form={form} privacy={privacy} />
         </div>
       </div>
+
+      {/* ---------- Panels ---------- */}
+      {modal === 'details' && (
+        <Modal title="Your details" subtitle="This is what appears on your public page." onClose={closeModal}>
+          <form onSubmit={handleProfileSubmit} className="stack">
+            <div className="field">
+              <label htmlFor="display_name">Display name</label>
+              <input id="display_name" className="input" maxLength={50}
+                value={form.display_name} onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label htmlFor="bio">Bio</label>
+              <textarea id="bio" className="textarea" maxLength={1000}
+                value={form.bio} onChange={(e) => setForm((f) => ({ ...f, bio: e.target.value }))} />
+            </div>
+            <div className="field">
+              <label htmlFor="general_location">General location</label>
+              <input id="general_location" className="input" maxLength={100} placeholder="e.g. Yaba, Lagos"
+                value={form.general_location} onChange={(e) => setForm((f) => ({ ...f, general_location: e.target.value }))} />
+              <span className="hint">Shown publicly. Your exact address is never shared.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="availability">Availability</label>
+              <input id="availability" className="input" maxLength={200} placeholder="e.g. Weekends and weekday evenings"
+                value={form.availability} onChange={(e) => setForm((f) => ({ ...f, availability: e.target.value }))} />
+            </div>
+            <button className="btn btn--primary btn--block" disabled={savingProfile} type="submit">
+              {savingProfile ? 'Saving…' : 'Save profile'}
+            </button>
+          </form>
+        </Modal>
+      )}
+
+      {modal === 'privacy' && (
+        <Modal title="Privacy" subtitle="You decide who can see and reach you. Changes save as you make them." wide onClose={closeModal}>
+          <div className="mp-privacy">
+            <div className="mp-privacy__controls">
+              <fieldset className="mp-choices" disabled={savingPrivacy}>
+                <legend>Who can see my profile</legend>
+                {VISIBILITY_OPTIONS.map((o) => (
+                  <label key={o.value} className={`mp-choice${privacy.profile_visibility === o.value ? ' is-on' : ''}`}>
+                    <input type="radio" name="profile_visibility" value={o.value}
+                      checked={privacy.profile_visibility === o.value}
+                      onChange={() => handlePrivacyChange('profile_visibility', o.value)} />
+                    <strong>{o.title}</strong>
+                    <span>{o.text}</span>
+                  </label>
+                ))}
+              </fieldset>
+
+              <fieldset className="mp-segment" disabled={savingPrivacy}>
+                <legend>Who can message me</legend>
+                <div>
+                  {MESSAGE_OPTIONS.map((o) => (
+                    <label key={o.value} className={privacy.who_can_message === o.value ? 'is-on' : ''}>
+                      <input type="radio" name="who_can_message" value={o.value}
+                        checked={privacy.who_can_message === o.value}
+                        onChange={() => handlePrivacyChange('who_can_message', o.value)} />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+                <small>Applies when someone starts a new chat. Chats you already have stay open.</small>
+              </fieldset>
+
+              <fieldset className="mp-segment" disabled={savingPrivacy}>
+                <legend>Who can ask to join my plans</legend>
+                <div>
+                  {MESSAGE_OPTIONS.map((o) => (
+                    <label key={o.value} className={requestsSetting === o.value ? 'is-on' : ''}>
+                      <input type="radio" name="who_can_send_service_requests" value={o.value}
+                        checked={requestsSetting === o.value}
+                        onChange={() => handlePrivacyChange('who_can_send_service_requests', o.value)} />
+                      {o.label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+
+              <div className="mp-switches">
+                <Switch id="show_online_status" title="Show when I'm online"
+                  text="A green dot appears next to your name while you are active."
+                  checked={privacy.show_online_status} disabled={savingPrivacy}
+                  onChange={(v) => handlePrivacyChange('show_online_status', v)} />
+                <Switch id="show_last_seen" title="Show when I was last seen"
+                  text="Others can see roughly when you were last here."
+                  checked={privacy.show_last_seen} disabled={savingPrivacy}
+                  onChange={(v) => handlePrivacyChange('show_last_seen', v)} />
+              </div>
+            </div>
+          </div>
+
+          <h3 className="mp-h3">Privacy checkup</h3>
+          <ul className="mp-checkup">
+            {checkup.map((c) => (
+              <li key={c.id} className={`mp-checkup__item mp-checkup__item--${c.tone}`}>
+                <div>
+                  <p className="mp-checkup__title">
+                    <strong>{c.title}</strong>
+                    <StatusChip tone={c.tone}>{c.status}</StatusChip>
+                  </p>
+                  <p className="mp-checkup__text">{c.text}</p>
+                </div>
+                {c.to && <Link to={c.to} className="btn btn--sm">{c.cta}</Link>}
+              </li>
+            ))}
+          </ul>
+
+          <aside className="mp-callout">
+            <strong>If someone bothers you</strong>
+            <p>
+              Open their profile and choose <em>Block</em> to stop seeing each other, or <em>Report</em> so our moderators
+              can look into it. Never share your password or a login code with anyone.
+            </p>
+          </aside>
+        </Modal>
+      )}
+
+      {modal === 'security' && (
+        <Modal title="Security" subtitle="Keep your account yours." wide onClose={closeModal}>
+          <div className="mp-secure">
+            <Link to="/profile/2fa" className="mp-secure__card">
+              <span className="mp-secure__icon" aria-hidden="true">🔐</span>
+              <strong>Two-factor authentication</strong>
+              <StatusChip tone={secureOn ? 'good' : 'review'}>{secureOn ? 'On' : 'Off'}</StatusChip>
+              <span>{secureOn
+                ? 'Signing in needs a code from your authenticator app.'
+                : 'Use an authenticator app to add a code to every sign-in.'}</span>
+            </Link>
+            <Link to="/profile/sessions" className="mp-secure__card">
+              <span className="mp-secure__icon" aria-hidden="true">💻</span>
+              <strong>Active sessions</strong>
+              <span>See the devices that are signed in and end any you do not recognise.</span>
+            </Link>
+          </div>
+
+          <PasswordPanel />
+
+          <h3 className="mp-h3">Good habits</h3>
+          <ul className="mp-habits">
+            <li>Use a password you do not use anywhere else.</li>
+            <li>Keep plans and payments on the site, where they are protected.</li>
+            <li>Sign out on shared or public computers.</li>
+          </ul>
+        </Modal>
+      )}
+
+      {modal === 'plans' && (
+        <Modal title="How a plan works" subtitle="From asking to join, to leaving a review." onClose={closeModal}>
+          <ol className="mp-steps">
+            {PLAN_STEPS.map((s, i) => (
+              <li key={s.title}>
+                <span className="mp-steps__n" aria-hidden="true">{i + 1}</span>
+                <strong>{s.title}</strong>
+                <span>{s.text}</span>
+              </li>
+            ))}
+          </ol>
+          <div className="mp-modal-acts">
+            <Link to="/services" className="btn btn--primary btn--sm" onClick={closeModal}>Browse plans</Link>
+            <Link to="/services/mine" className="btn btn--sm" onClick={closeModal}>Your plans</Link>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export function GuestRoute({ children }) {
     return <div className="page page-loading"><Spinner /></div>;
   }
   if (already && user) {
-    const to = location.state?.from?.pathname || '/services';
+    const to = location.state?.from?.pathname || '/';
     return <AlreadyLoggedIn to={to} onLoggedOut={() => setAlready(false)} />;
   }
   return children;

@@ -323,3 +323,10 @@
   .sq-bar span{animation-duration:.01ms!important}
 }
 .sq-fab[hidden]{display:none}
+
+/* tagged accounts: read-only tree, only my own spot glows */
+.sq-viewonly{display:flex;align-items:center;gap:6px;margin:0 0 8px;padding:7px 10px;border-radius:12px;font-size:.75rem;font-weight:600;line-height:1.35;color:var(--color-ink-soft);background:color-mix(in srgb,var(--color-violet) 9%,var(--color-surface));border:1px dashed color-mix(in srgb,var(--color-violet) 35%,transparent)}
+.sq-bub--you i{box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-accent),0 0 14px 4px color-mix(in srgb,var(--color-accent) 55%,transparent);animation:sq-glow 1.8s ease-in-out infinite}
+.sq-bub--you small{color:var(--color-accent);font-weight:800}
+@keyframes sq-glow{50%{box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-accent),0 0 22px 8px color-mix(in srgb,var(--color-accent) 70%,transparent)}}
+@media (prefers-reduced-motion:reduce){.sq-bub--you i{animation:none}}

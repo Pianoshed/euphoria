@@ -1,204 +1,245 @@
-import '../styles/index.css'; // the whole theme: safe to import here, bundlers load it once
-import { Link } from 'react-router-dom';
+import '../styles/index.css';
+import './home-feed.css';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, NavLink } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-
-
-const STORIES = [
-  { name: 'Tomi' },
-  { name: 'Chidi' },
-  { name: 'Amaka' },
-  { name: 'Seun' },
-  { name: 'Fola' },
-];
-
-const POSTS = [
-  {
-    id: 1,
-    type: 'post',
-    name: 'Amaka O.',
-    meta: '2h ago',
-    body: 'Anybody know a good suya spot open late in Yaba? Craving something small small tonight.',
-  },
-  {
-    id: 2,
-    type: 'hangout',
-    name: 'Chidi’s crew',
-    meta: 'Tonight · 7:30 PM',
-    title: 'Rooftop hang + games',
-    place: 'Lekki Phase 1',
-    going: 18,
-    tags: ['Music', 'Free entry'],
-  },
-  {
-    id: 3,
-    type: 'post',
-    name: 'Seun A.',
-    meta: '5h ago',
-    body: 'That Afrobeats set on Friday was mad. Who else was there? Drop your best moment from the night.',
-  },
-];
-
-const AROUND = [
-  { name: 'Tomi', status: 'At the beach hang' },
-  { name: 'Fola', status: 'Studying · Yaba' },
-  { name: 'Bayo', status: 'Free tonight' },
-];
-
-const TRENDING = [
-  { tag: '#DetteesBeach', count: '340 gists' },
-  { tag: '#JollofWars', count: '210 gists' },
-  { tag: '#StudySquad', count: '95 gists' },
-];
-
-const DEMO_BALANCE = '₦8,500'; // placeholder until this reads from the wallet API
+import { useAlerts } from '../context/AlertsContext';
+import * as squareApi from '../api/square';
+import * as chatApi from '../api/chat';
+import * as accountsApi from '../api/accounts';
+import * as servicesApi from '../api/services';
+import * as bookingsApi from '../api/bookings';
+import * as walletApi from '../api/wallet';
+import { formatPrice } from '../utils/money';
+import { lookFor } from '../utils/bubbleLook';
+import { usePageBackdrop } from '../hooks/usePageBackdrop';
 
 const initial = (s) => (s || '?').trim().charAt(0).toUpperCase();
+const ago = (iso) => {
+  const m = Math.max(1, Math.round((Date.now() - new Date(iso)) / 60000));
+  if (m < 60) return `${m}m`;
+  return m < 1440 ? `${Math.round(m / 60)}h` : `${Math.round(m / 1440)}d`;
+};
+const greeting = () => {
+  const h = new Date().getHours();
+  if (h < 5) return ['Still up', '🌙'];
+  if (h < 12) return ['Good morning', '☀️'];
+  if (h < 17) return ['Good afternoon', '🌤️'];
+  if (h < 21) return ['Good evening', '🌆'];
+  return ['Late vibes', '✨'];
+};
+const ACTIVE_BOOKING = new Set(['PENDING', 'ACCEPTED', 'FUNDED', 'IN_PROGRESS']);
+
+const ACTIONS = [
+  { to: '/square', icon: '🌳', label: 'Square', tone: 'mint' },
+  { to: '/chat', icon: '💬', label: 'Chats', tone: 'lilac', alert: 'messages' },
+  { to: '/services', icon: '🎟️', label: 'Plans', tone: 'gold' },
+  { to: '/providers', icon: '🧭', label: 'Find people', tone: 'sky' },
+  { to: '/calls', icon: '📞', label: 'Calls', tone: 'coral', alert: 'missedCalls' },
+  { to: '/wallet', icon: '👛', label: 'Wallet', tone: 'gold' },
+];
+
+function Section({ title, to, cta = 'See all', children, delay = 0 }) {
+  return (
+    <section className="hf-sec" style={{ '--d': delay }}>
+      <header className="hf-sec__head">
+        <h2>{title}</h2>
+        {to && <Link to={to}>{cta} ›</Link>}
+      </header>
+      {children}
+    </section>
+  );
+}
 
 export default function HomeFeed() {
+  usePageBackdrop('couples');
   const { user } = useAuth();
-  const fullName = user?.display_name || user?.name || user?.username || '';
+  const alerts = useAlerts();
+  const fullName = user?.display_name || user?.username || '';
   const firstName = fullName.trim().split(/\s+/)[0] || 'there';
+  const [hello, wave] = useMemo(greeting, []);
+
+  const [statuses, setStatuses] = useState(null);
+  const [thoughts, setThoughts] = useState(null);
+  const [trees, setTrees] = useState(null);
+  const [chats, setChats] = useState(null);
+  const [names, setNames] = useState({});
+  const [plans, setPlans] = useState(null);
+  const [next, setNext] = useState(null);
+  const [balance, setBalance] = useState(null);
+
+  useEffect(() => {
+    let off = false;
+    const set = (fn) => (v) => { if (!off) fn(v); };
+    squareApi.listStatuses().then(set(setStatuses)).catch(set(() => setStatuses([])));
+    squareApi.listThoughts().then(set(setThoughts)).catch(set(() => setThoughts([])));
+    squareApi.listTrees().then(set(setTrees)).catch(set(() => setTrees([])));
+    servicesApi.listServices({}).then((d) => set(setPlans)(d.results ?? d)).catch(set(() => setPlans([])));
+    walletApi.getBalance().then((b) => set(setBalance)(b.balance)).catch(() => {});
+    bookingsApi.listBookings({ role: 'customer' })
+      .then((d) => set(setNext)((d.results ?? d).find((b) => ACTIVE_BOOKING.has(b.status)) || null)).catch(() => {});
+    chatApi.listConversations().then(async (d) => {
+      const list = (d.results ?? d).slice(0, 4);
+      if (off) return;
+      setChats(list);
+      const ids = [...new Set(list.filter((c) => !c.is_group && c.other_user_id).map((c) => c.other_user_id))];
+      const got = await Promise.all(ids.map((id) => accountsApi.getPublicProfile(id).then((p) => [id, p.username || p.display_name]).catch(() => [id, null])));
+      if (!off) setNames(Object.fromEntries(got));
+    }).catch(set(() => setChats([])));
+    return () => { off = true; };
+  }, []);
+
+  // one ring per person, newest first, unwatched before watched
+  const rings = useMemo(() => {
+    const seen = new Set();
+    return (statuses || []).filter((s) => (seen.has(s.user.id) ? false : seen.add(s.user.id)))
+      .sort((a, b) => Number(Boolean(a.seen)) - Number(Boolean(b.seen))).slice(0, 14);
+  }, [statuses]);
+  const mine = (statuses || []).some((s) => s.user.id === user?.id);
+  const ownTrees = (trees || []).filter((t) => t.mine).length;
+  const taggedTrees = (trees || []).length - ownTrees;
+  const topThoughts = [...(thoughts || [])].sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 3);
+  const attention = (alerts.messages || 0) + (alerts.missedCalls || 0);
 
   return (
-    <div className="e-feed-shell">
-      <aside className="e-rail-card card">
-        <div className="e-mini-profile">
-          <span className="avatar">{initial(fullName)}</span>
-          <div>
-            <div className="e-mini-profile__name">{fullName || 'Your profile'}</div>
-            <div className="e-label">@{user?.username || 'you'}</div>
-          </div>
+    <div className="page hf">
+      {/* ---------- hero ---------- */}
+      <header className="hf-hero">
+        <span className="hf-float hf-float--a" aria-hidden="true">🎉</span>
+        <span className="hf-float hf-float--b" aria-hidden="true">🚁</span>
+        <span className="hf-float hf-float--c" aria-hidden="true">✨</span>
+        <p className="hf-hero__eyebrow">{hello} {wave}</p>
+        <h1>Hey {firstName}, what's the move?</h1>
+        <div className="hf-hero__chips">
+          {alerts.messages > 0 && <Link to="/chat" className="hf-chip hf-chip--msg">💬 {alerts.messages} new {alerts.messages === 1 ? 'message' : 'messages'}</Link>}
+          {alerts.missedCalls > 0 && <Link to="/calls" className="hf-chip hf-chip--call">📵 {alerts.missedCalls} missed {alerts.missedCalls === 1 ? 'call' : 'calls'}</Link>}
+          {attention === 0 && <span className="hf-chip">✅ You're all caught up</span>}
+          {balance != null && <Link to="/wallet" className="hf-chip hf-chip--wallet">👛 {formatPrice(balance)}</Link>}
         </div>
-        <ul className="e-mini-nav">
-          <li><Link to="/services" className="active">Home feed</Link></li>
-          <li><Link to="/providers">Who's around</Link></li>
-          <li><Link to="/chat">Gist / chat</Link></li>
-          <li><Link to="/bookings">My hangouts</Link></li>
-          <li><Link to="/wallet">Wallet</Link></li>
-        </ul>
-      </aside>
-
-      <section className="e-feed-banner">
-        <p className="e-feed-banner__eyebrow">Lagos tonight</p>
-        <h1>Hey {firstName}, what's the plan?</h1>
-        <p>Three hangouts are filling up near you.</p>
-        <Link to="/services" className="btn btn--primary btn--sm">See what's popping</Link>
-      </section>
-
-      <div className="e-mobile-wallet card">
-        <div>
-          <div className="e-label">Wallet</div>
-          <div className="price">{DEMO_BALANCE}</div>
+        <div className="hf-hero__cta">
+          <Link to="/services" className="hf-btn hf-btn--solid">🎟️ Find a plan</Link>
+          <Link to="/square" className="hf-btn">🌳 Open the Square</Link>
         </div>
-        <Link to="/wallet" className="btn btn--ghost btn--sm">Top up</Link>
-      </div>
+      </header>
 
-      <div className="e-stories" aria-label="Stories">
-        <div className="e-story">
-          <div className="e-story__ring e-story__ring--add">
-            <span className="avatar">{initial(fullName)}</span>
-          </div>
-          <span>Your vibe</span>
-        </div>
-        {STORIES.map((s) => (
-          <div className="e-story" key={s.name}>
-            <div className="e-story__ring">
-              <span className="avatar">{initial(s.name)}</span>
-            </div>
-            <span>{s.name}</span>
-          </div>
+      {/* ---------- quick actions ---------- */}
+      <nav className="hf-actions" aria-label="Quick actions">
+        {ACTIONS.map((a) => (
+          <Link key={a.to} to={a.to} className={`hf-act hf-act--${a.tone}`}>
+            <span className="hf-act__icon" aria-hidden="true">{a.icon}</span>
+            <span>{a.label}</span>
+            {a.alert && alerts[a.alert] > 0 && <b className="nb-count">{alerts[a.alert] > 99 ? '99+' : alerts[a.alert]}</b>}
+          </Link>
         ))}
-      </div>
+      </nav>
 
-      <div className="e-composer card">
-        <div className="e-composer__row">
-          <span className="avatar">{initial(fullName)}</span>
-          <input aria-label="Post a hangout or a gist" placeholder="Wetin dey happen? Drop a hangout or a gist..." />
+      {/* ---------- next plan ---------- */}
+      {next && (
+        <Link to={`/bookings/${next.id}`} className="hf-next" style={{ '--tint': lookFor(next.id, 0).tint.bg, '--ring': lookFor(next.id, 0).tint.ring }}>
+          <span className="hf-next__pulse" aria-hidden="true" />
+          <span className="hf-next__text">
+            <small>Your next plan</small>
+            <strong>{next.service_title}</strong>
+            <small>with {next.provider?.username} · {String(next.status).replace(/_/g, ' ').toLowerCase()}</small>
+          </span>
+          <span aria-hidden="true">›</span>
+        </Link>
+      )}
+
+      {/* ---------- Square: stories ---------- */}
+      <Section title="🌳 On the Square" to="/square" cta="Open" delay={1}>
+        <div className="hf-rings" aria-label="Statuses from your people">
+          <Link to="/square" className="hf-ring hf-ring--add">
+            <span className="hf-ring__o"><span className="hf-ring__i">{mine ? initial(fullName) : '＋'}</span></span>
+            <small>{mine ? 'Your vibe' : 'Add status'}</small>
+          </Link>
+          {rings.map((s) => (
+            <Link key={s.user.id} to="/square" className={`hf-ring${s.seen ? ' is-seen' : ''}`}>
+              <span className="hf-ring__o"><span className="hf-ring__i">{initial(s.user.name)}</span></span>
+              <small>{s.user.id === user?.id ? 'You' : s.user.name}</small>
+            </Link>
+          ))}
+          {statuses && rings.length === 0 && <p className="hf-hint">No statuses yet. Be the first to drop one.</p>}
         </div>
-        <div className="e-composer__actions">
-          <button className="btn btn--ghost btn--sm" type="button">Photo</button>
-          <button className="btn btn--ghost btn--sm" type="button">Location</button>
-          <button className="btn btn--primary btn--sm" type="button">Post</button>
+
+        <div className="hf-trees">
+          <span aria-hidden="true">🌳</span>
+          <p>
+            {trees == null ? 'Loading your trees…'
+              : ownTrees + taggedTrees === 0 ? 'Plant a friend tree to see your people\'s statuses.'
+                : `${ownTrees} tree${ownTrees === 1 ? '' : 's'} planted${taggedTrees ? ` · tagged in ${taggedTrees}` : ''}`}
+          </p>
+          <Link to="/square" className="hf-btn hf-btn--sm">{ownTrees + taggedTrees === 0 ? 'Plant one' : 'View'}</Link>
         </div>
-      </div>
+      </Section>
 
-      <div className="e-feed">
-        {POSTS.map((post) =>
-          post.type === 'hangout' ? (
-            <div key={post.id} className="card e-hangout">
-              <div className="e-post__head">
-                <span className="avatar">{initial(post.name)}</span>
-                <div>
-                  <div className="e-post__name">{post.name}</div>
-                  <div className="e-post__meta">{post.meta}</div>
-                </div>
-              </div>
-              <div className="e-hangout__row">
-                <div>
-                  <h3>{post.title}</h3>
-                  <div className="e-post__meta">{post.place} · {post.going} going</div>
-                  <div className="e-hangout__tags">
-                    {post.tags.map((t) => (
-                      <span key={t} className="pill pill--neutral">{t}</span>
-                    ))}
-                  </div>
-                </div>
-                <button className="btn btn--primary btn--sm" type="button">I'm in</button>
-              </div>
-            </div>
-          ) : (
-            <div key={post.id} className="card">
-              <div className="e-post__head">
-                <span className="avatar">{initial(post.name)}</span>
-                <div>
-                  <div className="e-post__name">{post.name}</div>
-                  <div className="e-post__meta">{post.meta}</div>
-                </div>
-              </div>
-              <p>{post.body}</p>
-              <div className="e-post__actions">
-                <button type="button">Vibe with this</button>
-                <button type="button">Reply</button>
-                <button type="button">Share</button>
-              </div>
-            </div>
-          )
-        )}
-      </div>
+      {/* ---------- chats ---------- */}
+      <Section title="💬 Chats" to="/chat" cta="Inbox" delay={2}>
+        {chats && chats.length === 0 && <p className="hf-hint">No chats yet. Say hi to someone from <Link to="/providers">Find people</Link>.</p>}
+        <ul className="hf-chats">
+          {(chats || []).map((c) => {
+            const name = c.is_group ? (c.title || 'Group chat') : (names[c.other_user_id] || '…');
+            const unread = c.unread_count > 0;
+            const last = c.last_message;
+            const text = last ? (last.body === null ? 'Message deleted' : last.body || (last.attachment_type === 'audio' ? '🎤 Voice message' : '📷 Photo')) : 'Nothing yet. Say hi 👋';
+            return (
+              <li key={c.id}>
+                <Link to={`/chat/${c.id}`} className={`hf-chat${unread ? ' is-unread' : ''}`}>
+                  <span className="hf-av">{c.is_group ? '👥' : initial(name)}</span>
+                  <span className="hf-chat__text"><strong>{name}</strong><small>{text}</small></span>
+                  {unread && <b className="nb-count">{c.unread_count}</b>}
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      </Section>
 
-      <aside className="e-rail-card">
-        <div className="card e-wallet-card">
-          <div>
-            <div className="e-label">Wallet</div>
-            <div className="e-wallet-card__amount price">{DEMO_BALANCE}</div>
+      {/* ---------- thoughts ---------- */}
+      {topThoughts.length > 0 && (
+        <Section title="💭 Top thoughts" to="/square" cta="Join in" delay={3}>
+          <div className="hf-thoughts">
+            {topThoughts.map((t) => (
+              <Link to="/square" key={t.id} className="hf-thought">
+                <p>{t.text.length > 120 ? `${t.text.slice(0, 120)}…` : t.text}</p>
+                <small><b>{t.user.name}</b> · {ago(t.created_at)} · 🔥 {t.total || 0}</small>
+              </Link>
+            ))}
           </div>
-          <Link to="/wallet" className="btn btn--ghost btn--sm">Top up</Link>
-        </div>
+        </Section>
+      )}
 
-        <div className="card">
-          <div className="e-rail-title">Who's around</div>
-          {AROUND.map((a) => (
-            <div className="e-around-item" key={a.name}>
-              <span className="avatar">{initial(a.name)}</span>
-              <div>
-                <div className="e-around-item__name">{a.name}</div>
-                <div className="e-label">{a.status}</div>
-              </div>
-              <span className="e-status-dot" aria-hidden="true" />
-            </div>
-          ))}
+      {/* ---------- plans ---------- */}
+      <Section title="🎟️ Fresh plans" to="/services" cta="Browse" delay={4}>
+        {plans && plans.length === 0 && <p className="hf-hint">No plans posted yet. <Link to="/services/mine/new">Host the first one</Link>.</p>}
+        <div className="hf-plans">
+          {(plans || []).slice(0, 8).map((p) => {
+            const look = lookFor(p.id, 0);
+            return (
+              <Link key={p.id} to={`/services/${p.id}`} className="hf-plan" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring }}>
+                <span className="hf-plan__top">
+                  <small>{p.category?.icon} {p.category?.name}</small>
+                  <b>{formatPrice(p.price)}</b>
+                </span>
+                <strong>{p.title}</strong>
+                <small>Hosted by {p.provider?.username || 'someone'}</small>
+              </Link>
+            );
+          })}
         </div>
+      </Section>
 
-        <div className="card">
-          <div className="e-rail-title">Trending gists</div>
-          {TRENDING.map((t) => (
-            <div className="e-trend" key={t.tag}>
-              <span>{t.tag}</span>
-              <span>{t.count}</span>
-            </div>
-          ))}
-        </div>
-      </aside>
+      {/* ---------- mobile dock ---------- */}
+      <nav className="hf-dock" aria-label="Primary">
+        <NavLink to="/" end><span aria-hidden="true">🏠</span>Home</NavLink>
+        <NavLink to="/square"><span aria-hidden="true">🌳</span>Square</NavLink>
+        <NavLink to="/chat" className="hf-dock__mid">
+          <span aria-hidden="true">💬</span>Chats
+          {alerts.messages > 0 && <b className="nb-count">{alerts.messages > 99 ? '99+' : alerts.messages}</b>}
+        </NavLink>
+        <NavLink to="/services"><span aria-hidden="true">🎟️</span>Plans</NavLink>
+        <NavLink to="/profile/me"><span aria-hidden="true">🙂</span>Me</NavLink>
+      </nav>
     </div>
   );
 }

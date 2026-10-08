@@ -6,6 +6,7 @@ import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
+import { AlertsProvider } from './context/AlertsContext';
 import { CallProvider } from './context/CallContext';
 
 import Register from './pages/auth/Register';
@@ -39,12 +40,22 @@ import ModerationDashboard from './pages/profile/ModerationDashboard';
 
 import Square from './pages/square/Square';
 import Home from './pages/Home';
+import HomeFeed from './pages/HomeFeed';
+import { useAuth } from './context/AuthContext';
+import { Spinner } from './components/ui';
+
+// Signed-in people land on their feed; visitors see the marketing page.
+function HomeGate() {
+  const { user, checkingSession } = useAuth();
+  if (checkingSession) return <div className="page page-loading"><Spinner /></div>;
+  return user ? <HomeFeed /> : <Home />;
+}
 import NotFound from './pages/NotFound';
 
 function AppRoutes() {
   return (
     <Routes>
-      <Route path="/" element={<Home />} />
+      <Route path="/" element={<HomeGate />} />
 
       <Route path="/register" element={<GuestRoute><Register /></GuestRoute>} />
       <Route path="/verify-email" element={<VerifyEmail />} />
@@ -90,10 +101,12 @@ export default function App() {
       <Router>
         <AuthProvider>
           <CallProvider>
-            <NavBar />
-            <MessageNotifier />
-            <IncomingCallNotifier />
-            <AppRoutes />
+            <AlertsProvider>
+              <NavBar />
+              <MessageNotifier />
+              <IncomingCallNotifier />
+              <AppRoutes />
+            </AlertsProvider>
           </CallProvider>
         </AuthProvider>
       </Router>

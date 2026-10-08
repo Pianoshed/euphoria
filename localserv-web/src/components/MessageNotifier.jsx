@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as chatApi from '../api/chat';
 import { armSound, playMessageSound } from '../utils/notifySound';
+import { useAlerts } from '../context/AlertsContext';
 
 const POLL_MS = 10_000;
 const COUNT_PREFIX = /^\(\d+\)\s*/;
@@ -24,6 +25,9 @@ function showUnreadInTitle(total) {
 export default function MessageNotifier() {
   const { user } = useAuth();
   const { pathname } = useLocation();
+  const { missedCalls, setMessages } = useAlerts();
+  const missedRef = useRef(0);
+  const totalRef = useRef(0);
   const pathRef = useRef(pathname);
   const seenRef = useRef(null); // Map of conversation id -> unread count from the last check
 
@@ -41,7 +45,9 @@ export default function MessageNotifier() {
 
     let total = 0;
     next.forEach((n) => { total += n; });
-    showUnreadInTitle(total);
+    totalRef.current = total;
+    setMessages(total);
+    showUnreadInTitle(total + missedRef.current);
     if (!prev) return;
 
     const viewing = /^\/chat\/([^/]+)/.exec(pathRef.current)?.[1];
@@ -50,11 +56,13 @@ export default function MessageNotifier() {
       if (n > (prev.get(id) || 0) && id !== viewing) fresh = true;
     });
     if (fresh) playMessageSound();
-  }, []);
+  }, [setMessages]);
 
   useEffect(() => {
     if (!user) {
       seenRef.current = null;
+      totalRef.current = 0;
+      setMessages(0);
       showUnreadInTitle(0);
       return undefined;
     }
@@ -72,7 +80,13 @@ export default function MessageNotifier() {
       window.removeEventListener('focus', tick);
       window.removeEventListener('online', tick);
     };
-  }, [user, check]);
+  }, [user, check, setMessages]);
+
+  // Missed calls count towards the tab title too
+  useEffect(() => {
+    missedRef.current = missedCalls;
+    if (user) showUnreadInTitle(totalRef.current + missedCalls);
+  }, [missedCalls, user]);
 
   // After moving between pages (e.g. opening a chat marks it read), refresh the count soon.
   useEffect(() => {
