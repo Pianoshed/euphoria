@@ -171,6 +171,7 @@ export default function Discover() {
 
   return (
     <div className="page dp">
+      <header className="dp-hero">
       <div className="dp-head">
         <div>
           <h1 className="dp-title">Find people</h1>
@@ -189,7 +190,7 @@ export default function Discover() {
       <div className="e-browse-filters">
         <input
           type="search"
-          className="input"
+          className="input dp-search"
           aria-label="Search by name or area"
           placeholder="Search by name or area…"
           enterKeyHint="search"
@@ -214,6 +215,7 @@ export default function Discover() {
           ))}
         </div>
       </div>
+      </header>
 
       <section className="dp-notes" aria-label="Chat safety and privacy">
         <details className="dp-note dp-note--safety" open={notesOpen}>
@@ -250,6 +252,7 @@ export default function Discover() {
       {!results && <ChillLoader kind="people" />}
       {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name, area or filter.</p></div>}
 
+      {results?.length > 0 && <p className="dp-count">{results.length} {results.length === 1 ? 'person' : 'people'}</p>}
       <div className="dp-field">
         {results?.map((p) => {
           const look = looks[p.id];

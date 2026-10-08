@@ -20,7 +20,7 @@ const toPerson = (p) => ({
  */
 export default function PeoplePicker({
   title, submitLabel, minPick = 1, maxPick = 19, excludeIds = [], suggestions = [],
-  saver = false, askTitle = false, titlePlaceholder = 'Group name (optional)', onSubmit, onClose,
+  saver = false, askTitle = false, titlePlaceholder = 'Group name (optional)', titleLabel = 'Name', onSubmit, onClose,
   // Optional: give every picked person a label (e.g. Family, Workmates). onSubmit gets {id: key} as a 3rd argument.
   labelOptions = null, defaultLabel = '', compact = false,
 }) {
@@ -118,8 +118,11 @@ export default function PeoplePicker({
         </header>
 
         {askTitle && (
-          <input className="gp-input pp-input" placeholder={titlePlaceholder} aria-label={titlePlaceholder}
-            value={groupTitle} maxLength={80} onChange={(e) => setGroupTitle(e.target.value)} />
+          <label className="pp-name">
+            <span className="pp-name__lab">{titleLabel}</span>
+            <input className="gp-input pp-input pp-input--name" type="text" placeholder={titlePlaceholder} aria-label={titleLabel}
+              value={groupTitle} maxLength={80} onChange={(e) => setGroupTitle(e.target.value)} />
+          </label>
         )}
 
         {count > 0 && (
@@ -134,8 +137,11 @@ export default function PeoplePicker({
           </ul>
         )}
 
-        <input ref={searchRef} className="gp-input pp-input" type="search" placeholder="Search people…" aria-label="Search people"
-          value={q} onChange={(e) => setQ(e.target.value)} />
+        <div className="pp-search">
+          <span className="pp-search__ico" aria-hidden="true">🔍</span>
+          <input ref={searchRef} className="gp-input pp-input pp-input--search" type="search" placeholder="Search people to add…" aria-label="Search people"
+            value={q} onChange={(e) => setQ(e.target.value)} />
+        </div>
 
         <ul className="gp-list pp-list">
           {searching && <li className="gp-note pp-note">Searching…</li>}
