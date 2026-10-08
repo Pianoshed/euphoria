@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import * as chatApi from '../api/chat';
-import { armSound, playMessageSound } from '../utils/notifySound';
+import { armSound, notifyDevice, playMessageSound } from '../utils/notifySound';
 import { useAlerts } from '../context/AlertsContext';
 
 const POLL_MS = 10_000;
@@ -55,7 +55,10 @@ export default function MessageNotifier() {
     next.forEach((n, id) => {
       if (n > (prev.get(id) || 0) && id !== viewing) fresh = true;
     });
-    if (fresh) playMessageSound();
+    if (fresh) {
+      playMessageSound();
+      notifyDevice('New message', 'Open Euphoria to read it.'); // OS plays its own tone when the tab is hidden
+    }
   }, [setMessages]);
 
   useEffect(() => {

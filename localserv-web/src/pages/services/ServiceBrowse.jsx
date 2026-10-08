@@ -1,4 +1,5 @@
 import '../../styles/index.css';
+import '../home-feed.css'; // shared night-scene backdrop
 import './browse.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -27,7 +28,7 @@ const num = (v) => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const initial = (s) => (s || '?').charAt(0).toUpperCase();
 
 export default function ServiceBrowse() {
-  usePageBackdrop('cafe');
+  usePageBackdrop('scene'); // same artwork as the home page
   const navigate = useNavigate();
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();

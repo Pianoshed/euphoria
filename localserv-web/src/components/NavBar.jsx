@@ -5,12 +5,13 @@ import { useAuth } from '../context/AuthContext';
 import { API_BASE } from '../api/client';
 import { isStaff } from '../utils/permissions';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
-import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
+import { TONE_LIST, askDeviceNotifications, getTone, isSoundOn, nextTone, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
 import { Icon } from './icons';
 import { useAlerts } from '../context/AlertsContext';
 import './alerts.css';
+import './navbar-desktop.css';
 
 const cap = (n) => (n > 99 ? '99+' : String(n));
 function Count({ n, label }) {
@@ -35,6 +36,14 @@ export function NavBar() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [soundOn, setSoundOnState] = useState(isSoundOn);
+  const [tone, setToneState] = useState(getTone);
+  const toneLabel = TONE_LIST.find((t) => t.id === tone)?.label || 'Chime';
+  const cycleTone = () => {
+    const id = nextTone();
+    setToneState(id);
+    if (!soundOn) { setSoundOn(true); setSoundOnState(true); }
+    playMessageSound(id); // click = gesture, so the preview always plays
+  };
   const { messages, missedCalls } = useAlerts();
   const attention = messages + missedCalls;
 
@@ -46,7 +55,7 @@ export function NavBar() {
     const next = !soundOn;
     setSoundOn(next);
     setSoundOnState(next);
-    if (next) playMessageSound(); // a click is a gesture, so this also unlocks audio and previews the beep
+    if (next) { playMessageSound(); askDeviceNotifications(); } // a click is a gesture, so this also unlocks audio and previews the beep
   };
 
   const handleLogout = async () => {
@@ -123,7 +132,7 @@ export function NavBar() {
             <nav id="primary-nav" aria-label="Main" className={`navbar__links${menuOpen ? ' navbar__links--open' : ''}`}>
               {/* `end` stops "Browse" staying highlighted on /services/mine */}
               <NavLink to="/services" end onClick={closeMenu}>Browse</NavLink>
-              <NavLink to="/services/mine" onClick={closeMenu}>Things you're hosting</NavLink>
+              <NavLink to="/services/mine" onClick={closeMenu}><span className="nbl-long">Things you're hosting</span><span className="nbl-short">Hosting</span></NavLink>
               <NavLink to="/bookings" onClick={closeMenu}>Your plans</NavLink>
               <NavLink to="/chat" onClick={closeMenu}>Messages<Count n={messages} label="unread messages" /></NavLink>
               <NavLink to="/calls" onClick={closeMenu}>Call log<Count n={missedCalls} label="missed calls" /></NavLink>
@@ -149,7 +158,10 @@ export function NavBar() {
                     aria-pressed={soundOn}
                     title="Beep when a new message arrives"
                   >
-                    <Icon name={soundOn ? 'bell' : 'bellOff'} size={16} /> {soundOn ? 'Sound on' : 'Sound off'}
+                    <Icon name={soundOn ? 'bell' : 'bellOff'} size={16} /> <span className="navbar__act-txt">{soundOn ? 'Sound on' : 'Sound off'}</span>
+                  </button>
+                  <button type="button" className="navbar__act navbar__act--tone" onClick={cycleTone} title={`Message tone: ${toneLabel} (tap to change)`} aria-label={`Message tone: ${toneLabel}. Tap to change`}>
+                    <span aria-hidden="true">♪</span> <span className="navbar__act-txt">{toneLabel}</span>
                   </button>
                   <button type="button" className="navbar__act navbar__act--out" onClick={handleLogout}>Log out</button>
                 </div>

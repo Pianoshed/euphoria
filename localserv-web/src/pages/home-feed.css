@@ -74,10 +74,11 @@ body[data-backdrop='scene']::before {
   border: 1.5px solid var(--hf-ink); border-radius: 999px; font: inherit; font-size: .9rem; font-weight: 800; cursor: pointer;
   background: transparent; color: var(--hf-ink); transition: background .15s, color .15s, transform .15s;
 }
-.hf-btn:hover { background: var(--hf-ink); color: var(--color-bg); }
+.hf a.hf-btn, .hf button.hf-btn { color: var(--hf-ink); }
+.hf a.hf-btn:hover { background: var(--hf-ink); color: var(--color-bg); }
 .hf-btn:active { transform: scale(.97); }
-.hf-btn--solid { background: var(--hf-ink); color: var(--color-bg); }
-.hf-btn--solid:hover { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.hf a.hf-btn--solid { background: var(--hf-ink); color: var(--color-bg); }
+.hf a.hf-btn--solid:hover { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
 .hf-btn--sm { min-height: 34px; padding: 3px 14px; font-size: .82rem; }
 
 /* meters: number + label, with a bar along the bottom that fills with the count */
