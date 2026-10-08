@@ -1,7 +1,7 @@
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F401,F403
-from .base import BREVO_API_KEY, PAYMENT_PROVIDER, env
+from .base import RESEND_API_KEY, PAYMENT_PROVIDER, env
 
 DEBUG = False
 
@@ -34,8 +34,8 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 X_FRAME_OPTIONS = "DENY"
 
-# Brevo's API when BREVO_API_KEY is set (base.py picks that backend); otherwise plain SMTP.
-if not BREVO_API_KEY:
+# Resend's API when RESEND_API_KEY is set (base.py picks that backend); otherwise plain SMTP.
+if not RESEND_API_KEY:
     EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
 
 # --- Structured (JSON) logging for log aggregation ---------------------------

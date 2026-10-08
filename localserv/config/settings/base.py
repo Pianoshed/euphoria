@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     "apps.wallet.apps.WalletConfig",
     "apps.moderation.apps.ModerationConfig",
     "apps.chat.apps.ChatConfig",
+    "apps.square",
 ]
 
 MIDDLEWARE = [
@@ -132,9 +133,19 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.ScopedRateThrottle",
+        # Caps every write on views that don't set their own throttle (square, profile, avatar, blocks...).
+        "apps.common.throttles.WriteRateThrottle",
     ],
+    # How many reverse proxies sit in front of Django. DRF then reads the client IP from
+    # the right place in X-Forwarded-For. Without it, anyone can dodge every per-IP
+    # throttle by sending a made-up X-Forwarded-For header on each request.
+    "NUM_PROXIES": env.int("NUM_PROXIES", default=1),
     "DEFAULT_THROTTLE_RATES": {
         "login": "10/hour",
+        "login_email": "20/hour",
+        "mfa_challenge": "8/hour",
+        "password_change": "5/hour",
+        "write_default": "120/min",
         "password_reset": "5/hour",
         "registration": "10/hour",
         "email_verification": "10/hour",
@@ -180,6 +191,13 @@ CSRF_COOKIE_HTTPONLY = False  # JS needs to read this to send the header
 SESSION_COOKIE_SAMESITE = "Lax"
 CSRF_COOKIE_SAMESITE = "Lax"
 
+# Log out when the browser closes, and after N idle minutes either way.
+# While a tab is open, the presence pings keep the session alive (sliding expiry).
+SESSION_EXPIRE_AT_BROWSER_CLOSE = True
+SESSION_COOKIE_AGE = env.int("SESSION_IDLE_MINUTES", default=15) * 60
+SESSION_SAVE_EVERY_REQUEST = True
+CSRF_COOKIE_AGE = None  # default is 1 year; None = cookie dies with the browser
+
 # --- Payments (Phase 6) ---
 PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", default="stub")
 STUB_PAYMENT_WEBHOOK_SECRET = env("STUB_PAYMENT_WEBHOOK_SECRET", default="stub-secret-change-me")
@@ -188,13 +206,13 @@ STUB_PAYMENT_WEBHOOK_SECRET = env("STUB_PAYMENT_WEBHOOK_SECRET", default="stub-s
 # Where the React site lives. Used to build the links inside emails (verify email, reset password).
 FRONTEND_URL = env("FRONTEND_URL", default="http://localhost:5173")
 
-# With BREVO_API_KEY set, email goes out through Brevo's HTTP API (works on hosts that block SMTP).
+# With RESEND_API_KEY set, email goes out through Resend's HTTP API (works on hosts that block SMTP).
 # Without it, dev/staging print emails in the log and prod falls back to SMTP (see each settings file).
-BREVO_API_KEY = env("BREVO_API_KEY", default="")
-if BREVO_API_KEY:
+RESEND_API_KEY = env("RESEND_API_KEY", default="")
+if RESEND_API_KEY:
     INSTALLED_APPS += ["anymail"]
-    EMAIL_BACKEND = "anymail.backends.brevo.EmailBackend"
-    ANYMAIL = {"BREVO_API_KEY": BREVO_API_KEY}
+    EMAIL_BACKEND = "anymail.backends.resend.EmailBackend"
+    ANYMAIL = {"RESEND_API_KEY": RESEND_API_KEY}
 EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=10)  # seconds: a slow mail service must not hang a request
 
 EMAIL_HOST = env("EMAIL_HOST", default="")

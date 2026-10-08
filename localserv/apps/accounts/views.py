@@ -9,6 +9,8 @@ from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
+from apps.common.throttles import LoginEmailThrottle, MfaChallengeThrottle, WriteRateThrottle
+
 from . import services
 from .models import User
 from .serializers import (
@@ -79,7 +81,7 @@ class VerifyEmailView(APIView):
 
 class ResendVerificationView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, LoginEmailThrottle]
     throttle_scope = "email_verification"
 
     def post(self, request):
@@ -93,7 +95,7 @@ class LoginView(APIView):
     # Session auth stays ON here, so CSRF is enforced for password login.
     # The frontend must send X-CSRFToken (see CSRFBootstrapView).
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, LoginEmailThrottle]
     throttle_scope = "login"
 
     def post(self, request):
@@ -108,7 +110,7 @@ class LoginView(APIView):
 class LoginMFAView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, MfaChallengeThrottle]
     throttle_scope = "two_factor"
 
     def post(self, request):
@@ -128,7 +130,7 @@ class LogoutView(APIView):
 
 class PasswordResetRequestView(APIView):
     permission_classes = [AllowAny]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [ScopedRateThrottle, LoginEmailThrottle]
     throttle_scope = "password_reset"
 
     def post(self, request):
@@ -155,6 +157,9 @@ class PasswordResetConfirmView(APIView):
 
 class PasswordChangeView(APIView):
     permission_classes = [IsAuthenticated]
+    # Stops someone on a stolen/unattended session from guessing the current password.
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "password_change"
 
     def post(self, request):
         serializer = PasswordChangeSerializer(data=request.data)
