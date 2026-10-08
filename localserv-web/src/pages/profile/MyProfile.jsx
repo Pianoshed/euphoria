@@ -59,10 +59,19 @@ const PROFILE_FIELDS = [
 /* Small pieces                                                        */
 /* ------------------------------------------------------------------ */
 
+// Falls back to the initial letter when the image file is gone (e.g. wiped media disk).
 function Avatar({ user, className = '' }) {
+  const [failed, setFailed] = useState(false);
+
+  // A new upload gets a new URL, so give it a fresh chance to load.
+  useEffect(() => { setFailed(false); }, [user.avatar]);
+
   const name = user.display_name || user.username || '?';
-  return user.avatar
-    ? <img className={`mp-avatar ${className}`} src={`${API_BASE}${user.avatar}`} alt="" />
+  return user.avatar && !failed
+    ? (
+      <img className={`mp-avatar ${className}`} src={`${API_BASE}${user.avatar}`} alt=""
+        onError={() => setFailed(true)} />
+    )
     : <span className={`mp-avatar ${className}`} aria-hidden="true">{name[0].toUpperCase()}</span>;
 }
 
@@ -195,6 +204,11 @@ export default function MyProfile() {
       setUploadingAvatar(false);
     }
   };
+
+  // The session can expire (idle timeout / browser closed), leaving user null.
+  // All hooks are above, so this early return is safe. The route guard / API client
+  // should redirect to /login; this just prevents a crash while that happens.
+  if (!user) return null;
 
   if (error && !privacy) return (
     <div className="page page--narrow">

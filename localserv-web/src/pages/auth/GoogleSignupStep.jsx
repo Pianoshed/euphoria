@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert } from '../../components/ui';
 import RoleChoice from './RoleChoice';
+import PasswordInput from '../../components/PasswordInput';
 
 /**
  * Step 2 of Google signup, shown when a Google email has no account yet.
@@ -65,12 +66,12 @@ export default function GoogleSignupStep({ google, onCancel }) {
 
         <div className="field">
           <label htmlFor="g-password">Create a password</label>
-          <input id="g-password" type="password" className="input" required minLength={10}
+          <PasswordInput id="g-password" className="input" required minLength={10}
             autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
         </div>
         <div className="field">
           <label htmlFor="g-confirm">Confirm password</label>
-          <input id="g-confirm" type="password" className="input" required minLength={10}
+          <PasswordInput id="g-confirm" className="input" required minLength={10}
             autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
 

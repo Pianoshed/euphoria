@@ -6,6 +6,7 @@ import { ErrorAlert } from '../../components/ui';
 import AuthShowcase from './AuthShowcase';
 import GoogleButton from './GoogleButton';
 import ResendVerification from '../../components/ResendVerification';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function Login() {
   const { login, loginWithGoogle } = useAuth();
@@ -13,7 +14,7 @@ export default function Login() {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(null);
+  const [notice, setNotice] = useState(location.state?.expired ? 'Your session ended. Please log in again.' : null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
 
@@ -108,7 +109,7 @@ export default function Login() {
             </div>
             <div className="field">
               <label htmlFor="password">Password</label>
-              <input id="password" type="password" required autoComplete="current-password"
+              <PasswordInput id="password" required autoComplete="current-password"
                 value={form.password} onChange={update('password')} />
             </div>
             <button className="btn-primary-full" disabled={submitting} type="submit">

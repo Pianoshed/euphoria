@@ -4,14 +4,14 @@ import { useAuth } from '../context/AuthContext';
 import { Spinner } from './ui';
 
 export function ProtectedRoute({ children }) {
-  const { user, checkingSession } = useAuth();
+  const { user, checkingSession, sessionExpired } = useAuth();
   const location = useLocation();
 
   if (checkingSession) {
     return <div className="page page-loading"><Spinner /></div>;
   }
   if (!user) {
-    return <Navigate to="/login" state={{ from: location }} replace />;
+    return <Navigate to="/login" state={{ from: location, expired: sessionExpired }} replace />;
   }
   return children;
 }

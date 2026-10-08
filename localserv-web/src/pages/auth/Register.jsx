@@ -10,6 +10,7 @@ import GoogleButton from './GoogleButton';
 import GoogleSignupStep from './GoogleSignupStep';
 import RoleChoice from './RoleChoice';
 import ResendVerification from '../../components/ResendVerification';
+import PasswordInput from '../../components/PasswordInput';
 
 export default function Register() {
   const { loginWithGoogle } = useAuth();
@@ -17,7 +18,7 @@ export default function Register() {
   const location = useLocation();
   // Set when a Google email has no account yet (arrives from Login, or from the button below).
   const [google, setGoogle] = useState(location.state?.google ?? null);
-  const [form, setForm] = useState({ email: '', username: '', password: '', role: 'CUSTOMER' });
+  const [form, setForm] = useState({ email: '', username: '', password: '', confirm: '', role: 'CUSTOMER' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
@@ -28,6 +29,10 @@ export default function Register() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(null);
+    if (form.password !== form.confirm) {
+      setError({ message: 'The two passwords do not match.' });
+      return;
+    }
     setSubmitting(true);
     try {
       await accountsApi.register(form.email, form.username, form.password, form.role);
@@ -126,10 +131,19 @@ export default function Register() {
             </div>
             <div className="field">
               <label htmlFor="password">Password</label>
-              <input id="password" type="password" className="input" required minLength={10}
+              <PasswordInput id="password" className="input" required minLength={10}
                 autoComplete="new-password"
                 value={form.password} onChange={update('password')} />
               <span className="hint">At least 10 characters.</span>
+            </div>
+            <div className="field">
+              <label htmlFor="confirm">Confirm password</label>
+              <PasswordInput id="confirm" className="input" required minLength={10}
+                autoComplete="new-password"
+                value={form.confirm} onChange={update('confirm')} />
+              {form.confirm && form.confirm !== form.password && (
+                <span className="hint" role="status" style={{ color: '#b91c1c' }}>The passwords do not match yet.</span>
+              )}
             </div>
             <button className="btn-primary-full" disabled={submitting} type="submit">
               {submitting ? 'Creating account…' : 'Create account'}

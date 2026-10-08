@@ -3,7 +3,7 @@
  * No tokens to store: after login the server sets the session cookie, and we just
  * ask "who am I?" (getMyProfile) and keep the answer in React state.
  */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   login as apiLogin,
   verifyLoginMfa,
@@ -12,12 +12,28 @@ import {
   logout as apiLogout,
   getMyProfile,
 } from '../api/accounts';
+import { AUTH_EXPIRED_EVENT } from '../api/client';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const userRef = useRef(null);
+  useEffect(() => { userRef.current = user; }, [user]);
+
+  // The server stopped recognising our session (idle timeout, closed browser, blocked cookie).
+  // Drop the user so ProtectedRoute sends them to /login instead of leaving a half-working app.
+  useEffect(() => {
+    const onExpired = () => {
+      if (!userRef.current) return; // already signed out: nothing to expire
+      setSessionExpired(true);
+      setUser(null);
+    };
+    window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+  }, []);
 
   // 401/403 simply means "not signed in", so it resolves to null instead of throwing.
   const refreshSession = useCallback(async () => {
@@ -39,6 +55,7 @@ export function AuthProvider({ children }) {
   }, [refreshSession]);
 
   const finishLogin = useCallback(async (data) => {
+    setSessionExpired(false);
     if (data?.user) setUser(data.user);
     else await refreshSession();
     return data;
@@ -74,12 +91,13 @@ export function AuthProvider({ children }) {
   const logout = useCallback(async () => {
     try { await apiLogout(); } catch { /* already signed out on the server */ }
     setUser(null);
+    setSessionExpired(false);
   }, []);
 
   const value = useMemo(() => ({
-    user, checkingSession, login, loginWithGoogle, registerWithGoogle,
+    user, checkingSession, sessionExpired, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, logout, refreshSession,
-  }), [user, checkingSession, login, loginWithGoogle, registerWithGoogle,
+  }), [user, checkingSession, sessionExpired, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, logout, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

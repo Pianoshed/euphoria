@@ -8,6 +8,15 @@ import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
 
+// Shows the initial if the photo file is missing (e.g. media wiped by a redeploy).
+function NavAvatar({ user, initial }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => { setFailed(false); }, [user.avatar]);
+  return user.avatar && !failed
+    ? <img className="avatar avatar--sm" src={`${API_BASE}${user.avatar}`} alt="" onError={() => setFailed(true)} />
+    : <span className="avatar avatar--sm" aria-hidden="true">{initial}</span>;
+}
+
 // Keep in step with the breakpoint in components.css (.navbar mobile sheet).
 const DESKTOP_QUERY = '(min-width: 1100px)';
 
@@ -92,9 +101,7 @@ export function NavBar() {
 
               <div className="navbar__user navbar__user--menu">
                 <NavLink to="/profile/me" className="navbar__me" onClick={closeMenu}>
-                  {user.avatar
-                    ? <img className="avatar avatar--sm" src={`${API_BASE}${user.avatar}`} alt="" />
-                    : <span className="avatar avatar--sm" aria-hidden="true">{initial}</span>}
+                  <NavAvatar user={user} initial={initial} />
                   <span className="truncate">{user.username}</span>
                 </NavLink>
                 <button

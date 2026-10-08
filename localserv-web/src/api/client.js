@@ -27,6 +27,16 @@ export class ApiError extends Error {
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
 
+// Fired when the server says "you are not signed in" on a request that needed a session
+// (idle timeout, browser was closed, cookie blocked). AuthContext listens and signs the user out in the UI.
+export const AUTH_EXPIRED_EVENT = 'auth:expired';
+
+function sessionIsGone(status, data) {
+  if (status === 401) return true;
+  const detail = typeof data?.detail === 'string' ? data.detail.toLowerCase() : '';
+  return status === 403 && (detail.includes('authentication credentials were not provided') || detail.includes('not authenticated'));
+}
+
 // Make sure the first write request waits for the CSRF token instead of racing
 // the startup bootstrapCsrf() call (which showed up as a 403 followed by a retry).
 let csrfPromise = null;
@@ -109,6 +119,10 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
   ) {
     await bootstrapCsrf();
     return apiFetch(path, { method, body, query }, true);
+  }
+
+  if (!resp.ok && !LOGIN_PATHS.has(path) && sessionIsGone(resp.status, data)) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
   }
 
   if (!resp.ok) {
