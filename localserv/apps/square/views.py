@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
@@ -14,8 +15,8 @@ from rest_framework.views import APIView
 from apps.common.permissions import IsActiveAccount
 
 from . import media
-from .models import (REACTION_EMOJI, FriendTree, FriendTreeMember, Status, StatusReaction, Thought,
-                     ThoughtReaction)
+from .models import (REACTION_EMOJI, Circle, FriendTree, FriendTreeMember, Status, StatusReaction,
+                     StatusView, Thought, ThoughtReaction)
 
 MAX_STATUSES_PER_DAY = 20
 MAX_THOUGHTS_PER_DAY = 30
@@ -27,9 +28,22 @@ def _who(u):
     return {"id": str(u.id), "name": getattr(u, "display_name", "") or u.username}
 
 
-def _status(request, s):
+def _seen_ids(request, statuses):
+    """Ids (among `statuses`) that the current user has already watched. One query for the whole list."""
+    ids = [s.pk for s in statuses]
+    if not ids:
+        return set()
+    return set(StatusView.objects.filter(user=request.user, status_id__in=ids).values_list("status_id", flat=True))
+
+
+def _status(request, s, seen=None):
     rs = list(s.reactions.all())
+    if seen is None:
+        seen = _seen_ids(request, [s])
+    # your own statuses always count as seen
+    watched = s.pk in seen or s.user_id == request.user.id
     return {
+        "seen": watched,
         "id": str(s.id), "kind": s.kind, "text": s.text, "duration": s.duration_seconds,
         "file": request.build_absolute_uri(s.file.url) if s.file else None,
         "created_at": s.created_at, "expires_at": s.expires_at, "user": _who(s.user),
@@ -60,15 +74,31 @@ def _toggle(model, fk, obj, user, emoji):
         model.objects.update_or_create(user=user, **{fk: obj}, defaults={"emoji": emoji})
 
 
+def _circle_ids(user):
+    """Everyone whose statuses `user` may see: themselves plus every owner and member of every
+    friend tree they own or are tagged in. This is the ONLY source of truth for status visibility;
+    the app also filters, but it can't be trusted to."""
+    trees = list(FriendTree.objects.filter(Q(owner=user) | Q(members__user=user)).values_list("pk", flat=True))
+    ids = {user.pk}
+    ids.update(FriendTree.objects.filter(pk__in=trees).values_list("owner_id", flat=True))
+    ids.update(FriendTreeMember.objects.filter(tree_id__in=trees).values_list("user_id", flat=True))
+    return ids
+
+
+def _visible_statuses(user):
+    return Status.objects.filter(expires_at__gt=timezone.now(), user_id__in=_circle_ids(user))
+
+
 class _Base(APIView):
     permission_classes = [IsAuthenticated, IsActiveAccount]
 
 
 class StatusListCreateView(_Base):
     def get(self, request):
-        qs = (Status.objects.filter(expires_at__gt=timezone.now())
-              .select_related("user").prefetch_related("reactions").order_by("-created_at")[:100])
-        return Response([_status(request, s) for s in qs])
+        qs = list(_visible_statuses(request.user)
+                  .select_related("user").prefetch_related("reactions").order_by("-created_at")[:100])
+        seen = _seen_ids(request, qs)
+        return Response([_status(request, s, seen) for s in qs])
 
     def post(self, request):
         now = timezone.now()
@@ -98,12 +128,24 @@ class StatusListCreateView(_Base):
 
 class StatusReactView(_Base):
     def post(self, request, status_id):
-        s = Status.objects.filter(pk=status_id, expires_at__gt=timezone.now()).first()
-        if s is None:
+        s = _visible_statuses(request.user).filter(pk=status_id).first()
+        if s is None:  # same answer for "gone" and "not someone in your trees"
             raise NotFound("Status not found.")
         _toggle(StatusReaction, "status", s, request.user, request.data.get("emoji"))
         s = Status.objects.select_related("user").prefetch_related("reactions").get(pk=s.pk)
         return Response(_status(request, s))
+
+
+class StatusSeenView(_Base):
+    """POST marks a status as watched by me. Idempotent; same 404 for "gone" and "not in your trees"."""
+
+    def post(self, request, status_id):
+        s = _visible_statuses(request.user).filter(pk=status_id).first()
+        if s is None:
+            raise NotFound("Status not found.")
+        if s.user_id != request.user.id:
+            StatusView.objects.get_or_create(status=s, user=request.user)
+        return Response(status=http.HTTP_204_NO_CONTENT)
 
 
 class ThoughtListCreateView(_Base):
@@ -139,13 +181,14 @@ class TrendingView(_Base):
     def get(self, request):
         now = timezone.now()
         since = now - timedelta(hours=24)
-        top_s = (Status.objects.filter(expires_at__gt=now).annotate(n=Count("reactions")).filter(n__gt=0)
+        seen = _visible_statuses(request.user)
+        top_s = (seen.annotate(n=Count("reactions")).filter(n__gt=0)
                  .select_related("user").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
         top_t = (Thought.objects.filter(created_at__gte=since).annotate(n=Count("reactions")).filter(n__gt=0)
                  .select_related("user").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
         tally = {}
-        for model in (StatusReaction, ThoughtReaction):
-            for row in model.objects.filter(created_at__gte=since).values("emoji").annotate(c=Count("id")):
+        for model, scope in ((StatusReaction, {"status__in": seen}), (ThoughtReaction, {})):
+            for row in model.objects.filter(created_at__gte=since, **scope).values("emoji").annotate(c=Count("id")):
                 tally[row["emoji"]] = tally.get(row["emoji"], 0) + row["c"]
         emoji = [e for e, _ in sorted(tally.items(), key=lambda kv: -kv[1])[:3]]
         return Response({
@@ -163,11 +206,40 @@ def _visible(user):
 
 
 def _tree(request, t):
-    return {
+    mine = t.owner_id == request.user.id
+    members = []
+    for m in t.members.all():
+        w = _who(m.user)
+        if mine:  # labels are the owner's private view of people; tagged friends never get them
+            w["label"] = m.label
+        members.append(w)
+    out = {
         "id": str(t.id), "title": t.title, "note": t.note, "created_at": t.created_at,
-        "owner": _who(t.owner), "mine": t.owner_id == request.user.id,
-        "members": [_who(m.user) for m in t.members.all()],
+        "owner": _who(t.owner), "mine": mine, "members": members,
     }
+    if mine:
+        out["labels"] = {m["id"]: m["label"] for m in members}
+    return out
+
+
+def _labels_in(raw):
+    """Parse {personId: circleKey}. Unknown circles are rejected; ids are matched against real members later."""
+    if raw in (None, ""):
+        return {}
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if not isinstance(raw, dict):
+        raise ValidationError({"labels": ["Labels must map each person to a circle."]})
+    valid = set(Circle.values)
+    out = {}
+    for who, key in raw.items():
+        if key not in valid:
+            raise ValidationError({"labels": [f"Unknown circle: {key}."]})
+        out[str(who)] = key
+    return out
 
 
 def _member_users(request, raw):
@@ -197,10 +269,12 @@ class FriendTreeListCreateView(_Base):
         if not title:
             raise ValidationError({"title": ["Give your tree a name."]})
         users = _member_users(request, request.data.get("members"))
+        labels = _labels_in(request.data.get("labels"))
         with transaction.atomic():
             t = FriendTree.objects.create(owner=request.user, title=title,
                                           note=(request.data.get("note") or "").strip()[:140])
-            FriendTreeMember.objects.bulk_create([FriendTreeMember(tree=t, user=u) for u in users])
+            FriendTreeMember.objects.bulk_create([
+                FriendTreeMember(tree=t, user=u, label=labels.get(str(u.pk), Circle.FRIENDS)) for u in users])
         return Response(_tree(request, _visible(request.user).get(pk=t.pk)), status=http.HTTP_201_CREATED)
 
 
@@ -218,6 +292,7 @@ class FriendTreeDetailView(_Base):
         t = self._get(request, tree_id)
         if t.owner_id != request.user.id:
             raise NotFound("Tree not found.")
+        labels = _labels_in(request.data.get("labels")) if "labels" in request.data else {}
         with transaction.atomic():
             if "title" in request.data:
                 title = (request.data.get("title") or "").strip()[:60]
@@ -233,7 +308,14 @@ class FriendTreeDetailView(_Base):
                 t.members.exclude(user_id__in=keep).delete()
                 have = set(t.members.values_list("user_id", flat=True))
                 FriendTreeMember.objects.bulk_create(
-                    [FriendTreeMember(tree=t, user=u) for u in users if u.pk not in have])
+                    [FriendTreeMember(tree=t, user=u, label=labels.get(str(u.pk), Circle.FRIENDS))
+                     for u in users if u.pk not in have])
+            if labels:  # fresh query: the prefetched members above may be stale after the edits
+                for m in FriendTreeMember.objects.filter(tree=t):
+                    new = labels.get(str(m.user_id))
+                    if new and new != m.label:
+                        m.label = new
+                        m.save(update_fields=["label", "updated_at"])
         return Response(_tree(request, self._get(request, tree_id)))
 
     def delete(self, request, tree_id):

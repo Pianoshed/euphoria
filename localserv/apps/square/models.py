@@ -57,6 +57,18 @@ class StatusReaction(BaseModel):
         constraints = [models.UniqueConstraint(fields=["status", "user"], name="unique_status_reaction")]
 
 
+class StatusView(BaseModel):
+    """Marks a status as watched by a person, so "seen" survives refreshes and follows them across devices.
+    Rows disappear with the status (CASCADE) when services.purge_expired() deletes it."""
+
+    status = models.ForeignKey(Status, on_delete=models.CASCADE, related_name="views")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_status_view"
+        constraints = [models.UniqueConstraint(fields=["status", "user"], name="unique_status_view")]
+
+
 class Thought(BaseModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
     text = models.CharField(max_length=280)
@@ -88,9 +100,23 @@ class FriendTree(BaseModel):
         db_table = "square_friend_tree"
 
 
+class Circle(models.TextChoices):
+    """How the tree OWNER knows a person. Private to the owner: never sent to anyone else."""
+
+    FAMILY = "family", "Family"
+    PARTNER = "partner", "Partner"
+    BESTIES = "besties", "Besties"
+    FRIENDS = "friends", "Friends"
+    WORK = "work", "Workmates"
+    SCHOOL = "school", "Classmates"
+    NEIGHBOURS = "neighbours", "Neighbours"
+    ACQUAINTANCE = "acquaintance", "Acquaintances"
+
+
 class FriendTreeMember(BaseModel):
     tree = models.ForeignKey(FriendTree, on_delete=models.CASCADE, related_name="members")
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
+    label = models.CharField(max_length=16, choices=Circle.choices, default=Circle.FRIENDS)
 
     class Meta(BaseModel.Meta):
         db_table = "square_friend_tree_member"
