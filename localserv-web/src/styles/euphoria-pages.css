@@ -308,3 +308,45 @@ body[data-backdrop='couples'] .chat-composer { background: none; }
 body[data-backdrop] .empty-state { background: rgba(255, 255, 255, 0.78); }
 
 @media print { body[data-backdrop]::before { display: none; } }
+
+
+/* ---------- navbar: roomy, vibrant mobile menu ---------- */
+.navbar__who { display: flex; flex-direction: column; min-width: 0; line-height: 1.2; }
+.navbar__who small, .navbar__chev { display: none; }
+.navbar__acts { display: flex; align-items: center; gap: var(--space-2); }
+.navbar__act {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 0.4rem 0.8rem; min-height: 2.25rem; border-radius: var(--radius-pill);
+  border: 1px solid var(--color-line-strong); background: transparent; color: var(--color-ink);
+  font: inherit; font-size: var(--text-sm); font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.navbar__act--out { color: var(--color-danger); }
+
+@media (max-width: 1099px) {
+  .navbar__links { max-width: 300px; padding: 6px; gap: 2px; }
+  .navbar__links a { min-height: 2.5rem; padding: 0.45rem 0.85rem; font-size: 0.9375rem; }
+  .navbar__links a.active { color: #fff; background: linear-gradient(135deg, var(--color-primary), var(--color-violet)); }
+
+  /* the footer stays pinned at the bottom of the sheet and is laid out as a card + two equal buttons */
+  .navbar__user--menu {
+    position: sticky; bottom: -6px; z-index: 1;
+    display: flex; flex-direction: column; align-items: stretch; gap: 8px;
+    margin: 6px -6px -6px; padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--color-line); background: var(--color-surface);
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+  }
+  .navbar__links a.navbar__me {
+    display: flex; align-items: center; gap: 10px; min-height: 3.25rem; padding: 8px 12px;
+    border-radius: 16px; color: var(--color-ink);
+    background: linear-gradient(135deg, #fff0b8 0%, #ffd7c8 55%, #e4defa 100%);
+  }
+  .navbar__links a.navbar__me:hover { background: linear-gradient(135deg, #fff0b8 0%, #ffd7c8 55%, #e4defa 100%); }
+  .navbar__who { flex: 1; }
+  .navbar__who b { font-size: 0.9375rem; }
+  .navbar__who small { display: block; font-size: 0.72rem; font-weight: 600; color: var(--color-ink-soft); }
+  .navbar__chev { display: block; font-size: 1.3rem; line-height: 1; color: var(--color-ink-soft); }
+  .navbar__me .truncate { max-width: none; }
+  .navbar__acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .navbar__act { min-height: 2.5rem; padding: 0.4rem 0.5rem; font-size: 0.8125rem; }
+  .navbar__act[aria-pressed="true"] { background: var(--color-chip-b-bg); border-color: transparent; color: var(--color-chip-b-ink); }
+}

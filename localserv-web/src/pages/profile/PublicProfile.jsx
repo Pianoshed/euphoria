@@ -1,4 +1,5 @@
 import '../../styles/index.css';
+import './publicprofile.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -7,6 +8,8 @@ import * as chatApi from '../../api/chat';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import { ReportButton } from '../../components/ReportButton';
+import { ROLE_META } from '../../utils/roles';
+import { lookFor } from '../../utils/bubbleLook';
 
 export default function PublicProfile() {
   usePageBackdrop('couples');
@@ -52,26 +55,40 @@ export default function PublicProfile() {
   if (!profile) return <div className="page"><Spinner /></div>;
 
   const isSelf = user?.id === profile.id;
+  const name = profile.display_name || profile.username || 'Someone';
+  const meta = ROLE_META[profile.role];
+  const look = lookFor(profile.id, 0); // same colour and shape as their bubble in Find people
 
   return (
-    <div className="page page--narrow">
-      <div className="profile-head">
-        {profile.avatar
-          ? <img className="avatar avatar--xl" src={profile.avatar} alt="" />
-          : <span className="avatar avatar--xl" aria-hidden="true">{(profile.display_name || profile.username || '?')[0].toUpperCase()}</span>}
-        <div className="min-w-0">
-          <h1>{profile.display_name}</h1>
-          <p className="text-sm muted m-0 break">@{profile.username} · {profile.role.toLowerCase()}</p>
-        </div>
-      </div>
-      {profile.general_location && <p className="text-sm muted">{profile.general_location}</p>}
-      {profile.bio && <p className="break">{profile.bio}</p>}
-      {profile.availability && <p className="text-sm"><strong>Availability:</strong> {profile.availability}</p>}
+    <div className="page pf" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring, '--avatar-shape': look.avatarShape }}>
+      <header className="pf-hero">
+        <span className="pf-avatar">
+          {profile.avatar
+            ? <img src={profile.avatar} alt="" />
+            : <span aria-hidden="true">{name[0].toUpperCase()}</span>}
+          {profile.online && <span className="pf-online" role="img" aria-label="Online" />}
+        </span>
+        <h1 className="pf-name">{name}</h1>
+        <p className="pf-handle">@{profile.username}</p>
+        <p className="pf-chips">
+          {meta && <span className={`pf-chip pf-chip--${profile.role.toLowerCase()}`}>{meta.label}</span>}
+          {profile.general_location && <span className="pf-chip">📍 {profile.general_location}</span>}
+          {profile.availability && <span className="pf-chip">🕒 {profile.availability}</span>}
+        </p>
+        {meta && <p className="pf-blurb">{meta.blurb}</p>}
+      </header>
+
+      {profile.bio && (
+        <section className="pf-card" aria-label="About">
+          <h2>About</h2>
+          <p className="break">{profile.bio}</p>
+        </section>
+      )}
 
       {!isSelf && user && !blocked && (
-        <div className="row row--wrap" style={{ marginTop: 'var(--space-4)' }}>
-          <button className="btn btn--primary" disabled={busy} onClick={handleMessage}>Message</button>
-          <button className="btn" disabled={busy} onClick={handleBlock}>Block</button>
+        <div className="pf-actions">
+          <button type="button" className="pf-btn pf-btn--solid" disabled={busy} onClick={handleMessage}>👋 Message</button>
+          <button type="button" className="pf-btn" disabled={busy} onClick={handleBlock}>Block</button>
           <ReportButton targetType="USER" targetId={profile.id} />
         </div>
       )}

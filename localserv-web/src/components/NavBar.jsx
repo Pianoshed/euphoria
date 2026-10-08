@@ -60,6 +60,8 @@ export function NavBar() {
     };
   }, [menuOpen]);
 
+  // one short name keeps the menu footer uncramped
+  const shortName = ((user?.display_name || user?.username || '').trim().split(/\s+/)[0]) || 'Me';
   const initial = (user?.display_name || user?.username || '?').charAt(0).toUpperCase();
 
   return (
@@ -102,18 +104,24 @@ export function NavBar() {
               <div className="navbar__user navbar__user--menu">
                 <NavLink to="/profile/me" className="navbar__me" onClick={closeMenu}>
                   <NavAvatar user={user} initial={initial} />
-                  <span className="truncate">{user.username}</span>
+                  <span className="navbar__who">
+                    <b className="truncate">{shortName}</b>
+                    <small>View profile</small>
+                  </span>
+                  <span className="navbar__chev" aria-hidden="true">›</span>
                 </NavLink>
-                <button
-                  type="button"
-                  className="btn btn--ghost btn--sm"
-                  onClick={toggleSound}
-                  aria-pressed={soundOn}
-                  title="Beep when a new message arrives"
-                >
-                  {soundOn ? '\u{1F514} Sound on' : '\u{1F515} Sound off'}
-                </button>
-                <button type="button" className="btn btn--ghost btn--sm" onClick={handleLogout}>Log out</button>
+                <div className="navbar__acts">
+                  <button
+                    type="button"
+                    className="navbar__act"
+                    onClick={toggleSound}
+                    aria-pressed={soundOn}
+                    title="Beep when a new message arrives"
+                  >
+                    <span aria-hidden="true">{soundOn ? '\u{1F514}' : '\u{1F515}'}</span> {soundOn ? 'Sound on' : 'Sound off'}
+                  </button>
+                  <button type="button" className="navbar__act navbar__act--out" onClick={handleLogout}>Log out</button>
+                </div>
               </div>
             </nav>
           </>

@@ -489,3 +489,12 @@ html:has(.mp) { scroll-behavior: smooth; }
   .mp-hero__who { flex-direction: column; align-items: flex-start; gap: 22px; }
   .mp-checkup__item { flex-direction: column; align-items: flex-start; }
 }
+
+/* phones: tighter hero so the page opens on content, same rounded look as Find people */
+@media (max-width: 520px) {
+  .mp-hero { padding: 18px 14px; border-radius: 26px; gap: 14px; margin-bottom: 14px; }
+  .mp-hero__who { flex-direction: row; align-items: center; gap: 14px; }
+  .mp-avatar { width: 76px; height: 76px; font-size: 1.8rem; }
+  .mp-hero__upload { font-size: 0.7rem; padding: 3px 10px; bottom: -10px; }
+  .mp-hero__name { font-size: 1.3rem; line-height: 1.15; }
+}
