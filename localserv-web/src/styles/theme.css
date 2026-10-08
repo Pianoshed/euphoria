@@ -82,3 +82,21 @@ img, svg, video, canvas { max-width: 100%; }
     background: linear-gradient(135deg, #3B2D5E 0%, #4A2B52 55%, #2C2459 100%); color: var(--color-ink);
   }
 }
+
+/* ============================================================
+   "Event board" look: flat solid colour, ink outlines, hard offset shadows,
+   line icons instead of emoji. Shared by the logged-in home and Browse.
+   ============================================================ */
+:root {
+  --edge: #1F1D3D;                 /* outlines + hard shadows */
+  --hard: 4px 4px 0 var(--edge);
+  --hard-sm: 3px 3px 0 var(--edge);
+  --pop-gold: #FFC145; --pop-pink: #D63471; --pop-mint: #8FE0BC; --pop-sky: #9CCDF5; --pop-lilac: #C4B6F7; --pop-coral: #FF9F8E;
+  --ink-fixed: #1F1D3D;            /* text that sits on a solid colour block, in both themes */
+}
+:root[data-theme='dark'] { --edge: #F5EFFB; }
+[data-tint='gold']  { --solid: #FFD25E; }
+[data-tint='coral'] { --solid: #FF9F8E; }
+[data-tint='lilac'] { --solid: #C4B6F7; }
+[data-tint='mint']  { --solid: #8FE0BC; }
+[data-tint='sky']   { --solid: #9CCDF5; }

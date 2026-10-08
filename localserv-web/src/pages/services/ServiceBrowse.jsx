@@ -9,6 +9,7 @@ import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, ChillLoader, Spinner } from '../../components/ui';
 import { formatPrice } from '../../utils/money';
 import { lookFor } from '../../utils/bubbleLook';
+import { Icon } from '../../components/icons';
 
 const SORTS = [
   { value: 'new', label: 'Newest' },
@@ -143,7 +144,7 @@ export default function ServiceBrowse() {
     }
   };
 
-  const catLabel = (c) => `${c.icon ? `${c.icon} ` : ''}${c.name}`;
+  const catLabel = (c) => c.name;
 
   return (
     <div className="page sb">
@@ -154,7 +155,7 @@ export default function ServiceBrowse() {
             <p className="sb-sub">Browse what people are hosting this week, or narrow it down by category.</p>
           </div>
           <button type="button" className="sb-filterbtn" onClick={() => setDrawer(true)} aria-haspopup="dialog">
-            <span aria-hidden="true">⚙️</span> Filters{activeFilters > 0 && <b>{activeFilters}</b>}
+            <Icon name="sliders" size={16} /> Filters{activeFilters > 0 && <b>{activeFilters}</b>}
           </button>
         </div>
         <input
@@ -168,7 +169,7 @@ export default function ServiceBrowse() {
         />
         {categories.length > 0 && (
           <div className="sb-chips" role="group" aria-label="Categories">
-            <button type="button" aria-pressed={!categoryId} onClick={() => pickCategory('')}>✨ All</button>
+            <button type="button" aria-pressed={!categoryId} onClick={() => pickCategory('')}>All</button>
             {categories.map((c) => (
               <button key={c.id} type="button" aria-pressed={categoryId === c.id} onClick={() => pickCategory(c.id)}>{catLabel(c)}</button>
             ))}
@@ -186,11 +187,11 @@ export default function ServiceBrowse() {
 
           <h3 className="sb-sec">Category</h3>
           <ul className="sb-opts">
-            <li><button type="button" aria-pressed={!categoryId} onClick={() => pickCategory('')}><span className="sb-opts__e" aria-hidden="true">✨</span>All plans</button></li>
+            <li><button type="button" aria-pressed={!categoryId} onClick={() => pickCategory('')}><span className="sb-opts__e" aria-hidden="true">·</span>All plans</button></li>
             {categories.map((c) => (
               <li key={c.id}>
                 <button type="button" aria-pressed={categoryId === c.id} onClick={() => pickCategory(c.id)}>
-                  <span className="sb-opts__e" aria-hidden="true">{c.icon || '•'}</span>{c.name}
+                  <span className="sb-opts__e" aria-hidden="true">{(c.name || '•').charAt(0).toUpperCase()}</span>{c.name}
                 </button>
               </li>
             ))}
@@ -251,11 +252,12 @@ export default function ServiceBrowse() {
                   className="sb-card"
                   aria-haspopup="dialog"
                   onClick={(e) => openService(service.id, e.currentTarget)}
-                  style={{ '--tint': look.tint.bg, '--ring': look.tint.ring, '--avatar-shape': look.avatarShape }}
+                  data-tint={look.tint.name}
+                  style={{ '--avatar-shape': look.avatarShape }}
                 >
                   <span className="sb-card__top">
                     {service.category?.name
-                      ? <span className="sb-cat">{service.category.icon ? `${service.category.icon} ` : ''}{service.category.name}</span>
+                      ? <span className="sb-cat">{service.category.name}</span>
                       : <span />}
                     <span className="sb-price">{formatPrice(service.price)}</span>
                   </span>
@@ -289,12 +291,13 @@ export default function ServiceBrowse() {
             aria-modal="true"
             aria-label={active.s.title}
             onClick={(e) => e.stopPropagation()}
-            style={{ '--tint': active.look.tint.bg, '--ring': active.look.tint.ring, '--avatar-shape': active.look.avatarShape }}
+            data-tint={active.look.tint.name}
+            style={{ '--avatar-shape': active.look.avatarShape }}
           >
             <span className="sb-grab" aria-hidden="true" />
             <button ref={closeRef} type="button" className="sb-pop__close" aria-label="Close" onClick={closeService}>×</button>
             <div className="sb-pop__top">
-              {active.s.category?.name && <span className="sb-cat">{active.s.category.icon ? `${active.s.category.icon} ` : ''}{active.s.category.name}</span>}
+              {active.s.category?.name && <span className="sb-cat">{active.s.category.name}</span>}
               <span className="sb-price sb-price--lg">{formatPrice(active.s.price)}</span>
             </div>
             <h2 className="sb-pop__title">{active.s.title}</h2>
@@ -302,14 +305,14 @@ export default function ServiceBrowse() {
               <span className="sb-av sb-av--lg" aria-hidden="true">{initial(active.s.provider?.username)}</span>
               <span className="sb-host__name">Hosted by <strong>{active.s.provider?.username}</strong></span>
             </div>
-            {(active.s.area || active.s.general_location) && <p className="sb-pop__line">📍 {active.s.area || active.s.general_location}</p>}
+            {(active.s.area || active.s.general_location) && <p className="sb-pop__line"><Icon name="pin" size={16} /> {active.s.area || active.s.general_location}</p>}
             {active.s.description && <p className="sb-pop__bio">{active.s.description}</p>}
             <ErrorAlert error={popupError} />
             <div className="sb-pop__actions">
               <Link className="sb-btn sb-btn--solid" to={`/services/${active.s.id}`}>View details</Link>
               {user && active.s.provider?.id && active.s.provider.id !== user.id && (
                 <button type="button" className="sb-btn" disabled={messaging} onClick={() => messageHost(active.s)}>
-                  {messaging ? <Spinner /> : '👋 Message host'}
+                  {messaging ? <Spinner /> : 'Message host'}
                 </button>
               )}
             </div>

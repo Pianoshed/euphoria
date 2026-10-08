@@ -333,6 +333,23 @@ body[data-backdrop='couples']:has(.inbox)::before { opacity: 0.2; }
 /* ---------- Small screens ---------- */
 
 @media (max-width: 640px) {
+  .page.inbox { padding-top: var(--space-4); }
+  .inbox__head { margin-bottom: var(--space-3); }
+  .inbox__title { font-size: clamp(1.8rem, 9vw, 2.3rem); margin-bottom: 0.25rem; }
+  .inbox__sub { gap: 0 var(--space-3); }
+  .inbox__sub p { font-size: var(--text-sm); flex: 1 1 100%; }
+  .inbox__list { gap: 0.55rem; }
+
+  /* the Archive button used to float over the bubble; now it is its own slim column to the right of the row */
+  .inbox__item { display: flex; align-items: center; gap: 0.4rem; }
+  .inbox__item .drop-row { flex: 1; min-width: 0; align-items: center; }
+  .bubble { padding: 0.5rem 0.8rem 0.55rem; min-width: 0; }
+  .bubble::before { display: none; }
+  .bubble__name { font-size: 0.92rem; }
+  .bubble__text { font-size: 0.86rem; }
+  .bubble__meta { padding-right: 0; margin-top: 0.15rem; min-height: 0; gap: 0.15rem 0.5rem; }
+  .inbox__archive { position: static; flex: none; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; min-height: 0; padding: 0; border-radius: 12px; }
+  .inbox__archive-txt { display: none; }
   .chopper__craft { top: 64px; }
   .drop { top: calc(64px + var(--cw) * 0.2017); }
   .drop-row .avatar { width: 40px; height: 40px; }

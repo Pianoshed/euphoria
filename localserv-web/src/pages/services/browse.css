@@ -1,9 +1,8 @@
-@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&display=swap');
 
 /* Browse plans. Same look as Find people: tinted bubbles-on-cards, pill controls. Scoped under .sb */
 .page.sb {
   --sb-ink: #1f1d3d; --sb-muted: #5f5d7a; --sb-line: rgba(31, 29, 61, 0.14);
-  --sb-display: 'Bricolage Grotesque', system-ui, sans-serif;
+  --sb-display: var(--font-display);
   max-width: 1120px; color: var(--sb-ink);
 }
 .sb-only-m { display: none; }
@@ -170,27 +169,18 @@
 
 @media (max-width: 720px) {
   .page.sb { padding: 0 0 32px; max-width: none; }
-  .sb-hero {
-    position: relative; overflow: hidden; color: #fff; gap: 12px; margin-bottom: 12px; padding: 14px 14px 14px; border-radius: 0 0 28px 28px;
-    background: linear-gradient(155deg, var(--color-night, #1a1033) 0%, #3a1f8e 52%, var(--color-primary, #f2740f) 135%);
-    box-shadow: 0 14px 32px -16px rgba(26, 16, 51, 0.6);
-  }
-  .sb-hero::before, .sb-hero::after { content: ""; position: absolute; border-radius: 50%; pointer-events: none; }
-  .sb-hero::before { width: 200px; height: 200px; right: -70px; top: -90px; background: radial-gradient(circle, rgba(255, 193, 69, 0.45), transparent 68%); }
-  .sb-hero::after { width: 180px; height: 180px; left: -70px; bottom: -100px; background: radial-gradient(circle, rgba(214, 52, 113, 0.5), transparent 68%); }
-  .sb-hero > * { position: relative; z-index: 1; }
   .sb-head { align-items: center; }
-  .sb-title { color: #fff; font-size: 1.25rem; line-height: 1.2; }
+  .sb-title { font-size: 1.5rem; line-height: 1.1; }
   .sb-sub { display: none; }
   .sb-search { max-width: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18); }
   .sb-chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
   .sb-chips::-webkit-scrollbar { display: none; }
   .sb-chips button {
-    flex: none; border: 0; border-radius: 99px; padding: 6px 12px; min-height: 30px; font: inherit; font-size: 0.8125rem; font-weight: 700; color: #fff; background: rgba(255, 255, 255, 0.14); cursor: pointer;
+    flex: none; border: 2px solid var(--ink-fixed); border-radius: 10px; padding: 5px 12px; min-height: 34px; font: inherit; font-size: 0.8125rem; font-weight: 800; color: var(--ink-fixed); background: transparent; cursor: pointer;
     transition: background 0.2s, color 0.2s, transform 0.15s;
   }
   .sb-chips button:active { transform: scale(0.94); }
-  .sb-chips button[aria-pressed="true"] { background: #fff; color: var(--color-night, #1a1033); }
+  .sb-chips button[aria-pressed="true"] { background: var(--ink-fixed); color: #fff; }
 
   .sb-main { padding: 0 12px; }
   .sb-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -206,3 +196,60 @@
   .sb-grab { display: block; }
 }
 @media (max-width: 380px) { .sb-grid { gap: 8px; } .sb-card { padding: 10px; } }
+
+
+/* ============================================================
+   Event board look: flat colour, ink outlines, hard shadows. No gradients, no emoji.
+   ============================================================ */
+:root[data-theme='dark'] .page.sb { --sb-ink: var(--color-ink); --sb-muted: var(--color-ink-soft); --sb-line: rgba(255, 255, 255, 0.16); }
+
+.sb-hero { padding: 22px 22px 20px; background: var(--pop-gold); color: var(--ink-fixed); border: 2.5px solid var(--edge); border-radius: 20px; box-shadow: 6px 6px 0 var(--edge); }
+.sb-title { color: var(--ink-fixed); font-weight: 800; letter-spacing: -0.035em; }
+.sb-sub { color: var(--ink-fixed); opacity: 0.8; font-weight: 600; }
+.sb-search { border: 2px solid var(--ink-fixed); border-radius: 12px; background-color: #fff; color: var(--ink-fixed); box-shadow: 3px 3px 0 var(--ink-fixed); }
+.sb-search:focus { outline: 3px solid var(--ink-fixed); outline-offset: 2px; }
+.sb-filterbtn { border: 2px solid var(--ink-fixed); border-radius: 10px; background: #fff; color: var(--ink-fixed); box-shadow: 2px 2px 0 var(--ink-fixed); font-weight: 800; }
+.sb-filterbtn b { background: var(--ink-fixed); }
+
+.sb-side { background: var(--color-surface); border: 2px solid var(--edge); border-radius: 16px; box-shadow: var(--hard-sm); }
+.sb-sec { letter-spacing: 0; text-transform: none; font-size: 0.8rem; color: var(--sb-ink); }
+.sb-opts button { border-radius: 10px; font-weight: 700; }
+.sb-opts button:hover { background: var(--color-chip-a-bg); }
+.sb-opts button[aria-pressed="true"] { background: var(--pop-gold); color: var(--ink-fixed); box-shadow: inset 0 0 0 2px var(--ink-fixed); }
+.sb-opts__e { border-radius: 8px; background: var(--color-neutral-soft); font-size: 0.78rem; font-weight: 800; }
+.sb-opts button[aria-pressed="true"] .sb-opts__e { background: var(--ink-fixed); color: #fff; }
+.sb-pills button { border: 2px solid var(--edge); border-radius: 10px; color: var(--sb-ink); }
+.sb-pills button.is-on { background: var(--pop-gold); border-color: var(--edge); color: var(--ink-fixed); }
+
+.sb-count { letter-spacing: 0; text-transform: none; font-size: 0.9rem; color: var(--sb-ink); }
+.sb-sort select { border: 2px solid var(--edge); border-radius: 10px; background: var(--color-surface); color: var(--sb-ink); }
+
+.sb-card { background: var(--solid); color: var(--ink-fixed); border: 2px solid var(--ink-fixed); border-radius: 16px; box-shadow: 4px 4px 0 var(--edge); transition: transform 0.12s, box-shadow 0.12s; }
+.sb-card:hover, .sb-card:focus-visible { transform: translate(-2px, -2px); box-shadow: 6px 6px 0 var(--edge); }
+.sb-card:active { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--edge); }
+.sb-cat { background: rgba(255, 255, 255, 0.8); border: 1.5px solid var(--ink-fixed); border-radius: 8px; color: var(--ink-fixed); }
+.sb-price { border-radius: 8px; background: var(--ink-fixed); color: #fff; }
+.sb-av { border-radius: 10px; background: #fff; border: 1.5px solid var(--ink-fixed); box-shadow: none; color: var(--ink-fixed); }
+.sb-host__name { color: var(--ink-fixed); opacity: 0.8; }
+.sb-card__top ~ .sb-host { padding-top: 8px; border-top: 2px dashed rgba(31, 29, 61, 0.4); }
+
+.sb-btn { border: 2px solid var(--edge); border-radius: 10px; background: var(--color-surface); color: var(--sb-ink); box-shadow: 3px 3px 0 var(--edge); }
+.sb-btn:hover:not(:disabled) { background: var(--color-surface); transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--edge); }
+.sb-btn:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: 1px 1px 0 var(--edge); }
+.sb-btn--solid, .sb-btn--solid:hover:not(:disabled) { background: var(--pop-pink); border-color: var(--edge); color: #fff; }
+.sb-pager__btn { border: 2px solid var(--edge); border-radius: 10px; color: var(--sb-ink); background: var(--color-surface); }
+.sb-pager__btn:hover:not(:disabled) { background: var(--pop-gold); color: var(--ink-fixed); }
+
+.sb-pop__card { background: var(--solid); color: var(--ink-fixed); border: 2.5px solid var(--ink-fixed); border-radius: 20px; box-shadow: 8px 8px 0 var(--edge); }
+.sb-pop__close { border: 2px solid var(--ink-fixed); border-radius: 10px; background: #fff; }
+.sb-pop__bio { border: 1.5px solid var(--ink-fixed); border-radius: 12px; background: rgba(255, 255, 255, 0.75); }
+.sb-pop__line { display: flex; align-items: center; gap: 6px; }
+.sb-pop__actions .sb-btn { background: #fff; color: var(--ink-fixed); }
+.sb-pop__actions .sb-btn--solid { background: var(--pop-pink); color: #fff; }
+@media (max-width: 899px) { .sb-pop__card { border-radius: 20px 20px 0 0; } .sb-side { border-radius: 0 16px 16px 0; } }
+@media (max-width: 720px) {
+  .page.sb { padding: 12px 12px 32px; }
+  .sb-hero { border-radius: 16px; padding: 14px; box-shadow: 4px 4px 0 var(--edge); }
+  .sb-main { padding: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .sb-card { transition: none; } }

@@ -8,6 +8,7 @@ import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
+import { Icon } from './icons';
 import { useAlerts } from '../context/AlertsContext';
 import './alerts.css';
 
@@ -86,13 +87,13 @@ export function NavBar() {
             <div className="nb-alerts" role="status" aria-live="polite">
               {messages > 0 && (
                 <NavLink to="/chat" className="nb-alert nb-alert--msg" onClick={closeMenu} title="Unread messages">
-                  <span aria-hidden="true">💬</span><Count n={messages} label={messages === 1 ? 'unread message' : 'unread messages'} />
+                  <Icon name="chat" size={16} /><Count n={messages} label={messages === 1 ? 'unread message' : 'unread messages'} />
                   <span className="nb-alert__txt">{messages === 1 ? 'New message' : 'New messages'}</span>
                 </NavLink>
               )}
               {missedCalls > 0 && (
                 <NavLink to="/calls" className="nb-alert nb-alert--call" onClick={closeMenu} title="Missed calls">
-                  <span aria-hidden="true">📵</span><Count n={missedCalls} label={missedCalls === 1 ? 'missed call' : 'missed calls'} />
+                  <Icon name="phone" size={16} /><Count n={missedCalls} label={missedCalls === 1 ? 'missed call' : 'missed calls'} />
                   <span className="nb-alert__txt">{missedCalls === 1 ? 'Missed call' : 'Missed calls'}</span>
                 </NavLink>
               )}
@@ -148,7 +149,7 @@ export function NavBar() {
                     aria-pressed={soundOn}
                     title="Beep when a new message arrives"
                   >
-                    <span aria-hidden="true">{soundOn ? '\u{1F514}' : '\u{1F515}'}</span> {soundOn ? 'Sound on' : 'Sound off'}
+                    <Icon name={soundOn ? 'bell' : 'bellOff'} size={16} /> {soundOn ? 'Sound on' : 'Sound off'}
                   </button>
                   <button type="button" className="navbar__act navbar__act--out" onClick={handleLogout}>Log out</button>
                 </div>

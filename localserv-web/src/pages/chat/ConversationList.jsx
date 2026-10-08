@@ -14,6 +14,7 @@ import './group.css';
 import Chopper from '../../components/Chopper';
 import { presenceLabel } from '../../utils/presence';
 import { archiveHint, isShelved, startedLabel } from '../../utils/chatAge';
+import { Icon } from '../../components/icons';
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
@@ -211,7 +212,7 @@ export default function ConversationList() {
           const name = isGroup ? (c.title || 'Group chat') : (profile?.username || '…');
           const preview = c.last_message
             ? (c.last_message.body === null ? 'Message deleted'
-              : c.last_message.body || (c.last_message.attachment_type === 'audio' ? '🎤 Voice message' : '📷 Photo'))
+              : c.last_message.body || (c.last_message.attachment_type === 'audio' ? 'Voice message' : 'Photo'))
             : 'Nothing yet. Be brave, say hi.';
           // In a group, say who wrote the last message.
           const lastSender = isGroup && c.last_message
@@ -223,7 +224,7 @@ export default function ConversationList() {
             <li key={c.id} className="inbox__item" style={{ '--i': Math.min(i, 10) }}>
               <Link to={`/chat/${c.id}`} className={`drop-row${unread ? ' drop-row--unread' : ''}${view === 'archived' ? ' drop-row--shelved' : ''}`}>
                 <span className="avatar-wrap">
-                  <span className="avatar" aria-hidden="true">{isGroup ? '👥' : name[0]?.toUpperCase()}</span>
+                  <span className="avatar" aria-hidden="true">{isGroup ? <Icon name="users" size={20} /> : name[0]?.toUpperCase()}</span>
                   {presence?.online && <span className="dot-online" role="img" aria-label="Online" />}
                 </span>
 
@@ -253,7 +254,7 @@ export default function ConversationList() {
                   onClick={() => archiveOne(c)}
                   aria-label={`Archive chat with ${name}`}
                 >
-                  Archive
+                  <Icon name="archive" size={18} /><span className="inbox__archive-txt">Archive</span>
                 </button>
               ) : (
                 <button
@@ -262,7 +263,7 @@ export default function ConversationList() {
                   onClick={() => restore(c.id)}
                   aria-label={`Move chat with ${name} back to inbox`}
                 >
-                  Unarchive
+                  <Icon name="unarchive" size={18} /><span className="inbox__archive-txt">Unarchive</span>
                 </button>
               )}
             </li>
