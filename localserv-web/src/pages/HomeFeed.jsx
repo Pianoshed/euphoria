@@ -113,6 +113,8 @@ export default function HomeFeed() {
 
   return (
     <div className="page hf">
+      <div className="hf-layout">
+      <div className="hf-rail">
       {/* ---------- header: tinted panel, accent bar down the left, meters along the bottom ---------- */}
       <header className="hf-hero" data-tint="gold">
         <div className="hf-hero__main">
@@ -150,8 +152,9 @@ export default function HomeFeed() {
           </Link>
         ))}
       </nav>
+      </div>
 
-      <div className="hf-body">
+
         {/* ---------- side rail: what needs you right now ---------- */}
         <aside className="hf-side">
           {next && (
