@@ -52,7 +52,7 @@ function Section({ title, to, cta = 'See all', children, delay = 0 }) {
 }
 
 export default function HomeFeed() {
-  usePageBackdrop('couples');
+  usePageBackdrop('scene'); // same night-scene artwork as the page before login
   const { user } = useAuth();
   const alerts = useAlerts();
   const fullName = user?.display_name || user?.username || '';
@@ -146,6 +146,7 @@ export default function HomeFeed() {
         </Link>
       )}
 
+      <div className="hf-cols">
       {/* ---------- Square: stories ---------- */}
       <Section title="🌳 On the Square" to="/square" cta="Open" delay={1}>
         <div className="hf-rings" aria-label="Statuses from your people">
@@ -194,6 +195,7 @@ export default function HomeFeed() {
           })}
         </ul>
       </Section>
+      </div>
 
       {/* ---------- thoughts ---------- */}
       {topThoughts.length > 0 && (

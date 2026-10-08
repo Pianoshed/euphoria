@@ -58,13 +58,27 @@ class SquareBackend(APITestCase):
         self.assertEqual(len(self.cl["a"].get(f"{BASE}/thoughts/").json()), 1)
 
     # ---------- labels ----------
-    def test_owner_sees_labels_member_does_not(self):
+    def test_owner_sees_names_member_sees_only_own_spot(self):
         t = next(t for t in self.cl["a"].get(f"{BASE}/trees/").json() if t["title"] == "Mine")
         self.assertEqual(t["members"][0]["label"], "family")
-        self.assertEqual(t["labels"], {str(self.b.id): "family"})
+        self.assertEqual(t["members"][0]["name"], "B")
+        self.cl["a"].patch(f"{BASE}/trees/{self.mine['id']}/", {
+            "members": [str(self.b.id), str(self.c.id)], "labels": {str(self.c.id): "work"}}, format="json")
         tb = next(t for t in self.cl["b"].get(f"{BASE}/trees/").json() if t["title"] == "Mine")
-        self.assertNotIn("label", tb["members"][0]); self.assertNotIn("labels", tb)
-        self.assertNotIn("family", str(tb))
+        by_id = {m["id"]: m for m in tb["members"]}
+        me, other = by_id[str(self.b.id)], by_id[str(self.c.id)]
+        self.assertEqual((me["name"], me["label"]), ("B", "family"))        # my own spot: named, with my tier
+        self.assertTrue(other["hidden"]); self.assertEqual(other["name"], "")  # everyone else: anonymous
+        self.assertEqual(other["label"], "work")                              # but the skeleton keeps its shape
+        self.assertNotIn("C", str(tb["members"]))
+        self.assertFalse(tb["mine"])
+
+    def test_tagged_friend_can_leave_but_not_delete(self):
+        r = self.cl["b"].delete(f"{BASE}/trees/{self.mine['id']}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(self.cl["b"].get(f"{BASE}/trees/{self.mine['id']}/").status_code, 404)  # gone for them
+        owner_view = next(t for t in self.cl["a"].get(f"{BASE}/trees/").json() if t["title"] == "Mine")
+        self.assertEqual(owner_view["members"], [])  # the tree itself survives
 
     def test_default_label_is_friends(self):
         r = self.cl["a"].post(f"{BASE}/trees/", {"title": "plain", "members": [str(self.c.id)]}, format="json").json()

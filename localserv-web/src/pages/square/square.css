@@ -325,8 +325,16 @@
 .sq-fab[hidden]{display:none}
 
 /* tagged accounts: read-only tree, only my own spot glows */
-.sq-viewonly{display:flex;align-items:center;gap:6px;margin:0 0 8px;padding:7px 10px;border-radius:12px;font-size:.75rem;font-weight:600;line-height:1.35;color:var(--color-ink-soft);background:color-mix(in srgb,var(--color-violet) 9%,var(--color-surface));border:1px dashed color-mix(in srgb,var(--color-violet) 35%,transparent)}
+.sq-viewonly{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:7px 10px;border-radius:12px;font-size:.75rem;font-weight:600;line-height:1.35;color:var(--color-ink-soft);background:color-mix(in srgb,var(--color-violet) 9%,var(--color-surface));border:1px dashed color-mix(in srgb,var(--color-violet) 35%,transparent)}
 .sq-bub--you i{box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-accent),0 0 14px 4px color-mix(in srgb,var(--color-accent) 55%,transparent);animation:sq-glow 1.8s ease-in-out infinite}
 .sq-bub--you small{color:var(--color-accent);font-weight:800}
 @keyframes sq-glow{50%{box-shadow:0 0 0 2px var(--color-surface),0 0 0 4px var(--color-accent),0 0 22px 8px color-mix(in srgb,var(--color-accent) 70%,transparent)}}
 @media (prefers-reduced-motion:reduce){.sq-bub--you i{animation:none}}
+
+.sq-viewonly__txt{flex:1;min-width:0}
+.sq-viewonly__leave{flex:none;min-height:32px;padding:4px 12px;border-radius:99px;border:1.5px solid var(--color-danger);background:transparent;color:var(--color-danger);font:inherit;font-size:.72rem;font-weight:800;cursor:pointer}
+.sq-viewonly__leave:hover{background:var(--color-danger-soft)}
+
+/* someone else in a tree I was tagged in: a fruit / gift in their place, not tappable */
+.sq-bub--fruit{cursor:default;pointer-events:none}
+.sq-bub--fruit i{background:color-mix(in srgb,var(--c,var(--color-violet)) 14%,var(--color-surface))!important;border:2px dashed color-mix(in srgb,var(--c,var(--color-violet)) 55%,transparent);font-size:1.15em;line-height:1}

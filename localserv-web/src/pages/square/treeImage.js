@@ -1,5 +1,5 @@
 // Draws a friend tree to a PNG with plain canvas (no libraries, initials only, no remote images).
-import { circleMeta, labelFor } from './circles';
+import { CIRCLES, circleMeta, fruitFor, hasLabels, labelFor } from './circles';
 
 const W = 1080;
 const INK = '#1f1d3d';
@@ -22,18 +22,19 @@ function wrap(ctx, text, max) {
   return lines.slice(0, 3);
 }
 
-function bubble(ctx, x, y, r, name, color) {
+function bubble(ctx, x, y, r, name, color, glyph) {
   ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fillStyle = color; ctx.fill();
   ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(r * 0.95)}px system-ui, sans-serif`;
+  if (glyph) { ctx.font = `${Math.round(r * 1.05)}px system-ui, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif`; ctx.fillText(glyph, x, y + 3); return; }
   ctx.fillText((name || '?').charAt(0).toUpperCase(), x, y + 2);
 }
 
 export function drawTree(tree) {
   const members = tree.members || [];
-  const mine = !!tree.mine;
+  const mine = hasLabels(tree); // same structured picture for the owner and everyone tagged in it
   const partners = mine ? members.filter((m) => labelFor(tree, m) === 'partner') : [];
   // tiers hang down the trunk, closest first (family, besties, friends...); partner is attached to the owner instead
   const tiers = (mine
@@ -83,9 +84,9 @@ export function drawTree(tree) {
   partners.forEach((m, k) => {
     const side = k % 2 === 0 ? 1 : -1;
     const x = W / 2 + side * (82 + Math.floor(k / 2) * 76);
-    bubble(ctx, x, oy + 10, 42, m.name, circleMeta('partner').color);
+    bubble(ctx, x, oy + 10, 42, m.name, circleMeta('partner').color, m.hidden ? fruitFor(m.id) : null);
     ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 21px system-ui, sans-serif';
-    ctx.fillText(fit(ctx, m.name, 150), x, oy + 86);
+    if (!m.hidden) ctx.fillText(fit(ctx, m.name, 150), x, oy + 86);
     const jx = x - side * 46;                                   // little heart where the two bubbles meet
     ctx.beginPath(); ctx.arc(jx, oy - 24, 14, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill();
     ctx.fillStyle = '#c2275f'; ctx.font = '700 18px system-ui, sans-serif'; ctx.textBaseline = 'middle'; ctx.fillText('♥', jx, oy - 23);
@@ -102,9 +103,9 @@ export function drawTree(tree) {
       const inRow = row === L.rows - 1 ? L.people.length - row * L.perRow : L.perRow;
       const x = (W - inRow * L.cell) / 2 + (i - row * L.perRow) * L.cell + L.cell / 2;
       const yy = L.firstY + row * (L.r * 2 + 58);
-      bubble(ctx, x, yy, L.r, m.name, L.color);
+      bubble(ctx, x, yy, L.r, m.name, L.color, m.hidden ? fruitFor(m.id) : null);
       ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.font = '600 20px system-ui, sans-serif';
-      ctx.fillText(fit(ctx, m.name, L.cell - 8), x, yy + L.r + 30);
+      if (!m.hidden) ctx.fillText(fit(ctx, m.name, L.cell - 8), x, yy + L.r + 30);
     });
   });
 

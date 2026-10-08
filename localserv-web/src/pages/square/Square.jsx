@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/square';
 import { shrinkImage, shrinkVideo, MAX_VIDEO_SECONDS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
-import { CIRCLES, SHARED, circleMeta, labelFor, saveLocalLabels } from './circles';
+import { CIRCLES, SHARED, circleMeta, fruitFor, hasLabels, labelFor, saveLocalLabels } from './circles';
 import './square.css';
 
 const EMOJI = ['🔥', '😂', '❤️', '😮', '👏'];
@@ -166,6 +166,15 @@ function ConfirmDialog({ title, body, okLabel = 'Confirm', danger, onOk, onClose
 
 /* ---------- friend trees ---------- */
 function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
+  // hidden = someone else in a tree I was tagged in: shown only as a fruit/gift so the shape stays but the person doesn't
+  if (person.hidden) {
+    return (
+      <span className="sq-bub sq-bub--fruit" style={color ? { '--c': color } : undefined} role="img" aria-label="Someone else in this tree">
+        <i aria-hidden="true">{fruitFor(person.id)}</i>
+        <small aria-hidden="true">&nbsp;</small>
+      </span>
+    );
+  }
   return (
     <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${mid ? ' sq-bub--mid' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}${you ? ' sq-bub--you' : ''}`}
       style={color ? { '--c': color } : undefined} onClick={onClick}
@@ -180,7 +189,7 @@ function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
 function TreeCard({ tree, onOpen }) {
   const counts = useMemo(() => {
     const c = {};
-    if (tree.mine) tree.members.forEach((m) => { const k = labelFor(tree, m); c[k] = (c[k] || 0) + 1; });
+    if (hasLabels(tree)) tree.members.forEach((m) => { const k = labelFor(tree, m); c[k] = (c[k] || 0) + 1; });
     return CIRCLES.filter((x) => c[x.key]).map((x) => ({ circle: x, n: c[x.key] }));
   }, [tree]);
   const faces = tree.members.slice(0, 4);
@@ -188,7 +197,7 @@ function TreeCard({ tree, onOpen }) {
     <button type="button" className="sq-card sq-tcard" onClick={() => onOpen(tree)}>
       <span className="sq-stack" aria-hidden="true">
         {faces.map((m, i) => (
-          <i key={m.id} style={{ '--c': tree.mine ? circleMeta(labelFor(tree, m)).color : 'var(--color-violet)', zIndex: 5 - i }}>{initial(m.name)}</i>
+          <i key={m.id} style={{ '--c': hasLabels(tree) ? circleMeta(labelFor(tree, m)).color : 'var(--color-violet)', zIndex: 5 - i }}>{m.hidden ? fruitFor(m.id) : initial(m.name)}</i>
         ))}
         {tree.members.length > 4 && <i className="sq-stack__more">+{tree.members.length - 4}</i>}
       </span>
@@ -225,12 +234,13 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
 
   // Hierarchy on my own trees: partner(s) are attached to me, then tiers hang down the trunk in order of closeness
   // (family, besties, friends...). One plain tier on trees I was tagged in (those labels are the owner's view).
-  const partners = useMemo(() => (tree.mine ? tree.members.filter((m) => labelFor(tree, m) === 'partner') : []), [tree]);
+  const structured = hasLabels(tree);
+  const partners = useMemo(() => (structured ? tree.members.filter((m) => labelFor(tree, m) === 'partner') : []), [tree, structured]);
   const groups = useMemo(() => {
-    if (!tree.mine) return [{ key: 'in', label: 'In this tree', emoji: '🌳', color: 'var(--color-violet)', people: tree.members }];
+    if (!structured) return [{ key: 'in', label: 'In this tree', emoji: '🌳', color: 'var(--color-violet)', people: tree.members }];
     return CIRCLES.filter((c) => c.key !== 'partner')
       .map((c) => ({ ...c, people: tree.members.filter((m) => labelFor(tree, m) === c.key) })).filter((g) => g.people.length);
-  }, [tree]);
+  }, [tree, structured]);
 
   const download = async () => {
     try {
@@ -287,7 +297,13 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
             <button type="button" className="sq-x sq-x--soft" onClick={close} aria-label="Close">✕</button>
           </header>
           {tree.note && <p className="sq-hint">{tree.note}</p>}
-          {!owner && <p className="sq-viewonly"><span aria-hidden="true">👀</span> View only. {tree.owner.name} planted this tree; your spot is the one that glows.</p>}
+          {!owner && (
+            <div className="sq-viewonly">
+              <span aria-hidden="true">👀</span>
+              <span className="sq-viewonly__txt">View only. {tree.owner.name} planted this tree; your spot is the one that glows. Everyone else stays hidden as 🍎🎁.</span>
+              <button type="button" className="sq-viewonly__leave" onClick={() => onLeave(tree)}>Remove me</button>
+            </div>
+          )}
           <div className={`sq-tree${edit ? ' is-editing' : ''}`}>
             <div className="sq-core">
               <Bubble person={tree.owner} big you={isMe(tree.owner)} live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
@@ -329,9 +345,10 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
   );
 }
 
-function MemberSheet({ tree, person, status, canEdit, onLabel, onStatus, onRemove, onClose }) {
+function MemberSheet({ tree, person, status, canEdit, meId, onLabel, onStatus, onRemove, onLeave, onClose }) {
   const isOwner = String(tree.owner.id) === String(person.id);
-  const current = !isOwner && tree.mine ? labelFor(tree, person) : null;
+  const current = !isOwner && hasLabels(tree) ? labelFor(tree, person) : null;
+  const itsMe = !canEdit && !isOwner && meId != null && String(person.id) === String(meId);
   return (
     <Overlay sheet label={person.name} onClose={onClose}>
       {(close) => (
@@ -365,6 +382,9 @@ function MemberSheet({ tree, person, status, canEdit, onLabel, onStatus, onRemov
           </div>
           {canEdit && !isOwner && (
             <button type="button" className="sq-link sq-link--danger" onClick={() => { close(); setTimeout(() => onRemove(tree, person), 190); }}>Remove from tree</button>
+          )}
+          {itsMe && (
+            <button type="button" className="sq-link sq-link--danger" onClick={() => { close(); setTimeout(() => onLeave(tree), 190); }}>Remove me from this tree</button>
           )}
           <button type="button" className="sq-link" onClick={close}>Done</button>
         </div>
@@ -668,13 +688,23 @@ export default function Square() {
     pop(`Added ${plural(ids.length, 'person', 'people')}`);
   };
   const leaveTree = (t) => setConfirm({
-    title: ownsTree(t) ? 'Delete this tree?' : 'Leave this tree?',
-    body: ownsTree(t) ? 'It will be removed for everyone in it.' : 'You will no longer see it or appear in it.',
-    okLabel: ownsTree(t) ? 'Delete tree' : 'Leave tree',
+    title: ownsTree(t) ? 'Delete this tree?' : 'Remove yourself from this tree?',
+    body: ownsTree(t) ? 'It will be removed for everyone in it.' : 'You will no longer see it or appear in it. Only the owner can add you back.',
+    okLabel: ownsTree(t) ? 'Delete tree' : 'Remove me',
     danger: true,
     onOk: async () => {
-      try { await api.removeTree(t.id); setTrees((cur) => cur.filter((x) => x.id !== t.id)); pop(ownsTree(t) ? 'Tree deleted' : 'You left the tree'); }
-      catch { pop('Could not do that'); }
+      try {
+        try { await api.removeTree(t.id); }
+        catch (e) {
+          // Some servers only let the owner DELETE; a tagged person can still be taken out by updating the member list.
+          if (ownsTree(t) || ![403, 404, 405].includes(e?.status)) throw e;
+          const rest = t.members.filter((m) => String(m.id) !== String(user?.id)).map((m) => m.id);
+          await api.updateTree(t.id, { members: rest });
+        }
+        setTrees((cur) => cur.filter((x) => x.id !== t.id));
+        setSheetId(null); setMember(null);
+        pop(ownsTree(t) ? 'Tree deleted' : 'You removed yourself from the tree');
+      } catch (e) { pop(e?.body?.detail || 'Could not do that'); }
     },
   });
   const choose = (fn) => { setDial(false); setDrawer(null); fn(); };
@@ -879,7 +909,7 @@ export default function Square() {
       )}
       {memberTree && (
         <MemberSheet tree={memberTree} person={member.person} status={statusByUser[member.person.id]}
-          canEdit={ownsTree(memberTree)} onLabel={setLabel} onRemove={removeMember} onClose={() => setMember(null)}
+          canEdit={ownsTree(memberTree)} meId={user?.id} onLabel={setLabel} onRemove={removeMember} onLeave={leaveTree} onClose={() => setMember(null)}
           onStatus={(st) => { setMember(null); setSheetId(null); open(st); }} />
       )}
       {thinking && <ThoughtSheet onClose={() => setThinking(false)} onPosted={(t) => { setThoughts((cur) => [t, ...cur]); setTab('thoughts'); load(); }} />}

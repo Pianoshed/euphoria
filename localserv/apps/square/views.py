@@ -206,20 +206,23 @@ def _visible(user):
 
 
 def _tree(request, t):
+    """The owner sees everyone. A tagged person sees the same tree *shape* (partner beside the owner, tiers down
+    the trunk) but only their OWN spot by name: everyone else comes back as an anonymous placeholder
+    (hidden=True, no name), so who sits in which tier stays private."""
     mine = t.owner_id == request.user.id
     members = []
     for m in t.members.all():
-        w = _who(m.user)
-        if mine:  # labels are the owner's private view of people; tagged friends never get them
-            w["label"] = m.label
+        if mine or m.user_id == request.user.id:
+            w = _who(m.user)
+        else:
+            w = {"id": str(m.user_id), "name": "", "hidden": True}
+        w["label"] = m.label
         members.append(w)
-    out = {
+    return {
         "id": str(t.id), "title": t.title, "note": t.note, "created_at": t.created_at,
         "owner": _who(t.owner), "mine": mine, "members": members,
+        "labels": {m["id"]: m["label"] for m in members},
     }
-    if mine:
-        out["labels"] = {m["id"]: m["label"] for m in members}
-    return out
 
 
 def _labels_in(raw):

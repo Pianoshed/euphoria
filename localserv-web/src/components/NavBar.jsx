@@ -7,6 +7,7 @@ import { isStaff } from '../utils/permissions';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { isSoundOn, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
+import { ThemeToggle } from './ThemeToggle';
 import { useAlerts } from '../context/AlertsContext';
 import './alerts.css';
 
@@ -97,6 +98,8 @@ export function NavBar() {
               )}
             </div>
 
+            <ThemeToggle />
+
             <button
               type="button"
               className="navbar__toggle"
@@ -154,6 +157,7 @@ export function NavBar() {
           </>
         ) : (
           <div className="navbar__user">
+            <ThemeToggle />
             <NavLink to="/login" className="btn btn--ghost btn--sm">Log in</NavLink>
             <NavLink to="/register" className="btn btn--primary btn--sm">Sign up</NavLink>
           </div>

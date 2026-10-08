@@ -14,7 +14,10 @@ import '@fontsource/manrope/700.css';
 // Replaces the old reset / tokens / global / components / marketing-auth imports.
 import './styles/index.css';
 
+import { initTheme } from './utils/theme';
 import App from './App.jsx'
+
+initTheme(); // set data-theme before the first paint
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>

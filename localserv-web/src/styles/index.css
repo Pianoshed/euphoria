@@ -11,6 +11,7 @@
  *   reset.css          exact duplicate of global.css
  */
 @import './tokens.css';
+@import './theme.css';
 @import './global.css';
 @import './components.css';
 @import './euphoria-home.css';

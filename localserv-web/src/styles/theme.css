@@ -1,0 +1,84 @@
+/* ============================================================
+   Light / dark theme.
+   Light is the default token set in tokens.css. Dark re-maps the
+   same tokens, so every page that reads var(--color-*) follows.
+   The switch lives on <html data-theme="dark|light"> (utils/theme.js).
+   ============================================================ */
+
+:root { color-scheme: light; }
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-bg: #120C24;
+  --color-surface: #1D1535;
+  --color-ink: #F5EFFB;
+  --color-ink-soft: #B9AFCF;
+  --color-primary: #D63471;        /* white text on it stays 4.6:1 */
+  --color-primary-deep: #B8285F;
+  --color-line: #33284F;
+  --color-line-strong: #4A3D6C;
+  --color-star: #F2B53C;
+
+  --color-chip-a-bg: #3B1A33;
+  --color-chip-a-ink: #FF9EC1;
+  --color-chip-b-bg: #2C2459;
+  --color-chip-b-ink: #CBBBFF;
+  --color-chip-c-bg: #3A2D12;
+  --color-chip-c-ink: #FFD98A;
+
+  --color-success: #5FD6A6;
+  --color-success-soft: #123A2E;
+  --color-danger: #FF8C9D;
+  --color-danger-soft: #41151F;
+  --color-neutral-soft: #2A2142;
+
+  --shadow-card: 0 12px 30px -18px rgba(0, 0, 0, 0.7);
+}
+
+/* smooth switch, but never when the person asked for less motion */
+@media (prefers-reduced-motion: no-preference) {
+  body, .navbar, .card, .btn, .input, .select, .textarea, .pill {
+    transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease;
+  }
+}
+
+/* never let a stray wide element make the whole page wobble sideways on phones */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+body { overflow-x: clip; }
+img, svg, video, canvas { max-width: 100%; }
+
+/* ---- the toggle button ---- */
+.theme-toggle {
+  display: inline-grid; place-items: center; flex: none;
+  width: 2.5rem; height: 2.5rem; padding: 0; border-radius: 50%;
+  border: 1px solid var(--color-line-strong); background: transparent;
+  font-size: 1.1rem; line-height: 1; cursor: pointer;
+  transition: transform 120ms ease, background-color 160ms ease;
+}
+.theme-toggle:hover { background: var(--color-chip-a-bg); }
+.theme-toggle:active { transform: scale(0.92); }
+@media (max-width: 1099px) {
+  .theme-toggle + .navbar__toggle { margin-left: 0; }
+  .nb-alerts + .theme-toggle { margin-left: 0; }
+}
+@media (min-width: 1100px) { .theme-toggle { order: 4; } }
+
+/* ---- dark fixes for spots that had light colours baked in ---- */
+:root[data-theme='dark'] .navbar { background: rgba(29, 21, 53, 0.92); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+:root[data-theme='dark'] .navbar__backdrop { background: rgba(5, 2, 16, 0.6); }
+:root[data-theme='dark'] .alert--error { border-color: #7A2A3A; }
+:root[data-theme='dark'] .alert--success { border-color: #1F6B52; }
+:root[data-theme='dark'] .alert--info { border-color: #7A3A66; }
+:root[data-theme='dark'] .btn--danger:hover:not(:disabled) { background: #B92B40; border-color: #B92B40; }
+:root[data-theme='dark'] .e-hangout { background: linear-gradient(180deg, #281D45, var(--color-surface)); }
+:root[data-theme='dark'] .e-cta-band p { color: var(--color-on-night-soft); }
+:root[data-theme='dark'] .e-cta-band::after { mix-blend-mode: normal; opacity: 0.35; }
+:root[data-theme='dark'] body[data-backdrop] .empty-state { background: rgba(29, 21, 53, 0.78); }
+:root[data-theme='dark'] .qr-box { background: #fff; } /* QR codes must stay black on white */
+@media (max-width: 1099px) {
+  :root[data-theme='dark'] .navbar__links a.navbar__me,
+  :root[data-theme='dark'] .navbar__links a.navbar__me:hover {
+    background: linear-gradient(135deg, #3B2D5E 0%, #4A2B52 55%, #2C2459 100%); color: var(--color-ink);
+  }
+}

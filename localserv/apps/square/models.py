@@ -101,7 +101,7 @@ class FriendTree(BaseModel):
 
 
 class Circle(models.TextChoices):
-    """How the tree OWNER knows a person. Private to the owner: never sent to anyone else."""
+    """How the tree OWNER knows a person. The owner sees who is in which circle; tagged people only see the tree's shape and their own spot (see views._tree). Only the owner can change it."""
 
     FAMILY = "family", "Family"
     PARTNER = "partner", "Partner"

@@ -35,3 +35,17 @@ export const saveLocalLabels = (treeId, map) => {
 const valid = (k) => (k && BY_KEY[k] && k !== 'shared' ? k : null);
 export const labelFor = (tree, member) =>
   valid(member.label) || valid(tree.labels?.[member.id]) || valid(read()[tree.id]?.[member.id]) || DEFAULT_CIRCLE;
+
+// True when we know how the owner labelled people in this tree: always for the owner, and for anyone tagged
+// as soon as the server sends labels back (member.label or tree.labels). Drives the structured tree
+// (partner beside owner, tiers down the trunk) so every viewer sees the same picture the creator sees.
+export const hasLabels = (tree) =>
+  !!tree.mine || (tree.members || []).some((m) => valid(m.label) || valid(tree.labels?.[m.id]));
+
+// Tagged people see only their own spot by name; everyone else in the tree is hidden and drawn as a fruit or a gift.
+const FRUITS = ['🍎', '🍊', '🍇', '🍓', '🍑', '🍋', '🍐', '🥭', '🍒', '🎁'];
+export const fruitFor = (id) => {
+  let h = 0;
+  String(id).split('').forEach((c) => { h = (h * 31 + c.charCodeAt(0)) >>> 0; });
+  return FRUITS[h % FRUITS.length];
+};
