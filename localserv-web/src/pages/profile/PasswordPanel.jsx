@@ -1,69 +1,54 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import * as accountsApi from '../../api/accounts';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert } from '../../components/ui';
 
-const MIN_LENGTH = 10; // matches min_length on the backend PasswordChangeSerializer
+const RESEND_COOLDOWN_SECONDS = 60;
 
 // Does this account have a password yet? Accounts created with Google start without one.
-// true / false when the profile API says so, null when it doesn't (older API).
-function passwordStatus(user) {
+function hasPassword(user) {
   if (typeof user?.has_usable_password === 'boolean') return user.has_usable_password;
   if (typeof user?.has_password === 'boolean') return user.has_password;
-  return null;
+  return true;
+}
+
+// j***@gmail.com
+function maskEmail(email) {
+  const [name, domain] = (email || '').split('@');
+  if (!name || !domain) return 'your email address';
+  return `${name[0]}${'*'.repeat(Math.max(name.length - 1, 2))}@${domain}`;
 }
 
 /**
- * Set or change the account password, right in the profile's Security section.
- *  - Google-only account (no password yet): "Set a password", no current password asked.
- *  - Account with a password: "Change your password", current password required.
- *  - Can't tell: current password is optional, with a hint for Google sign-ups.
+ * Change or set the password by email. No "old password / new password" form: the link proves
+ * the person controls the mailbox, then the reset page lets them choose the new password.
+ * That also works when the old password is forgotten, and for Google-only accounts.
  */
 export default function PasswordPanel() {
-  const { user, refreshSession } = useAuth();
-  const status = passwordStatus(user);
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [show, setShow] = useState(false);
+  const { user } = useAuth();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-  const [done, setDone] = useState('');
+  const [sent, setSent] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  useEffect(() => {
+    if (cooldown <= 0) return undefined;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
 
   if (!user) return null;
 
-  const needsCurrent = status !== false;
-  const title = status === false ? 'Set a password' : status === true ? 'Change your password' : 'Password';
-  const lede = status === false
-    ? `You signed in with Google, so this account has no password yet. Set one to also log in with ${user.email || 'your email'}.`
-    : status === null
-      ? 'Signed up with Google? Leave the current password empty to set your first one.'
-      : 'Pick something you do not use anywhere else.';
-  const type = show ? 'text' : 'password';
+  const has = hasPassword(user);
+  const target = maskEmail(user.email);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSend = async () => {
     setError(null);
-    setDone('');
-    if (next.length < MIN_LENGTH) {
-      setError(new Error(`Use at least ${MIN_LENGTH} characters for the new password.`));
-      return;
-    }
-    if (next !== confirm) {
-      setError(new Error('The two new passwords do not match.'));
-      return;
-    }
     setBusy(true);
     try {
-      await accountsApi.changePassword(current, next);
-      await refreshSession(); // the account now has a password, so this panel switches to "Change"
-      setCurrent('');
-      setNext('');
-      setConfirm('');
-      setDone(status === true
-        ? 'Password changed.'
-        : `Password saved. You can now log in with ${user.email || 'your email'} and this password, or keep using Google.`);
+      await accountsApi.requestOwnPasswordReset();
+      setSent(true);
+      setCooldown(RESEND_COOLDOWN_SECONDS);
     } catch (err) {
       setError(err);
     } finally {
@@ -72,49 +57,27 @@ export default function PasswordPanel() {
   };
 
   return (
-    <form id="password" className="mp-pass" onSubmit={handleSubmit}>
-      <h3 className="mp-h3">{title}</h3>
-      <p className="mp-pass__lede">{lede}</p>
+    <div id="password" className="mp-pass">
+      <h3 className="mp-h3">{has ? 'Change your password' : 'Set a password'}</h3>
+      <p className="mp-pass__lede">
+        {has
+          ? `We will email a secure link to ${target}. Open it to choose a new password.`
+          : `You signed in with Google, so this account has no password yet. We will email a link to ${target} so you can also log in with your email.`}
+      </p>
 
       <ErrorAlert error={error} />
-      {done && <div className="alert alert--success" role="status">{done}</div>}
-
-      {/* helps password managers file the new password under the right login */}
-      <input type="text" name="username" autoComplete="username" value={user.email || user.username || ''} readOnly hidden />
-
-      {needsCurrent && (
-        <div className="field">
-          <label htmlFor="pw-current">
-            Current password{status === null ? ' (leave empty if you signed up with Google)' : ''}
-          </label>
-          <input id="pw-current" type={type} className="input" autoComplete="current-password"
-            required={status === true} value={current} onChange={(e) => setCurrent(e.target.value)} />
+      {sent && (
+        <div className="alert alert--success" role="status">
+          Link sent to {target}. It expires in 1 hour. Once you set the new password you will be signed
+          out on every device and asked to log in again.
         </div>
       )}
-      <div className="field">
-        <label htmlFor="pw-new">New password</label>
-        <input id="pw-new" type={type} className="input" autoComplete="new-password" required
-          minLength={MIN_LENGTH} value={next} onChange={(e) => setNext(e.target.value)} />
-        <small className="muted">At least {MIN_LENGTH} characters.</small>
-      </div>
-      <div className="field">
-        <label htmlFor="pw-confirm">Type the new password again</label>
-        <input id="pw-confirm" type={type} className="input" autoComplete="new-password" required
-          value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-      </div>
-
-      <label className="mp-pass__show">
-        <input type="checkbox" checked={show} onChange={(e) => setShow(e.target.checked)} /> Show passwords
-      </label>
 
       <div className="mp-pass__actions">
-        <button className="btn btn--primary" type="submit" disabled={busy}>
-          {busy ? 'Saving…' : status === false ? 'Set password' : status === true ? 'Change password' : 'Save password'}
+        <button className="btn btn--primary" type="button" onClick={handleSend} disabled={busy || cooldown > 0}>
+          {busy ? 'Sending…' : cooldown > 0 ? `Send again in ${cooldown}s` : sent ? 'Send the link again' : 'Email me a reset link'}
         </button>
-        {status !== false && (
-          <Link to="/password-reset" className="mp-pass__forgot">Forgot your current password?</Link>
-        )}
       </div>
-    </form>
+    </div>
   );
 }

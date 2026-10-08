@@ -23,12 +23,9 @@ export const requestPasswordReset = (email) =>
 export const confirmPasswordReset = (token, new_password) =>
   apiFetch('/api/accounts/password/reset/confirm/', { method: 'POST', body: { token, new_password } });
 
-// Accounts created with Google have no password yet, so old_password is only sent when there is one.
-export const changePassword = (old_password, new_password) =>
-  apiFetch('/api/accounts/password/change/', {
-    method: 'POST',
-    body: old_password ? { old_password, new_password } : { new_password },
-  });
+// Signed-in user: email a password-reset link to their own address (works for Google sign-ups with no password too).
+export const requestOwnPasswordReset = () =>
+  apiFetch('/api/accounts/password/reset/self/', { method: 'POST' });
 
 export const getMyProfile = () => apiFetch('/api/accounts/profile/me/');
 
