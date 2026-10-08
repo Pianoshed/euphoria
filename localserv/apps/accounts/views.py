@@ -23,7 +23,6 @@ from .serializers import (
     LoginMFASerializer,
     LoginSerializer,
     OnboardingCompleteSerializer,
-    PasswordChangeSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
     ProfilePrivacyUpdateSerializer,
@@ -155,21 +154,22 @@ class PasswordResetConfirmView(APIView):
         return Response({"detail": "Password reset successfully. Please log in again."})
 
 
-class PasswordChangeView(APIView):
+class PasswordResetSelfView(APIView):
+    """Signed-in user asks for a reset link to their OWN email address.
+
+    There is deliberately no "type your old + new password" endpoint: a stolen or
+    unattended session could use it to guess the current password, and anyone who
+    forgot the old password would be stuck. The link proves control of the mailbox,
+    then the normal reset-confirm page sets the new password (and signs out every session).
+    """
+
     permission_classes = [IsAuthenticated]
-    # Stops someone on a stolen/unattended session from guessing the current password.
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "password_change"
+    throttle_scope = "password_reset"
 
     def post(self, request):
-        serializer = PasswordChangeSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        services.change_password(
-            request.user,
-            keep_session_key=request.session.session_key,
-            **serializer.validated_data,
-        )
-        return Response({"detail": "Password changed successfully."})
+        services.request_password_reset(email=request.user.email)
+        return Response({"detail": "We've emailed a link to your address. It expires in 1 hour."})
 
 
 class SessionListView(APIView):

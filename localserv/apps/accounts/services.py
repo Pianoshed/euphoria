@@ -301,41 +301,6 @@ def confirm_password_reset(*, raw_token: str, new_password: str) -> User:
     return user
 
 
-def change_password(
-    user: User, *, new_password: str, old_password: str = "", keep_session_key: str | None = None
-) -> None:
-    """Change the password, or set the FIRST one for an account that has none.
-
-    Accounts created through Google sign-in have an unusable password, so there is no current
-    password to ask for. Anyone who already has a password must still prove they know it.
-    Either way every other session is signed out and an alert email goes to the owner.
-    """
-    had_password = user.has_usable_password()
-    if had_password and not user.check_password(old_password):
-        raise DomainError("Current password is incorrect.")
-    try:
-        validate_password(new_password, user=user)
-    except DjangoValidationError as exc:
-        raise ValidationError({"new_password": list(exc.messages)}) from exc
-
-    user.set_password(new_password)
-    user.save(update_fields=["password"])
-    _revoke_all_sessions(user, except_session_key=keep_session_key)
-    if had_password:
-        emails.send_security_alert_email(
-            user,
-            subject="Your password was changed",
-            body="Your password was just changed. If this wasn't you, contact support immediately.",
-        )
-    else:
-        emails.send_security_alert_email(
-            user,
-            subject="A password was added to your account",
-            body="A password was just set on your account, so you can now also log in with your email. "
-            "If this wasn't you, contact support immediately.",
-        )
-
-
 # --- Session management -------------------------------------------------------
 
 def list_sessions(user: User):

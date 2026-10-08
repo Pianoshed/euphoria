@@ -270,42 +270,6 @@ def test_password_reset_confirm_changes_password_and_revokes_sessions(client):
     assert not UserSession.objects.filter(user=user, revoked_at__isnull=True).exists()
 
 
-def test_password_change_requires_correct_old_password(client):
-    make_verified_user()
-    client.post(reverse("accounts:login"), {"email": "user@example.com", "password": "a-strong-password-1"}, content_type="application/json")
-    resp = client.post(
-        reverse("accounts:password-change"),
-        {"old_password": "wrong", "new_password": "a-new-strong-password-2"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400
-
-
-def test_password_change_success(client):
-    make_verified_user()
-    client.post(reverse("accounts:login"), {"email": "user@example.com", "password": "a-strong-password-1"}, content_type="application/json")
-    resp = client.post(
-        reverse("accounts:password-change"),
-        {"old_password": "a-strong-password-1", "new_password": "a-new-strong-password-2"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 200
-    user = User.objects.get(email="user@example.com")
-    assert user.check_password("a-new-strong-password-2")
-
-
-def test_password_change_without_old_password_rejected_when_account_has_one(client):
-    make_verified_user()
-    client.post(reverse("accounts:login"), {"email": "user@example.com", "password": "a-strong-password-1"}, content_type="application/json")
-    resp = client.post(
-        reverse("accounts:password-change"),
-        {"new_password": "a-new-strong-password-2"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400
-    assert User.objects.get(email="user@example.com").check_password("a-strong-password-1")
-
-
 # --- Google accounts: setting a first password ---------------------------------
 
 def make_google_user(**kwargs):
@@ -326,37 +290,6 @@ def test_profile_me_reports_password_state_and_email(client):
     client.logout()
     client.force_login(make_verified_user())
     assert client.get(reverse("accounts:my-profile")).json()["has_usable_password"] is True
-
-
-def test_google_account_can_set_first_password_without_old_one(client):
-    user = make_google_user()
-    client.force_login(user)
-    resp = client.post(
-        reverse("accounts:password-change"),
-        {"new_password": "a-new-strong-password-2"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 200
-    user.refresh_from_db()
-    assert user.has_usable_password()
-    assert user.check_password("a-new-strong-password-2")
-
-    # and from now on the normal rule applies
-    resp = client.post(
-        reverse("accounts:password-change"),
-        {"new_password": "another-strong-password-3"},
-        content_type="application/json",
-    )
-    assert resp.status_code == 400
-
-
-def test_google_account_first_password_still_validated(client):
-    user = make_google_user()
-    client.force_login(user)
-    resp = client.post(reverse("accounts:password-change"), {"new_password": "short"}, content_type="application/json")
-    assert resp.status_code == 400
-    user.refresh_from_db()
-    assert not user.has_usable_password()
 
 
 def test_2fa_disable_for_account_without_password_explains_next_step(client):
@@ -410,3 +343,34 @@ def test_csrf_bootstrap_sets_cookie(client):
     resp = client.get(reverse("accounts:csrf"))
     assert resp.status_code == 200
     assert "csrftoken" in resp.cookies
+
+
+# --- Password: emailed reset link instead of "old + new password" -----------------
+
+def test_old_password_change_endpoint_is_gone(client):
+    client.get(reverse("accounts:csrf"))
+    resp = client.post("/api/accounts/password/change/", {"old_password": "x", "new_password": "y"}, content_type="application/json")
+    assert resp.status_code == 404
+
+
+def test_signed_in_user_can_email_themselves_a_reset_link(client, mailoutbox):
+    user = make_verified_user()
+    client.force_login(user)
+    resp = client.post(reverse("accounts:password-reset-self"), content_type="application/json")
+    assert resp.status_code == 200
+    assert PasswordResetToken.objects.filter(user=user, used_at__isnull=True).exists()
+    assert len(mailoutbox) == 1
+    assert mailoutbox[0].to == [user.email]
+
+
+def test_google_account_can_use_reset_link_to_set_first_password(client, mailoutbox):
+    user = make_google_user()
+    client.force_login(user)
+    assert client.post(reverse("accounts:password-reset-self"), content_type="application/json").status_code == 200
+    assert len(mailoutbox) == 1
+
+
+def test_reset_self_requires_login(client):
+    resp = client.post(reverse("accounts:password-reset-self"), content_type="application/json")
+    assert resp.status_code in (401, 403)
+    assert not PasswordResetToken.objects.exists()

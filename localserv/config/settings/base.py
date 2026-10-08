@@ -144,7 +144,6 @@ REST_FRAMEWORK = {
         "login": "10/hour",
         "login_email": "20/hour",
         "mfa_challenge": "8/hour",
-        "password_change": "5/hour",
         "write_default": "120/min",
         "password_reset": "5/hour",
         "registration": "10/hour",
