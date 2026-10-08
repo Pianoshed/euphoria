@@ -141,8 +141,14 @@ class PasswordResetRequestView(APIView):
 
 class PasswordResetConfirmView(APIView):
     permission_classes = [AllowAny]
+    # The reset token is the proof of identity, so skip session auth. Otherwise a stale
+    # session cookie can trigger a CSRF 403 on this page (same as RegisterView/GoogleLoginView).
+    authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "password_reset"
+    # Own bucket: confirming is not the same as requesting links, and failed attempts
+    # (bad/used token) must not lock the user out of the 5/hour "request a link" limit.
+    # Needs "password_reset_confirm" in DEFAULT_THROTTLE_RATES (settings/base.py).
+    throttle_scope = "password_reset_confirm"
 
     def post(self, request):
         serializer = PasswordResetConfirmSerializer(data=request.data)
