@@ -81,6 +81,8 @@ DATABASES = {
 # Keep False: a withdrawal must commit its wallet debit BEFORE the bank transfer is sent.
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
 DATABASES["default"].setdefault("CONN_MAX_AGE", 60)
+# Drop dead connections (e.g. after a Render Postgres restart) instead of reusing them. Django 4.1+.
+DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 
 CACHES = {
     "default": {
