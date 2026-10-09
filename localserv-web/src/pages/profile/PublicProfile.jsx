@@ -10,6 +10,8 @@ import { ErrorAlert, Spinner } from '../../components/ui';
 import { ReportButton } from '../../components/ReportButton';
 import { ROLE_META } from '../../utils/roles';
 import { lookFor } from '../../utils/bubbleLook';
+import { AgeTag } from '../../components/AgeGlow';
+import { ageGlowProps } from '../../utils/ageGroups';
 
 export default function PublicProfile() {
   usePageBackdrop('couples');
@@ -61,7 +63,7 @@ export default function PublicProfile() {
 
   return (
     <div className="page pf" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring, '--avatar-shape': look.avatarShape }}>
-      <header className="pf-hero">
+      <header className="pf-hero" {...ageGlowProps(profile.age_range)}>
         <span className="pf-avatar">
           {profile.avatar
             ? <img src={profile.avatar} alt="" />
@@ -74,6 +76,7 @@ export default function PublicProfile() {
           {meta && <span className={`pf-chip pf-chip--${profile.role.toLowerCase()}`}>{meta.label}</span>}
           {profile.general_location && <span className="pf-chip">📍 {profile.general_location}</span>}
           {profile.availability && <span className="pf-chip">🕒 {profile.availability}</span>}
+          {profile.age_range && <span className="pf-chip"><AgeTag group={profile.age_range} prefix="Age group: " /></span>}
         </p>
         {meta && <p className="pf-blurb">{meta.blurb}</p>}
       </header>

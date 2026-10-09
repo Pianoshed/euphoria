@@ -96,3 +96,20 @@ export function ChillLoader({ kind = 'default', rows = 0 }) {
     </div>
   );
 }
+
+/** Full-page wait while we check who is signed in. If the server is slow or erroring we say so calmly
+ * (and keep retrying in the background) instead of sending people to the login page. */
+export function SessionLoading({ unreachable }) {
+  return (
+    <div className="page page-loading">
+      <Spinner />
+      {unreachable && (
+        <div className="soft-notice" role="status" aria-live="polite" style={{ marginTop: 16, textAlign: 'center' }}>
+          <span>We're having a little trouble connecting. Hang tight, we'll keep trying</span>
+          <span className="chill__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+          <button type="button" className="soft-notice__retry" onClick={() => window.location.reload()}>Try again</button>
+        </div>
+      )}
+    </div>
+  );
+}

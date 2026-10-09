@@ -12,7 +12,7 @@ import {
   logout as apiLogout,
   getMyProfile,
 } from '../api/accounts';
-import { AUTH_EXPIRED_EVENT } from '../api/client';
+import { AUTH_EXPIRED_EVENT, isTransientError } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -20,6 +20,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [sessionUnreachable, setSessionUnreachable] = useState(false); // server/network hiccup during the session check
   const userRef = useRef(null);
   useEffect(() => { userRef.current = user; }, [user]);
 
@@ -36,23 +37,50 @@ export function AuthProvider({ children }) {
   }, []);
 
   // 401/403 simply means "not signed in", so it resolves to null instead of throwing.
+  // A network failure or a 5xx is NOT "signed out": keep whoever is signed in and say we couldn't tell.
   const refreshSession = useCallback(async () => {
     try {
       const me = await getMyProfile();
       const next = me?.user ?? me ?? null;
       setUser(next);
+      setSessionUnreachable(false);
       return next;
-    } catch {
+    } catch (err) {
+      if (isTransientError(err)) {
+        setSessionUnreachable(true);
+        return userRef.current;
+      }
       setUser(null);
       return null;
     }
   }, []);
 
+  // First check on page load. If the server or network is struggling we do NOT bounce the person to the
+  // login page: we keep the calm loading screen up and quietly try again until we get a real answer.
   useEffect(() => {
     let cancelled = false;
-    refreshSession().finally(() => { if (!cancelled) setCheckingSession(false); });
+    (async () => {
+      for (let attempt = 0; !cancelled; attempt += 1) {
+        try {
+          const me = await getMyProfile();
+          if (cancelled) return;
+          setUser(me?.user ?? me ?? null);
+        } catch (err) {
+          if (cancelled) return;
+          if (isTransientError(err)) {
+            setSessionUnreachable(true);
+            await new Promise((resolve) => setTimeout(resolve, Math.min(4000 + attempt * 2000, 12000)));
+            continue;
+          }
+          setUser(null); // 401/403: genuinely signed out
+        }
+        setSessionUnreachable(false);
+        setCheckingSession(false);
+        return;
+      }
+    })();
     return () => { cancelled = true; };
-  }, [refreshSession]);
+  }, []);
 
   const finishLogin = useCallback(async (data) => {
     setSessionExpired(false);
@@ -79,7 +107,8 @@ export function AuthProvider({ children }) {
 
   // Step 2 of Google signup: creates the account and logs the person in.
   const registerWithGoogle = useCallback(
-    async (credential, username, password, role) => finishLogin(await googleRegister(credential, username, password, role)),
+    async (credential, username, password, role, demographics) =>
+      finishLogin(await googleRegister(credential, username, password, role, demographics)),
     [finishLogin],
   );
 
@@ -95,9 +124,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, checkingSession, sessionExpired, login, loginWithGoogle, registerWithGoogle,
+    user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, logout, refreshSession,
-  }), [user, checkingSession, sessionExpired, login, loginWithGoogle, registerWithGoogle,
+  }), [user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, logout, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

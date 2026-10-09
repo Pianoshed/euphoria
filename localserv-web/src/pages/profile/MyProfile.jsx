@@ -9,6 +9,17 @@ import { ErrorAlert, Spinner } from '../../components/ui';
 import PasswordPanel from './PasswordPanel';
 import Modal from '../../components/Modal';
 import { useAlerts } from '../../context/AlertsContext';
+import DemographicsFields, { EMPTY_DEMOGRAPHICS } from '../../components/DemographicsFields';
+import LegalFootnote from '../../components/LegalFootnote';
+import { ageGlowProps, ageGroupForBirthYear, demographicsPayload, sexLabel } from '../../utils/ageGroups';
+import { AgeTag } from '../../components/AgeGlow';
+
+// Saved age/sex -> the form's shape. A stored birth year means the person gave a year, so show it as one.
+const demoFromUser = (u) => ({
+  ageRange: u?.birth_year ? '' : (u?.age_range || ''),
+  birthYear: u?.birth_year ? String(u.birth_year) : '',
+  sex: u?.sex && u.sex !== 'UNDISCLOSED' ? u.sex : '',
+});
 
 /* ------------------------------------------------------------------ */
 /* Static content                                                      */
@@ -91,7 +102,7 @@ function StatusChip({ tone, children }) {
 }
 
 /* What other signed-in people see, updated live as the form and toggles change. */
-function ProfilePreview({ user, form, privacy }) {
+function ProfilePreview({ user, form, privacy, ageRange }) {
   const name = form.display_name || user.username;
   const hidden = privacy.profile_visibility === 'PRIVATE';
   const draft = { ...user, display_name: form.display_name };
@@ -101,7 +112,7 @@ function ProfilePreview({ user, form, privacy }) {
       <figcaption className="mp-preview__cap">
         {hidden ? 'Hidden from everyone but you' : 'How others see you'}
       </figcaption>
-      <div className="mp-preview__card" aria-hidden={hidden}>
+      <div className="mp-preview__card" aria-hidden={hidden} {...ageGlowProps(ageRange)}>
         <span className="mp-preview__avatar">
           <Avatar user={draft} />
           {privacy.show_online_status && <span className="mp-preview__online" />}
@@ -110,6 +121,7 @@ function ProfilePreview({ user, form, privacy }) {
           <strong>{name}</strong>
           {form.general_location && <span>{form.general_location}</span>}
           {form.availability && <span className="soft">{form.availability}</span>}
+          {ageRange && <AgeTag group={ageRange} prefix="Age group: " />}
           {privacy.show_online_status && <span className="live">Online now</span>}
           {!privacy.show_online_status && privacy.show_last_seen && <span className="soft">Last seen recently</span>}
           {form.bio && <span className="bio">{form.bio}</span>}
@@ -119,6 +131,7 @@ function ProfilePreview({ user, form, privacy }) {
         {privacy.profile_visibility === 'PUBLIC' && <li>Visible to anyone, including visitors who are not signed in.</li>}
         {privacy.profile_visibility === 'REGISTERED_USERS' && <li>Visible to signed-in people only.</li>}
         {hidden && <li>You will not appear in "Find people".</li>}
+        {ageRange && <li>Your age group shows as a coloured glow. Your birth year and sex are never shown.</li>}
         {privacy.who_can_message === 'NOBODY' && <li>No one can start a new chat with you.</li>}
         {!privacy.show_online_status && !privacy.show_last_seen && <li>Your activity is hidden.</li>}
       </ul>
@@ -133,6 +146,7 @@ function ProfilePreview({ user, form, privacy }) {
 export default function MyProfile() {
   const { user, refreshSession } = useAuth();
   const [form, setForm] = useState(null);
+  const [demo, setDemo] = useState(EMPTY_DEMOGRAPHICS);
   const [privacy, setPrivacy] = useState(null);
   const [error, setError] = useState(null);
   const [savedMessage, setSavedMessage] = useState('');
@@ -149,6 +163,7 @@ export default function MyProfile() {
         display_name: user.display_name || '', bio: user.bio || '',
         general_location: user.general_location || '', availability: user.availability || '',
       });
+      setDemo(demoFromUser(user));
     }
   }, [user]);
 
@@ -186,7 +201,7 @@ export default function MyProfile() {
     setError(null);
     setSavedMessage('');
     try {
-      await accountsApi.updateMyProfile(form);
+      await accountsApi.updateMyProfile({ ...form, ...demographicsPayload(demo, { onlyIfChanged: demoFromUser(user) }) });
       await refreshSession();
       setSavedMessage('Profile updated.');
       closeModal();
@@ -240,6 +255,8 @@ export default function MyProfile() {
   if (!form || !privacy) return <div className="page"><Spinner /></div>;
 
   const name = user.display_name || user.username;
+  // What others will see once saved: the group from a birth year, or the picked group, or what is saved now.
+  const draftAgeRange = (demo.birthYear ? ageGroupForBirthYear(demo.birthYear) : demo.ageRange) || user.age_range || '';
   const isStaff = Boolean(user.is_staff) || ['MODERATOR', 'ADMIN'].includes(user.role);
 
   const missing = PROFILE_FIELDS.filter((f) => !user[f.key]);
@@ -384,7 +401,7 @@ export default function MyProfile() {
             </Link>
           </div>
 
-          <ProfilePreview user={user} form={form} privacy={privacy} />
+          <ProfilePreview user={user} form={form} privacy={privacy} ageRange={draftAgeRange} />
         </div>
       </div>
 
@@ -413,6 +430,10 @@ export default function MyProfile() {
               <input id="availability" className="input" maxLength={200} placeholder="e.g. Weekends and weekday evenings"
                 value={form.availability} onChange={(e) => setForm((f) => ({ ...f, availability: e.target.value }))} />
             </div>
+            <DemographicsFields value={demo} onChange={setDemo} idPrefix="me" required={false} />
+            {user.sex && user.sex !== 'UNDISCLOSED' && demo.sex === '' && (
+              <p className="hint">Saved as: {sexLabel(user.sex)}. Saving now will record Undisclosed.</p>
+            )}
             <button className="btn btn--primary btn--block" disabled={savingProfile} type="submit">
               {savingProfile ? 'Saving…' : 'Save profile'}
             </button>
@@ -552,6 +573,8 @@ export default function MyProfile() {
           </div>
         </Modal>
       )}
+
+      <LegalFootnote variant="settings" />
     </div>
   );
 }

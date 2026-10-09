@@ -5,6 +5,9 @@ import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert } from '../../components/ui';
 import RoleChoice from './RoleChoice';
 import PasswordInput from '../../components/PasswordInput';
+import DemographicsFields, { EMPTY_DEMOGRAPHICS } from '../../components/DemographicsFields';
+import LegalFootnote from '../../components/LegalFootnote';
+import { demographicsPayload } from '../../utils/ageGroups';
 
 /**
  * Step 2 of Google signup, shown when a Google email has no account yet.
@@ -20,6 +23,7 @@ export default function GoogleSignupStep({ google, onCancel }) {
   const [role, setRole] = useState('CUSTOMER');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [demo, setDemo] = useState(EMPTY_DEMOGRAPHICS);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -32,7 +36,7 @@ export default function GoogleSignupStep({ google, onCancel }) {
     }
     setSubmitting(true);
     try {
-      await registerWithGoogle(google.token, username.trim(), password, role);
+      await registerWithGoogle(google.token, username.trim(), password, role, demographicsPayload(demo));
       navigate('/', { replace: true });
     } catch (err) {
       setError(err);
@@ -75,9 +79,12 @@ export default function GoogleSignupStep({ google, onCancel }) {
             autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
         </div>
 
+        <DemographicsFields value={demo} onChange={setDemo} idPrefix="g" />
+
         <button className="btn-primary-full" disabled={submitting} type="submit">
           {submitting ? 'Creating account…' : 'Create account'}
         </button>
+        <LegalFootnote variant="signup" />
       </form>
 
       <p className="auth-footer-note">

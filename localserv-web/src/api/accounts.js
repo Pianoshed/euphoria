@@ -1,7 +1,8 @@
 import { apiFetch } from './client';
 
-export const register = (email, username, password, role) =>
-  apiFetch('/api/accounts/register/', { method: 'POST', body: { email, username, password, role } });
+// demographics = output of demographicsPayload(): { sex, age_range | birth_year }
+export const register = (email, username, password, role, demographics = {}) =>
+  apiFetch('/api/accounts/register/', { method: 'POST', body: { email, username, password, role, ...demographics } });
 
 export const verifyEmail = (token) =>
   apiFetch('/api/accounts/verify-email/', { method: 'POST', body: { token } });
@@ -80,10 +81,10 @@ export const googleLogin = (idToken) =>
 
 // Second step of Google signup: send the same (fresh) ID token plus the chosen
 // username and role. The server takes the email from the verified token.
-export const googleRegister = (idToken, username, password, role) =>
+export const googleRegister = (idToken, username, password, role, demographics = {}) =>
   apiFetch('/api/accounts/google/register/', {
     method: 'POST',
-    body: { id_token: idToken, username, password, role },
+    body: { id_token: idToken, username, password, role, ...demographics },
   });
 
 export const completeOnboarding = (role) =>

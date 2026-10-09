@@ -45,12 +45,12 @@ import Square from './pages/square/Square';
 import Home from './pages/Home';
 import HomeFeed from './pages/HomeFeed';
 import { useAuth } from './context/AuthContext';
-import { Spinner } from './components/ui';
+import { Spinner, SessionLoading } from './components/ui';
 
 // Signed-in people land on their feed; visitors see the marketing page.
 function HomeGate() {
-  const { user, checkingSession } = useAuth();
-  if (checkingSession) return <div className="page page-loading"><Spinner /></div>;
+  const { user, checkingSession, sessionUnreachable } = useAuth();
+  if (checkingSession) return <SessionLoading unreachable={sessionUnreachable} />;
   return user ? <HomeFeed /> : <Home />;
 }
 import NotFound from './pages/NotFound';

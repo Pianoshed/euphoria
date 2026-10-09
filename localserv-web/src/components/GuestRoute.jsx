@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import AuthCard from '../pages/auth/AuthCard';
-import { Spinner } from './ui';
+import { SessionLoading, Spinner } from './ui';
 
 const REDIRECT_AFTER_MS = 2500;
 
@@ -18,7 +18,7 @@ const REDIRECT_AFTER_MS = 2500;
  * see this screen flash by.
  */
 export function GuestRoute({ children }) {
-  const { user, checkingSession } = useAuth();
+  const { user, checkingSession, sessionUnreachable } = useAuth();
   const location = useLocation();
   const [already, setAlready] = useState(null); // null = not decided yet
 
@@ -27,7 +27,7 @@ export function GuestRoute({ children }) {
   }, [checkingSession, user]);
 
   if (checkingSession || already === null) {
-    return <div className="page page-loading"><Spinner /></div>;
+    return <SessionLoading unreachable={sessionUnreachable} />;
   }
   if (already && user) {
     const to = location.state?.from?.pathname || '/';

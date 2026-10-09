@@ -11,6 +11,9 @@ import GoogleSignupStep from './GoogleSignupStep';
 import RoleChoice from './RoleChoice';
 import ResendVerification from '../../components/ResendVerification';
 import PasswordInput from '../../components/PasswordInput';
+import DemographicsFields, { EMPTY_DEMOGRAPHICS } from '../../components/DemographicsFields';
+import LegalFootnote from '../../components/LegalFootnote';
+import { demographicsPayload } from '../../utils/ageGroups';
 
 export default function Register() {
   const { loginWithGoogle } = useAuth();
@@ -19,6 +22,7 @@ export default function Register() {
   // Set when a Google email has no account yet (arrives from Login, or from the button below).
   const [google, setGoogle] = useState(location.state?.google ?? null);
   const [form, setForm] = useState({ email: '', username: '', password: '', confirm: '', role: 'CUSTOMER' });
+  const [demo, setDemo] = useState(EMPTY_DEMOGRAPHICS);
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
@@ -35,7 +39,7 @@ export default function Register() {
     }
     setSubmitting(true);
     try {
-      await accountsApi.register(form.email, form.username, form.password, form.role);
+      await accountsApi.register(form.email, form.username, form.password, form.role, demographicsPayload(demo));
       setDone(true);
     } catch (err) {
       setError(err);
@@ -145,9 +149,11 @@ export default function Register() {
                 <span className="hint" role="status" style={{ color: '#b91c1c' }}>The passwords do not match yet.</span>
               )}
             </div>
+            <DemographicsFields value={demo} onChange={setDemo} idPrefix="reg" />
             <button className="btn-primary-full" disabled={submitting} type="submit">
               {submitting ? 'Creating account…' : 'Create account'}
             </button>
+            <LegalFootnote variant="signup" />
           </form>
 
           <p className="auth-footer-note">

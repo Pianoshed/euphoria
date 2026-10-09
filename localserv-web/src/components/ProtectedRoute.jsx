@@ -1,14 +1,14 @@
 import '../styles/index.css';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { Spinner } from './ui';
+import { SessionLoading } from './ui';
 
 export function ProtectedRoute({ children }) {
-  const { user, checkingSession, sessionExpired } = useAuth();
+  const { user, checkingSession, sessionExpired, sessionUnreachable } = useAuth();
   const location = useLocation();
 
   if (checkingSession) {
-    return <div className="page page-loading"><Spinner /></div>;
+    return <SessionLoading unreachable={sessionUnreachable} />;
   }
   if (!user) {
     return <Navigate to="/login" state={{ from: location, expired: sessionExpired }} replace />;
