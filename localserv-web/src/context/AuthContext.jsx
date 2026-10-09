@@ -7,6 +7,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import {
   login as apiLogin,
   verifyLoginMfa,
+  confirmDeviceLogin,
   googleLogin,
   googleRegister,
   logout as apiLogout,
@@ -92,7 +93,7 @@ export function AuthProvider({ children }) {
   // Returns the raw response so Login.jsx can read { mfa_required, challenge }.
   const login = useCallback(async (email, password) => {
     const data = await apiLogin(email, password);
-    if (data?.mfa_required) return data;
+    if (data?.mfa_required || data?.session_conflict) return data; // not signed in yet: the page asks the next question
     return finishLogin(data);
   }, [finishLogin]);
 
@@ -101,7 +102,7 @@ export function AuthProvider({ children }) {
   // so we must not touch the user state in that case.
   const loginWithGoogle = useCallback(async (credential) => {
     const data = await googleLogin(credential);
-    if (data?.needs_signup) return data;
+    if (data?.needs_signup || data?.session_conflict) return data;
     return finishLogin(data);
   }, [finishLogin]);
 
@@ -113,7 +114,16 @@ export function AuthProvider({ children }) {
   );
 
   const completeMfaLogin = useCallback(
-    async (challenge, code) => finishLogin(await verifyLoginMfa(challenge, code)),
+    async (challenge, code) => {
+      const data = await verifyLoginMfa(challenge, code);
+      return data?.session_conflict ? data : finishLogin(data);
+    },
+    [finishLogin],
+  );
+
+  // The person agreed to sign their other device(s) out; this signs them in here.
+  const confirmDeviceTakeover = useCallback(
+    async (challenge) => finishLogin(await confirmDeviceLogin(challenge)),
     [finishLogin],
   );
 
@@ -125,9 +135,9 @@ export function AuthProvider({ children }) {
 
   const value = useMemo(() => ({
     user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
-    completeMfaLogin, logout, refreshSession,
+    completeMfaLogin, confirmDeviceTakeover, logout, refreshSession,
   }), [user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
-    completeMfaLogin, logout, refreshSession]);
+    completeMfaLogin, confirmDeviceTakeover, logout, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

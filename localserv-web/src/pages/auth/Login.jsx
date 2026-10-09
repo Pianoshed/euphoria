@@ -7,9 +7,10 @@ import AuthShowcase from './AuthShowcase';
 import GoogleButton from './GoogleButton';
 import ResendVerification from '../../components/ResendVerification';
 import PasswordInput from '../../components/PasswordInput';
+import DeviceConflict from './DeviceConflict';
 
 export default function Login() {
-  const { login, loginWithGoogle } = useAuth();
+  const { login, loginWithGoogle, confirmDeviceTakeover } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
@@ -17,6 +18,9 @@ export default function Login() {
   const [notice, setNotice] = useState(location.state?.expired ? 'Your session ended. Please log in again.' : null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
+  // Set when the account is already signed in on another device: { challenge, devices }.
+  const [conflict, setConflict] = useState(location.state?.conflict ?? null);
+  const [takingOver, setTakingOver] = useState(false);
 
   const update = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
   const redirectTo = location.state?.from?.pathname || '/';
@@ -30,6 +34,8 @@ export default function Login() {
       const result = await login(form.email, form.password);
       if (result.mfa_required) {
         navigate('/login/2fa', { state: { challenge: result.challenge, redirectTo } });
+      } else if (result.session_conflict) {
+        setConflict({ challenge: result.challenge, devices: result.devices });
       } else {
         navigate(redirectTo, { replace: true });
       }
@@ -67,11 +73,28 @@ export default function Login() {
         return;
       }
 
+      if (result.session_conflict) {
+        setConflict({ challenge: result.challenge, devices: result.devices });
+        return;
+      }
+
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err);
     } finally {
       setGoogleSubmitting(false);
+    }
+  };
+
+  const handleTakeover = async () => {
+    setError(null);
+    setTakingOver(true);
+    try {
+      await confirmDeviceTakeover(conflict.challenge);
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(err);
+      setTakingOver(false);
     }
   };
 
@@ -87,6 +110,11 @@ export default function Login() {
 
       <div className="auth-panel">
         <div className="auth-form-wrap">
+          {conflict ? (
+            <DeviceConflict devices={conflict.devices} busy={takingOver} error={error}
+              onConfirm={handleTakeover} onCancel={() => { setConflict(null); setError(null); }} />
+          ) : (
+          <>
           <h1>Log in</h1>
           <p className="auth-sub">Sign in to keep the plans going.</p>
 
@@ -132,6 +160,8 @@ export default function Login() {
           <p className="auth-footer-note" style={{ marginTop: '0.4rem' }}>
             New here? <Link to="/register">Create an account</Link>
           </p>
+          </>
+          )}
         </div>
       </div>
     </div>

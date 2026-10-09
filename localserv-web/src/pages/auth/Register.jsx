@@ -64,6 +64,11 @@ export default function Register() {
         });
         return;
       }
+      if (result.session_conflict) {
+        // Existing account, already signed in on another device: the Login page asks what to do.
+        navigate('/login', { replace: true, state: { conflict: { challenge: result.challenge, devices: result.devices } } });
+        return;
+      }
       // This Google email already had an account, so they're now logged in.
       navigate('/', { replace: true });
     } catch (err) {

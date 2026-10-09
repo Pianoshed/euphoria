@@ -4,9 +4,10 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import AuthCard from './AuthCard';
 import { ErrorAlert } from '../../components/ui';
+import DeviceConflict from './DeviceConflict';
 
 export default function LoginTwoFactor() {
-  const { completeMfaLogin } = useAuth();
+  const { completeMfaLogin, confirmDeviceTakeover } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const challenge = location.state?.challenge;
@@ -14,6 +15,7 @@ export default function LoginTwoFactor() {
   const [code, setCode] = useState('');
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  const [conflict, setConflict] = useState(null); // { challenge, devices } when signed in on another device
 
   if (!challenge) {
     // Landed here directly without going through Login first.
@@ -25,7 +27,11 @@ export default function LoginTwoFactor() {
     setError(null);
     setSubmitting(true);
     try {
-      await completeMfaLogin(challenge, code);
+      const result = await completeMfaLogin(challenge, code);
+      if (result?.session_conflict) {
+        setConflict({ challenge: result.challenge, devices: result.devices });
+        return;
+      }
       navigate(redirectTo, { replace: true });
     } catch (err) {
       setError(err);
@@ -33,6 +39,27 @@ export default function LoginTwoFactor() {
       setSubmitting(false);
     }
   };
+
+  const handleTakeover = async () => {
+    setError(null);
+    setSubmitting(true);
+    try {
+      await confirmDeviceTakeover(conflict.challenge);
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      setError(err);
+      setSubmitting(false);
+    }
+  };
+
+  if (conflict) {
+    return (
+      <AuthCard>
+        <DeviceConflict devices={conflict.devices} busy={submitting} error={error}
+          onConfirm={handleTakeover} onCancel={() => navigate('/login', { replace: true })} />
+      </AuthCard>
+    );
+  }
 
   return (
     <AuthCard>

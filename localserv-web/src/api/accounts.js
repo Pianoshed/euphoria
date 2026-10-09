@@ -16,6 +16,10 @@ export const login = (email, password) =>
 export const verifyLoginMfa = (challenge, code) =>
   apiFetch('/api/accounts/login/verify-2fa/', { method: 'POST', body: { challenge, code } });
 
+// Second step when login stopped because the account is signed in on another device.
+export const confirmDeviceLogin = (challenge) =>
+  apiFetch('/api/accounts/login/confirm-device/', { method: 'POST', body: { challenge } });
+
 export const logout = () => apiFetch('/api/accounts/logout/', { method: 'POST' });
 
 export const requestPasswordReset = (email) =>
