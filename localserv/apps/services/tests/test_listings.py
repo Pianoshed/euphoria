@@ -155,3 +155,15 @@ def test_mine_shows_own_non_published_listings(client):
     resp = client.get(reverse("services:list-create"), {"mine": "true"})
     assert resp.status_code == 200
     assert len(resp.json()["results"]) == 1
+
+
+def test_categories_endpoint_lists_active_categories_for_anonymous_users(client):
+    make_category("Plumbing")
+    hidden = make_category("Hidden")
+    hidden.is_active = False
+    hidden.save(update_fields=["is_active"])
+    response = client.get(reverse("services:categories"))
+    assert response.status_code == 200
+    names = [c["name"] for c in response.json()]
+    assert "Plumbing" in names and "Hidden" not in names
+    assert {"id", "name", "slug", "description", "icon"} <= set(response.json()[0])
