@@ -1,7 +1,7 @@
 import '../styles/index.css';
 import './home-feed.css';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, NavLink } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useAlerts } from '../context/AlertsContext';
 import * as squareApi from '../api/square';
@@ -253,18 +253,6 @@ export default function HomeFeed() {
           </Section>
         </div>
       </div>
-
-      {/* ---------- mobile dock ---------- */}
-      <nav className="hf-dock" aria-label="Primary">
-        <NavLink to="/" end><Icon name="home" size={22} /><span>Home</span></NavLink>
-        <NavLink to="/square"><Icon name="tree" size={22} /><span>Square</span></NavLink>
-        <NavLink to="/chat">
-          <Icon name="chat" size={22} /><span>Chats</span>
-          {alerts.messages > 0 && <b className="nb-count">{alerts.messages > 99 ? '99+' : alerts.messages}</b>}
-        </NavLink>
-        <NavLink to="/services"><Icon name="ticket" size={22} /><span>Plans</span></NavLink>
-        <NavLink to="/profile/me"><Icon name="user" size={22} /><span>Me</span></NavLink>
-      </nav>
     </div>
   );
 }

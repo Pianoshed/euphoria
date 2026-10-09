@@ -177,13 +177,6 @@ body[data-backdrop='scene']::before {
 .hf-plan strong { flex: 1; font-family: var(--hf-display); font-size: 1.02rem; line-height: 1.22; letter-spacing: -.01em; display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .hf-plan__host { padding-top: 7px; border-top: 1px solid var(--hf-line); font-size: .78rem; font-weight: 700; color: var(--hf-muted); }
 
-/* ---------- bottom dock (phones, small tablets): active tab gets a bar on top ---------- */
-.hf-dock { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: repeat(5, 1fr); padding: 0 6px env(safe-area-inset-bottom, 0px); background: var(--hf-panel); border-top: 1px solid var(--hf-line); }
-.hf-dock a { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 9px 0 8px; color: var(--hf-muted); font-size: .68rem; font-weight: 800; }
-.hf-dock a::before { content: ''; position: absolute; top: 0; left: 24%; right: 24%; height: 4px; border-radius: 0 0 4px 4px; background: transparent; transition: background .15s; }
-.hf-dock a.active { color: var(--hf-ink); }
-.hf-dock a.active::before { background: var(--color-primary); }
-.hf-dock .nb-count { position: absolute; top: 3px; right: 20%; margin: 0; }
 
 /* ---------- very small phones ---------- */
 @media (max-width: 380px) {
@@ -225,8 +218,6 @@ body[data-backdrop='scene']::before {
   .hf-thought p { font-size: .9rem; }
   .hf-plan strong { font-size: .95rem; }
   .hf-ring__o { border-width: 2.5px; }
-  .hf-dock a::before { height: 3px; }
-  .hf-dock a { font-size: .64rem; }
 }
 
 /* ---------- tablets ---------- */
@@ -246,7 +237,6 @@ body[data-backdrop='scene']::before {
 /* ---------- desktop: left sidebar (you + shortcuts) | content | chats rail ---------- */
 @media (min-width: 1000px) {
   .page.hf { padding: 24px 32px 56px; }
-  .hf-dock { display: none; }
   .hf-layout { grid-template-columns: 250px minmax(0, 1fr); grid-template-areas: 'rail side' 'rail main'; gap: 0 28px; align-items: start; }
   .hf-rail { grid-area: rail; position: sticky; top: calc(var(--cv-nav-h, 68px) + 16px); display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - var(--cv-nav-h, 68px) - 32px); overflow-y: auto; scrollbar-width: none; }
   .hf-rail::-webkit-scrollbar { display: none; }
@@ -286,7 +276,7 @@ body[data-backdrop='scene']::before {
 @media (min-width: 1900px) { .page.hf { max-width: 1400px; font-size: 1.0625rem; } .hf-layout { grid-template-columns: 270px minmax(0, 1fr) 380px; } }
 
 @media (prefers-reduced-motion: reduce) {
-  .hf-btn, .hf-act, .hf-chat, .hf-thought, .hf-plan, .hf-stat::after, .hf-dock a::before { transition: none; }
+  .hf-btn, .hf-act, .hf-chat, .hf-thought, .hf-plan, .hf-stat::after { transition: none; }
 }
 
 .hf a:focus-visible, .hf button:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }

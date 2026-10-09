@@ -47,7 +47,6 @@
 
   /* the page already has the sidebar: drop duplicated shortcuts on the home page */
   body.has-sidenav .hf-actions { display: none; }
-  body.has-sidenav .hf-dock { display: none; }
 
   /* sticky columns no longer need to clear a top bar */
   body.has-sidenav .hf-rail { top: 16px; max-height: calc(100dvh - 32px); }

@@ -5,6 +5,7 @@ import { ProtectedRoute } from './components/ProtectedRoute';
 import { GuestRoute } from './components/GuestRoute';
 import { NavBar } from './components/NavBar';
 import SideNav from './components/SideNav';
+import BottomNav from './components/BottomNav';
 import OfflineBanner from './components/OfflineBanner';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
@@ -109,6 +110,7 @@ export default function App() {
               <OfflineBanner />
               <NavBar />
               <SideNav />
+              <BottomNav />
               <MessageNotifier />
               <IncomingCallNotifier />
               <AppRoutes />
