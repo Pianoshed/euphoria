@@ -17,7 +17,7 @@ export default function ListingForm() {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    servicesApi.listCategories().then(setCategories).catch(() => {});
+    servicesApi.listCategories().then(setCategories).catch((e) => console.error('Could not load categories', e));
   }, []);
 
   useEffect(() => {

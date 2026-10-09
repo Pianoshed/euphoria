@@ -65,7 +65,7 @@ export default function ServiceBrowse() {
   }, [search, q, params, setParams]);
 
   useEffect(() => {
-    servicesApi.listCategories().then(setCategories).catch(() => {});
+    servicesApi.listCategories().then(setCategories).catch((e) => console.error('Could not load categories', e));
   }, []);
 
   useEffect(() => {
@@ -145,7 +145,7 @@ export default function ServiceBrowse() {
     }
   };
 
-  const catLabel = (c) => c.name;
+  const catLabel = (c) => `${c.icon ? `${c.icon} ` : ''}${c.name}`;
 
   return (
     <div className="page sb">
@@ -192,7 +192,7 @@ export default function ServiceBrowse() {
             {categories.map((c) => (
               <li key={c.id}>
                 <button type="button" aria-pressed={categoryId === c.id} onClick={() => pickCategory(c.id)}>
-                  <span className="sb-opts__e" aria-hidden="true">{(c.name || '•').charAt(0).toUpperCase()}</span>{c.name}
+                  <span className="sb-opts__e" aria-hidden="true">{c.icon || (c.name || '•').charAt(0).toUpperCase()}</span>{c.name}
                 </button>
               </li>
             ))}
@@ -258,7 +258,7 @@ export default function ServiceBrowse() {
                 >
                   <span className="sb-card__top">
                     {service.category?.name
-                      ? <span className="sb-cat">{service.category.name}</span>
+                      ? <span className="sb-cat">{catLabel(service.category)}</span>
                       : <span />}
                     <span className="sb-price">{formatPrice(service.price)}</span>
                   </span>
@@ -298,7 +298,7 @@ export default function ServiceBrowse() {
             <span className="sb-grab" aria-hidden="true" />
             <button ref={closeRef} type="button" className="sb-pop__close" aria-label="Close" onClick={closeService}>×</button>
             <div className="sb-pop__top">
-              {active.s.category?.name && <span className="sb-cat">{active.s.category.name}</span>}
+              {active.s.category?.name && <span className="sb-cat">{catLabel(active.s.category)}</span>}
               <span className="sb-price sb-price--lg">{formatPrice(active.s.price)}</span>
             </div>
             <h2 className="sb-pop__title">{active.s.title}</h2>
