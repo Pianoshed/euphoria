@@ -159,6 +159,8 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         # Per IP. Mobile networks put many people behind one IP, so 10/hour locked real users out; the
         # per-email limit below is the real guard against password guessing.
+        # Logged-out requests, per IP (used by AnonRateThrottle on public views).
+        "anon": "120/min",
         "login": "30/hour",
         "device_takeover": "30/hour",
         "login_email": "20/hour",

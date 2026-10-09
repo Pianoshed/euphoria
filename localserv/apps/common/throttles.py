@@ -7,7 +7,7 @@ missing dimensions: per target account, per MFA challenge, and for any unthrottl
 import hashlib
 
 from rest_framework.permissions import SAFE_METHODS
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.throttling import ScopedRateThrottle, SimpleRateThrottle
 
 
 class WriteRateThrottle(SimpleRateThrottle):
@@ -25,6 +25,19 @@ class WriteRateThrottle(SimpleRateThrottle):
         user = getattr(request, "user", None)
         ident = f"u{user.pk}" if user is not None and user.is_authenticated else self.get_ident(request)
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+class WriteScopedRateThrottle(ScopedRateThrottle):
+    """ScopedRateThrottle that only counts writes (POST/PUT/PATCH/DELETE).
+
+    Plain ScopedRateThrottle also counts GETs, so a list+create view with a 60/hour
+    "*_write" scope would lock users out of simply viewing the list after 60 page loads.
+    """
+
+    def allow_request(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return super().allow_request(request, view)
 
 
 class _BodyFieldThrottle(SimpleRateThrottle):

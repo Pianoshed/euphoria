@@ -6,13 +6,13 @@ from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
 
 from . import payment_services, services
 from apps.common.exceptions import AccountNotEligibleError
+from apps.common.throttles import WriteScopedRateThrottle
 
 from .models import PromoCode, WithdrawalRequest
 from .serializers import (
@@ -64,7 +64,7 @@ class LedgerListView(APIView):
 
 class AdminAdjustView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request):
@@ -89,7 +89,7 @@ class AdminAdjustView(APIView):
 # ---------------------------------------------------------------------------
 class DepositInitiateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request):
@@ -125,7 +125,7 @@ class DepositWebhookView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "payment_webhook"
 
     def post(self, request):
@@ -143,7 +143,7 @@ class WithdrawalWebhookView(APIView):
 
     permission_classes = [AllowAny]
     authentication_classes = []
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "payment_webhook"
 
     def post(self, request):
@@ -162,7 +162,7 @@ class BankListView(APIView):
 
 class PayoutAccountListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def get(self, request):
@@ -181,7 +181,7 @@ class PayoutAccountListCreateView(APIView):
 @method_decorator(transaction.non_atomic_requests, name="dispatch")
 class WithdrawalListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def get(self, request):
@@ -207,7 +207,7 @@ class WithdrawalReverseView(APIView):
     e.g. resolve_dispute), not in permission_classes here."""
 
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request, withdrawal_id):
@@ -228,7 +228,7 @@ class WithdrawalReverseView(APIView):
 # ---------------------------------------------------------------------------
 class PromoRedeemView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request):
@@ -249,7 +249,7 @@ def _require_staff(user):
 class PromoCodeListCreateView(APIView):
     """Staff: list every code with how many times it's been used, or create one (leave `code` blank to auto-generate)."""
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def get(self, request):
@@ -276,7 +276,7 @@ class PromoCodeListCreateView(APIView):
 
 class PromoCodeDetailView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def patch(self, request, promo_id):

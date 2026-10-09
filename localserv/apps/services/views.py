@@ -3,10 +3,11 @@ from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 from apps.common.constants import ServiceStatus
+from apps.common.throttles import WriteScopedRateThrottle
 
 from . import services
 from .models import Service, ServiceCategory
@@ -35,7 +36,8 @@ class ServicePagination(PageNumberPagination):
 
 
 class ServiceListCreateView(APIView):
-    throttle_classes = [ScopedRateThrottle]
+    # Writes: 60/hour scope. Reads (public listing): anonymous cap only; logged-in users are not limited.
+    throttle_classes = [WriteScopedRateThrottle, AnonRateThrottle]
     throttle_scope = "service_write"
 
     def get_permissions(self):

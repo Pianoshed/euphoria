@@ -2,12 +2,12 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound
 from rest_framework.permissions import IsAdminUser, IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts.models import User
 from apps.wallet import payment_services
 from apps.wallet.models import WithdrawalRequest
+from apps.common.throttles import WriteScopedRateThrottle
 
 from . import services
 from .models import GiftTransaction, PlannerEarning, TransactionOrder
@@ -116,7 +116,7 @@ class AvailableEarningView(APIView):
 
 class EarningWithdrawView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request):
@@ -155,7 +155,7 @@ class EarningWithdrawView(APIView):
 
 class GiftListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def get(self, request):
@@ -175,7 +175,7 @@ class GiftListCreateView(APIView):
 
 class GiftActionView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "wallet_write"
 
     def post(self, request, gift_id, action):

@@ -2,13 +2,13 @@ from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.accounts import services as account_services
 from apps.accounts.serializers import UserPublicSerializer
 from apps.services import services as service_listing_services
 from apps.services.serializers import ServiceSerializer
+from apps.common.throttles import WriteScopedRateThrottle
 
 from . import services
 from .serializers import (
@@ -27,7 +27,7 @@ class ReportPagination(PageNumberPagination):
 
 class ReportListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def get(self, request):
@@ -64,7 +64,7 @@ class ReportDetailView(APIView):
 
 class ReportResolveView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, report_id):
@@ -78,7 +78,7 @@ class ReportResolveView(APIView):
 
 class AccountSuspendView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, user_id):
@@ -90,7 +90,7 @@ class AccountSuspendView(APIView):
 
 class AccountBanView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, user_id):
@@ -102,7 +102,7 @@ class AccountBanView(APIView):
 
 class AccountReinstateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, user_id):
@@ -115,7 +115,7 @@ class AccountReinstateView(APIView):
 
 class ListingSuspendView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, service_id):
@@ -127,7 +127,7 @@ class ListingSuspendView(APIView):
 
 class ListingUnsuspendView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "moderation_write"
 
     def post(self, request, service_id):

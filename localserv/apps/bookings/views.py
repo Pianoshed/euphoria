@@ -3,11 +3,11 @@ from rest_framework.exceptions import NotFound
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
-from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
 
 from apps.services import services as service_listing_services
 from apps.services.serializers import ReviewCreateSerializer, ReviewSerializer
+from apps.common.throttles import WriteScopedRateThrottle
 
 from . import services
 from .serializers import (
@@ -27,7 +27,7 @@ class BookingPagination(PageNumberPagination):
 
 class BookingListCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def get(self, request):
@@ -65,7 +65,7 @@ class BookingDetailView(APIView):
 
 class BookingTransitionView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):
@@ -87,7 +87,7 @@ class BookingEventListView(APIView):
 
 class BookingFundView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):
@@ -97,7 +97,7 @@ class BookingFundView(APIView):
 
 class BookingReleaseFundsView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):
@@ -107,7 +107,7 @@ class BookingReleaseFundsView(APIView):
 
 class BookingRefundCancelView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):
@@ -117,7 +117,7 @@ class BookingRefundCancelView(APIView):
 
 class BookingDisputeResolveView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):
@@ -129,7 +129,7 @@ class BookingDisputeResolveView(APIView):
 
 class BookingReviewCreateView(APIView):
     permission_classes = [IsAuthenticated]
-    throttle_classes = [ScopedRateThrottle]
+    throttle_classes = [WriteScopedRateThrottle]
     throttle_scope = "booking_write"
 
     def post(self, request, booking_id):

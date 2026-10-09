@@ -98,3 +98,65 @@ if SENTRY_DSN:
         # never end up.
         send_default_pii=False,
     )
+# ======================================================================
+# SECURITY HARDENING -- paste at the BOTTOM of config/settings/prod.py
+# (after the CSRF_TRUSTED_ORIGINS line, so the checks see the final values)
+# ======================================================================
+
+# --- 1. Refuse to boot with unsafe host/origin config -----------------
+if not ALLOWED_HOSTS or "*" in ALLOWED_HOSTS:  # noqa: F405
+    raise ImproperlyConfigured("DJANGO_ALLOWED_HOSTS must list the real API host(s) -- not empty, not '*'.")
+
+for _name, _origins in {
+    "CORS_ALLOWED_ORIGINS": CORS_ALLOWED_ORIGINS,  # noqa: F405  (also used by the WebSocket OriginValidator in asgi.py)
+    "CSRF_TRUSTED_ORIGINS": CSRF_TRUSTED_ORIGINS,
+}.items():
+    if not _origins or any(o.strip() == "*" or o.startswith("http://") for o in _origins):
+        raise ImproperlyConfigured(f"{_name} must be a non-empty list of https:// origins (no '*', no http://).")
+
+# --- 2. CORS: your own frontend only, API paths only -------------------
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOW_CREDENTIALS = True
+CORS_URLS_REGEX = r"^/api/.*$"
+
+# --- 3. Cookies / HTTPS (most of this is already above; kept so it's explicit) ---
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True  # required anyway if SAMESITE=None
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_HTTPONLY = False  # the React app must read it to send X-CSRFToken
+# SameSite comes from env (base.py). Pick ONE setup:
+#   a) Same site (best, works on Safari): app.example.com + api.example.com, Lax,
+#      SESSION_COOKIE_DOMAIN=.example.com  CSRF_COOKIE_DOMAIN=.example.com
+#   b) Two *.onrender.com hosts: SESSION_COOKIE_SAMESITE=None  CSRF_COOKIE_SAMESITE=None
+#      (works on Chrome/Firefox, Safari will still drop the cookie)
+if SESSION_COOKIE_SAMESITE not in ("Lax", "None", "Strict"):  # noqa: F405
+    raise ImproperlyConfigured("SESSION_COOKIE_SAMESITE must be Lax, None or Strict.")
+
+# --- 4. Argon2 (hasher list is in base.py; this fails at boot if the package is missing) ---
+try:
+    import argon2  # noqa: F401
+except ImportError as exc:
+    raise ImproperlyConfigured("argon2-cffi is not installed. Add `argon2-cffi` to requirements.txt.") from exc
+
+# --- 5. Throttles: cap anonymous traffic + make sure every scope has a rate ---
+REST_FRAMEWORK = {  # noqa: F405
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_THROTTLE_CLASSES": [
+        *REST_FRAMEWORK["DEFAULT_THROTTLE_CLASSES"],  # noqa: F405
+        "rest_framework.throttling.AnonRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        **REST_FRAMEWORK["DEFAULT_THROTTLE_RATES"],  # noqa: F405
+        # Per IP, logged-out requests only. Generous because mobile networks share IPs.
+        "anon": env("THROTTLE_ANON", default="120/min"),
+        # Add any scope the checker script reports as missing, e.g.:
+        # "profile_write": "60/hour",
+    },
+}
+
+# --- 6. API docs and schema: admins only (they are public by default) ---
+SPECTACULAR_SETTINGS = {  # noqa: F405
+    **SPECTACULAR_SETTINGS,  # noqa: F405
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAdminUser"],
+    "SERVE_AUTHENTICATION": ["rest_framework.authentication.SessionAuthentication"],
+}
