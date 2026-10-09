@@ -157,3 +157,54 @@ def test_rule_can_be_switched_off(settings):
     post_login(laptop, CHROME_WIN)
     assert "session_conflict" not in post_login(phone, SAFARI_IPHONE).json()
     assert signed_in(laptop) and signed_in(phone)
+
+
+# --- Safari dropped the cookie: the never-used session must not count as "another device" ---
+
+def _age_session(row, *, created_minutes_ago, last_request_seconds_after_creation):
+    """Make a session look like it was created a while ago and last used shortly after."""
+    from datetime import timedelta
+    from django.conf import settings
+    from django.utils import timezone
+
+    created = timezone.now() - timedelta(minutes=created_minutes_ago)
+    UserSession.objects.filter(pk=row.pk).update(created_at=created)
+    last_request = created + timedelta(seconds=last_request_seconds_after_creation)
+    Session.objects.filter(session_key=row.session_key).update(
+        expire_date=last_request + timedelta(seconds=settings.SESSION_COOKIE_AGE)
+    )
+
+
+def test_orphaned_session_is_ignored_and_closed(settings):
+    settings.SESSION_COOKIE_AGE = 15 * 60
+    make_user()
+    lost_cookie_phone = Client()
+    post_login(lost_cookie_phone, SAFARI_IPHONE)          # session made, browser "forgot" the cookie
+    row = UserSession.objects.get()
+    _age_session(row, created_minutes_ago=3, last_request_seconds_after_creation=0)
+
+    resp = post_login(Client(), SAFARI_IPHONE)             # retry: no prompt about a phantom device
+    assert resp.status_code == 200
+    assert "session_conflict" not in resp.json()
+    row.refresh_from_db()
+    assert row.revoked_at is not None
+    assert not Session.objects.filter(session_key=row.session_key).exists()
+
+
+def test_a_session_that_was_used_still_counts_as_a_device(settings):
+    settings.SESSION_COOKIE_AGE = 15 * 60
+    make_user()
+    laptop = Client()
+    post_login(laptop, CHROME_WIN)
+    row = UserSession.objects.get()
+    _age_session(row, created_minutes_ago=3, last_request_seconds_after_creation=150)  # used for 2.5 minutes
+
+    resp = post_login(Client(), SAFARI_IPHONE)
+    assert resp.json()["session_conflict"] is True
+
+
+def test_a_just_created_session_is_never_called_an_orphan():
+    make_user()
+    post_login(Client(), CHROME_WIN)
+    resp = post_login(Client(), SAFARI_IPHONE)
+    assert resp.json()["session_conflict"] is True

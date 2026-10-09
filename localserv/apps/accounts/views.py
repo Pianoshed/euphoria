@@ -137,7 +137,10 @@ class DeviceTakeoverView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
     throttle_classes = [ScopedRateThrottle]
-    throttle_scope = "login"
+    # Its own bucket: sharing "login" meant one sign-in on a new phone used two of the hourly attempts
+    # (login + confirm), so a couple of retries locked people out. The signed challenge is the proof here,
+    # so there is nothing to brute-force.
+    throttle_scope = "device_takeover"
 
     def post(self, request):
         serializer = DeviceTakeoverSerializer(data=request.data)

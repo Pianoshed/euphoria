@@ -83,10 +83,29 @@ export function AuthProvider({ children }) {
     return () => { cancelled = true; };
   }, []);
 
+  // After any successful login, make sure the browser actually KEPT the session. Safari/iPhone silently drops
+  // a session cookie that comes from a different site than the page. The login call still "succeeds", the
+  // app shows the home screen for a moment, the next request is rejected and the person is thrown back to
+  // login with no explanation (and the server now counts that dead session as "another device").
   const finishLogin = useCallback(async (data) => {
     setSessionExpired(false);
-    if (data?.user) setUser(data.user);
-    else await refreshSession();
+    if (!data?.user) {
+      await refreshSession();
+      return data;
+    }
+    try {
+      const me = await getMyProfile();
+      setUser(me?.user ?? me ?? data.user);
+    } catch (err) {
+      if (err?.status === 401 || err?.status === 403) {
+        setUser(null);
+        throw new Error(
+          "You're signed in, but this browser didn't keep the sign-in. On iPhone, open Settings > Safari and turn off "
+          + '"Prevent Cross-Site Tracking" and "Block All Cookies", then try again. If it keeps happening, tell support.',
+        );
+      }
+      setUser(data.user); // a network hiccup, not a rejected cookie: carry on with what the server just told us
+    }
     return data;
   }, [refreshSession]);
 

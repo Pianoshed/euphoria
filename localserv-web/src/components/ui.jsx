@@ -31,6 +31,7 @@ const humanizeField = (field) => {
 
 export function formatError(error) {
   if (isTransientError(error)) return CALM_NETWORK_MESSAGE;
+  if (error?.status === 429) return 'Too many attempts. Please wait a few minutes, then try again.';
   const body = error?.body;
   if (!body) return error?.message || 'Something went wrong.';
   if (typeof body.detail === 'string') return body.detail;

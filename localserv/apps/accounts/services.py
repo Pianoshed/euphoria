@@ -255,14 +255,40 @@ def _live_other_sessions(request, user: User) -> list:
         Session.objects.filter(session_key__in=[r.session_key for r in rows], expire_date__gt=timezone.now())
         .values_list("session_key", flat=True)
     )
+    expiry_by_key = dict(
+        Session.objects.filter(session_key__in=list(live_keys)).values_list("session_key", "expire_date")
+    )
+    idle_age = timedelta(seconds=settings.SESSION_COOKIE_AGE)
+    now = timezone.now()
     live = []
     for row in rows:
-        if row.session_key in live_keys:
-            live.append(row)
-        else:
-            row.revoked_at = timezone.now()
+        if row.session_key not in live_keys:
+            row.revoked_at = now
             row.save(update_fields=["revoked_at"])
+        elif _is_orphan_session(row, expiry_by_key.get(row.session_key), idle_age, now):
+            # Safari/iPhone can drop the session cookie right after login: the server made a session
+            # nobody holds. Counting it as "another device" made people confirm a takeover of their own
+            # phone, over and over. Close it instead.
+            row.revoked_at = now
+            row.save(update_fields=["revoked_at"])
+            Session.objects.filter(session_key=row.session_key).delete()
+        else:
+            live.append(row)
     return live
+
+
+ORPHAN_MIN_AGE = timedelta(seconds=60)   # a brand-new login is never called an orphan
+ORPHAN_MAX_USE = timedelta(seconds=10)   # real devices make requests (profile, presence pings) after login
+
+
+def _is_orphan_session(row, expire_date, idle_age, now) -> bool:
+    """True for a session that was created at login and never used again.
+    SESSION_SAVE_EVERY_REQUEST pushes expire_date forward on every request, so
+    (expire_date - idle_age) is the time of the last request on that session."""
+    if expire_date is None or now - row.created_at < ORPHAN_MIN_AGE:
+        return False
+    last_request = expire_date - idle_age
+    return last_request - row.created_at < ORPHAN_MAX_USE
 
 
 def _login_or_conflict(request, user: User) -> dict:

@@ -157,7 +157,10 @@ REST_FRAMEWORK = {
     # throttle by sending a made-up X-Forwarded-For header on each request.
     "NUM_PROXIES": env.int("NUM_PROXIES", default=1),
     "DEFAULT_THROTTLE_RATES": {
-        "login": "10/hour",
+        # Per IP. Mobile networks put many people behind one IP, so 10/hour locked real users out; the
+        # per-email limit below is the real guard against password guessing.
+        "login": "30/hour",
+        "device_takeover": "30/hour",
         "login_email": "20/hour",
         "mfa_challenge": "8/hour",
         "write_default": "120/min",
@@ -205,8 +208,14 @@ TURN_TTL_SECONDS = env.int("TURN_TTL_SECONDS", default=3600)
 # --- Cookies / sessions (tightened further in prod.py) ---
 SESSION_COOKIE_HTTPONLY = True
 CSRF_COOKIE_HTTPONLY = False  # JS needs to read this to send the header
-SESSION_COOKIE_SAMESITE = "Lax"
-CSRF_COOKIE_SAMESITE = "Lax"
+# Safari (iPhone/Mac) refuses cookies from an API on a different site than the page, whatever SameSite says.
+# The reliable fix is to serve the app and the API from the SAME site (app.example.com + api.example.com), and
+# for those two settings to share the parent domain. Both are env-driven so no code change is needed:
+#   SESSION_COOKIE_DOMAIN=.example.com   CSRF_COOKIE_DOMAIN=.example.com
+SESSION_COOKIE_SAMESITE = env("SESSION_COOKIE_SAMESITE", default="Lax")
+CSRF_COOKIE_SAMESITE = env("CSRF_COOKIE_SAMESITE", default="Lax")
+SESSION_COOKIE_DOMAIN = env("SESSION_COOKIE_DOMAIN", default=None) or None
+CSRF_COOKIE_DOMAIN = env("CSRF_COOKIE_DOMAIN", default=None) or None
 
 # Log out when the browser closes, and after N idle minutes either way.
 # While a tab is open, the presence pings keep the session alive (sliding expiry).

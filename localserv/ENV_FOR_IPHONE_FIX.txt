@@ -1,0 +1,17 @@
+Backend environment variables (set on your host, then redeploy)
+
+# Cookies shared by app.yourdomain.com and api.yourdomain.com  (replace yourdomain.com)
+SESSION_COOKIE_DOMAIN=.yourdomain.com
+CSRF_COOKIE_DOMAIN=.yourdomain.com
+SESSION_COOKIE_SAMESITE=Lax
+CSRF_COOKIE_SAMESITE=Lax
+
+# Your real front-end address(es), no trailing slash
+CORS_ALLOWED_ORIGINS=https://app.yourdomain.com
+CSRF_TRUSTED_ORIGINS=https://app.yourdomain.com
+FRONTEND_URL=https://app.yourdomain.com
+
+# Number of proxies in front of Django (host load balancer = 1; add 1 for Cloudflare etc.)
+NUM_PROXIES=1
+
+Front-end: VITE_API_BASE=https://api.yourdomain.com  (and VITE_WS_BASE if you set it)

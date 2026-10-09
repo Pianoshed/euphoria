@@ -94,6 +94,7 @@ let csrfToken = null;
 const LOGIN_PATHS = new Set([
   '/api/accounts/login/',
   '/api/accounts/login/verify-2fa/',
+  '/api/accounts/login/confirm-device/',
   '/api/accounts/google/',
   '/api/accounts/google/register/',
 ]);
