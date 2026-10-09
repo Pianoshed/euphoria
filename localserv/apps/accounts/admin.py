@@ -186,7 +186,8 @@ class PasswordResetTokenAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ["user", "display_name", "general_location", "last_seen_at"]
+    list_display = ["user", "display_name", "general_location", "age_range", "last_seen_at"]
+    list_filter = ["age_range", "sex"]
     search_fields = ["user__username", "display_name"]
     readonly_fields = ["created_at", "updated_at"]
 

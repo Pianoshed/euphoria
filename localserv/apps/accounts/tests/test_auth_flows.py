@@ -24,7 +24,7 @@ def make_verified_user(**kwargs):
 def test_register_creates_pending_user_and_token(client):
     resp = client.post(
         reverse("accounts:register"),
-        {"email": "New@Example.com", "username": "newuser", "password": "a-strong-password-1"},
+        {"email": "New@Example.com", "username": "newuser", "password": "a-strong-password-1", "age_range": "AGE_26_35"},
         content_type="application/json",
     )
     assert resp.status_code == 201
@@ -38,7 +38,7 @@ def test_register_creates_pending_user_and_token(client):
 def test_register_weak_password_rejected(client):
     resp = client.post(
         reverse("accounts:register"),
-        {"email": "weak@example.com", "username": "weakuser", "password": "12345678"},
+        {"email": "weak@example.com", "username": "weakuser", "password": "12345678", "age_range": "AGE_26_35"},
         content_type="application/json",
     )
     assert resp.status_code == 400
@@ -48,7 +48,7 @@ def test_register_duplicate_email_and_username_is_a_clean_400(client):
     make_verified_user(email="taken@example.com", username="takenname")
     resp = client.post(
         reverse("accounts:register"),
-        {"email": "Taken@Example.com", "username": "TakenName", "password": "a-strong-password-1"},
+        {"email": "Taken@Example.com", "username": "TakenName", "password": "a-strong-password-1", "age_range": "AGE_26_35"},
         content_type="application/json",
     )
     assert resp.status_code == 400
@@ -64,7 +64,7 @@ def test_register_survives_verification_email_failure(client, monkeypatch):
     monkeypatch.setattr("apps.accounts.emails.send_verification_email", boom)
     resp = client.post(
         reverse("accounts:register"),
-        {"email": "mail@example.com", "username": "mailuser", "password": "a-strong-password-1"},
+        {"email": "mail@example.com", "username": "mailuser", "password": "a-strong-password-1", "age_range": "AGE_26_35"},
         content_type="application/json",
     )
     assert resp.status_code == 201
@@ -74,7 +74,7 @@ def test_register_survives_verification_email_failure(client, monkeypatch):
 def test_register_defaults_to_customer_role(client):
     resp = client.post(
         reverse("accounts:register"),
-        {"email": "defaultrole@example.com", "username": "defaultroleuser", "password": "a-strong-password-1"},
+        {"email": "defaultrole@example.com", "username": "defaultroleuser", "password": "a-strong-password-1", "age_range": "AGE_26_35"},
         content_type="application/json",
     )
     assert resp.status_code == 201
@@ -86,7 +86,7 @@ def test_register_can_self_select_provider_role(client):
         reverse("accounts:register"),
         {
             "email": "provider1@example.com", "username": "provider1user",
-            "password": "a-strong-password-1", "role": "PROVIDER",
+            "password": "a-strong-password-1", "age_range": "AGE_26_35", "role": "PROVIDER",
         },
         content_type="application/json",
     )
@@ -101,7 +101,7 @@ def test_register_cannot_self_select_privileged_role(client):
         reverse("accounts:register"),
         {
             "email": "sneaky@example.com", "username": "sneakyuser",
-            "password": "a-strong-password-1", "role": "ADMIN",
+            "password": "a-strong-password-1", "age_range": "AGE_26_35", "role": "ADMIN",
         },
         content_type="application/json",
     )

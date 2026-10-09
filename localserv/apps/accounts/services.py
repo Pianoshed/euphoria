@@ -18,7 +18,7 @@ from rest_framework.exceptions import AuthenticationFailed, ValidationError
 
 import pyotp
 
-from apps.common.constants import AccountRole, AccountStatus, ProfileVisibility
+from apps.common.constants import AccountRole, AccountStatus, AgeRange, ProfileVisibility, Sex, age_range_for_age
 from apps.common.exceptions import AccountNotEligibleError, DomainError
 from apps.common.models import AuditAction, AuditLog
 from apps.common.utils import clamp_page_size, get_client_ip, whitelist_ordering
@@ -58,8 +58,41 @@ EMAIL_TAKEN_MESSAGE = "An account with this email already exists. Try logging in
 USERNAME_TAKEN_MESSAGE = "That username is taken. Try another one."
 
 
+# Youngest age we accept at sign-up. Set MINIMUM_SIGNUP_AGE in settings to change it.
+# Legal minimums differ (US COPPA 13, UK 13, EU/GDPR 13-16 by country, South Africa
+# POPIA and Nigeria NDPA treat under-18s as children needing a parent/guardian's
+# consent) -- decide this with counsel; the code only enforces what a birth year proves.
+def _minimum_signup_age() -> int:
+    return int(getattr(settings, "MINIMUM_SIGNUP_AGE", 13))
+
+
+def _demographics(*, age_range=None, birth_year=None, sex=Sex.UNDISCLOSED) -> dict:
+    """Validate and normalise the sign-up demographics into Profile field values."""
+    now_year = timezone.now().year
+    if birth_year:
+        age = now_year - birth_year  # approximate: no birthday collected
+        if age < _minimum_signup_age():
+            raise ValidationError({"birth_year": [f"You must be at least {_minimum_signup_age()} to create an account."]})
+        age_range = age_range_for_age(age)  # the server decides the band, not the client
+    if not age_range:
+        raise ValidationError({"age_range": ["Choose your age range (or enter your birth year)."]})
+    return {
+        "age_range": age_range,
+        "birth_year": birth_year or None,
+        "sex": sex or Sex.UNDISCLOSED,
+    }
+
+
+def _save_demographics(user: User, data: dict) -> None:
+    Profile.objects.filter(user=user).update(**data)
+
+
 @transaction.atomic
-def register_user(*, email: str, username: str, password: str, role: str = AccountRole.CUSTOMER) -> User:
+def register_user(
+    *, email: str, username: str, password: str, role: str = AccountRole.CUSTOMER,
+    age_range: str | None = None, birth_year: int | None = None, sex: str = Sex.UNDISCLOSED,
+) -> User:
+    demographics = _demographics(age_range=age_range, birth_year=birth_year, sex=sex)
     try:
         validate_password(password)
     except DjangoValidationError as exc:
@@ -85,6 +118,8 @@ def register_user(*, email: str, username: str, password: str, role: str = Accou
     except IntegrityError as exc:
         # Two people submitting the same email/username at the same instant.
         raise ValidationError({"email": [EMAIL_TAKEN_MESSAGE]}) from exc
+
+    _save_demographics(user, demographics)
 
     try:
         _issue_email_verification_token(user)
@@ -388,7 +423,7 @@ def disable_2fa(user: User, *, password: str) -> None:
 
 PROFILE_UPDATABLE_FIELDS = {
     "display_name", "bio", "general_location", "latitude", "longitude",
-    "availability", "preferences",
+    "availability", "preferences", "age_range", "birth_year", "sex",
 }
 
 
@@ -397,6 +432,13 @@ def update_profile(user: User, **fields) -> Profile:
     unknown = set(fields) - PROFILE_UPDATABLE_FIELDS
     if unknown:
         raise ValidationError({f: ["This field cannot be updated here."] for f in unknown})
+    if fields.get("birth_year"):
+        age = timezone.now().year - fields["birth_year"]
+        if age < _minimum_signup_age():
+            raise ValidationError({"birth_year": [f"You must be at least {_minimum_signup_age()} to use this service."]})
+        fields["age_range"] = age_range_for_age(age)  # keep the stored band in step with the year
+    elif "age_range" in fields and "birth_year" not in fields:
+        fields["birth_year"] = None  # a band chosen by hand replaces any older birth year
     for field, value in fields.items():
         setattr(profile, field, value)
     profile.full_clean(exclude=["user", "avatar"])
@@ -473,6 +515,9 @@ def get_public_profile(viewer, target_user: User) -> dict | None:
         "general_location": profile.general_location,
         "availability": profile.availability,
         "role": target_user.role,
+        # Band only (drives the glow colour). Deliberately not hideable: it is a
+        # safety signal. Birth year and sex are owner-only, below.
+        "age_range": profile.effective_age_range,
     }
     if is_owner or privacy.show_online_status:
         data["online"] = _is_online(profile)
@@ -480,6 +525,8 @@ def get_public_profile(viewer, target_user: User) -> dict | None:
         data["last_seen_at"] = profile.last_seen_at
     if is_owner:
         data["preferences"] = profile.preferences
+        data["sex"] = profile.sex
+        data["birth_year"] = profile.birth_year
         data["latitude"] = profile.latitude
         data["longitude"] = profile.longitude
         # Needed by the frontend to gate staff-only UI (moderation,
@@ -745,12 +792,16 @@ def authenticate_google_login(request, id_token: str) -> dict:
 
 
 @transaction.atomic
-def register_google_user(request, *, id_token: str, username: str, password: str, role: str = AccountRole.CUSTOMER) -> User:
+def register_google_user(
+    request, *, id_token: str, username: str, password: str, role: str = AccountRole.CUSTOMER,
+    age_range: str | None = None, birth_year: int | None = None, sex: str = Sex.UNDISCLOSED,
+) -> User:
     """Create an account from a Google identity, then log it in.
 
     The Google token is verified AGAIN here: the email comes from the
     token, never from the client, so nobody can register someone else's
     address by editing the request."""
+    demographics = _demographics(age_range=age_range, birth_year=birth_year, sex=sex)
     idinfo = _verify_google_token(id_token)
     email = idinfo["email"]
 
@@ -779,6 +830,7 @@ def register_google_user(request, *, id_token: str, username: str, password: str
 
     profile, _ = Profile.objects.get_or_create(user=user)
     ProfilePrivacy.objects.get_or_create(user=user)
+    _save_demographics(user, demographics)
     full_name = _google_full_name(idinfo)
     if full_name and not profile.display_name:
         profile.display_name = full_name[:50]  # matches max_length=50

@@ -16,6 +16,39 @@ class AccountStatus(models.TextChoices):
     PENDING_VERIFICATION = "PENDING_VERIFICATION", "Pending verification"
 
 
+class AgeRange(models.TextChoices):
+    """Age bands shown to other people as a coloured glow around a profile bubble.
+    Only the band is ever public -- never a birth year or exact age.
+    NOTE: the brief listed \"40-60\", which leaves 36-39 uncovered; the band is 36-60 here."""
+
+    UNDER_16 = "UNDER_16", "Under 16"
+    AGE_16_25 = "AGE_16_25", "16-25"
+    AGE_26_35 = "AGE_26_35", "26-35"
+    AGE_36_60 = "AGE_36_60", "36-60"
+    OVER_60 = "OVER_60", "Over 60"
+
+
+class Sex(models.TextChoices):
+    """Private to the account owner (and staff). Never returned to other users."""
+
+    MALE = "M", "Male"
+    FEMALE = "F", "Female"
+    PREFER_NOT_TO_SAY = "PNS", "Prefer not to say"
+    UNDISCLOSED = "UNDISCLOSED", "Undisclosed"  # question skipped / not asked (e.g. accounts that predate it)
+
+
+def age_range_for_age(age: int) -> str:
+    if age < 16:
+        return AgeRange.UNDER_16
+    if age <= 25:
+        return AgeRange.AGE_16_25
+    if age <= 35:
+        return AgeRange.AGE_26_35
+    if age <= 60:
+        return AgeRange.AGE_36_60
+    return AgeRange.OVER_60
+
+
 class VerificationStatus(models.TextChoices):
     UNVERIFIED = "UNVERIFIED", "Unverified"
     PENDING = "PENDING", "Pending review"

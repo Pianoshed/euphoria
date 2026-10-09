@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from apps.common.constants import AccountRole, ContactPermission, ProfileVisibility
+from django.utils import timezone
+
+from apps.common.constants import AccountRole, AgeRange, ContactPermission, ProfileVisibility, Sex
 
 from .models import User, UserSession
 
@@ -12,7 +14,31 @@ class UserPublicSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-class RegisterSerializer(serializers.Serializer):
+class DemographicsMixin(serializers.Serializer):
+    """Age band (or birth year) + sex, collected at sign-up.
+
+    Give EITHER `age_range` OR `birth_year`; a birth year is turned into the band
+    server-side. `sex` is optional and falls back to UNDISCLOSED. The frontend
+    never gets to choose the band for a birth year it also sends.
+    """
+
+    age_range = serializers.ChoiceField(choices=AgeRange.choices, required=False)
+    birth_year = serializers.IntegerField(required=False, min_value=1900)
+    sex = serializers.ChoiceField(choices=Sex.choices, required=False, default=Sex.UNDISCLOSED.value)
+
+    def validate_birth_year(self, value):
+        if value > timezone.now().year:
+            raise serializers.ValidationError("Birth year cannot be in the future.")
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        if not attrs.get("age_range") and not attrs.get("birth_year"):
+            raise serializers.ValidationError({"age_range": ["Choose your age range (or enter your birth year)."]})
+        return attrs
+
+
+class RegisterSerializer(DemographicsMixin):
     email = serializers.EmailField()
     username = serializers.CharField(min_length=3, max_length=30)
     password = serializers.CharField(write_only=True, min_length=10)
@@ -82,6 +108,14 @@ class ProfileUpdateSerializer(serializers.Serializer):
     longitude = serializers.DecimalField(max_digits=9, decimal_places=6, required=False, allow_null=True)
     availability = serializers.CharField(max_length=200, allow_blank=True, required=False)
     preferences = serializers.JSONField(required=False)
+    age_range = serializers.ChoiceField(choices=AgeRange.choices, required=False)
+    birth_year = serializers.IntegerField(required=False, min_value=1900, allow_null=True)
+    sex = serializers.ChoiceField(choices=Sex.choices, required=False)
+
+    def validate_birth_year(self, value):
+        if value and value > timezone.now().year:
+            raise serializers.ValidationError("Birth year cannot be in the future.")
+        return value
 
     def validate(self, attrs):
         if not attrs:
@@ -140,7 +174,7 @@ class GoogleLoginSerializer(serializers.Serializer):
     id_token = serializers.CharField()
 
 
-class GoogleRegisterSerializer(serializers.Serializer):
+class GoogleRegisterSerializer(DemographicsMixin):
     """Second step of Google signup. The email is deliberately NOT a field:
     the server takes it from the verified id_token."""
 

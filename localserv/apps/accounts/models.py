@@ -4,7 +4,16 @@ from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin
 from django.db import models
 from django.utils import timezone
 
-from apps.common.constants import AccountRole, AccountStatus, ContactPermission, ProfileVisibility, VerificationStatus
+from apps.common.constants import (
+    AccountRole,
+    AccountStatus,
+    AgeRange,
+    ContactPermission,
+    ProfileVisibility,
+    Sex,
+    VerificationStatus,
+    age_range_for_age,
+)
 from apps.common.validators import validate_username
 
 from .managers import UserManager
@@ -206,6 +215,14 @@ class Profile(models.Model):
 
     last_seen_at = models.DateTimeField(null=True, blank=True)
 
+    # Demographics collected at sign-up. Data minimisation: only the band is
+    # public (age_range -> glow colour). birth_year is optional, owner-only, and
+    # when present it wins so the band moves on as the person gets older.
+    # `sex` is owner/staff-only and is never part of any other user's view.
+    age_range = models.CharField(max_length=12, choices=AgeRange.choices, blank=True)
+    birth_year = models.PositiveSmallIntegerField(null=True, blank=True)
+    sex = models.CharField(max_length=12, choices=Sex.choices, default=Sex.UNDISCLOSED)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -218,6 +235,15 @@ class Profile(models.Model):
     @property
     def effective_display_name(self) -> str:
         return self.display_name or self.user.username
+
+    @property
+    def effective_age_range(self) -> str:
+        """The band other people see. Derived from birth_year when we have it
+        (approximate: year difference, no birthday), else the stored band.
+        Empty string for older accounts that never answered."""
+        if self.birth_year:
+            return age_range_for_age(timezone.now().year - self.birth_year)
+        return self.age_range
 
 
 class ProfilePrivacy(models.Model):
