@@ -1,18 +1,18 @@
 // Circles: the labels a friend tree owner gives each person ("how do I know them?").
-// Keys are what get sent to / read from the API; label, emoji and colour are UI only.
+// Keys are what get sent to / read from the API; label, icon (a name from components/icons.jsx) and colour are UI only.
 export const CIRCLES = [
-  { key: 'family', label: 'Family', emoji: '👨‍👩‍👧', color: '#C62F45' },
-  { key: 'partner', label: 'Partner', emoji: '💞', color: '#C2275F' },
-  { key: 'besties', label: 'Besties', emoji: '💛', color: '#A86A00' },
-  { key: 'friends', label: 'Friends', emoji: '🤝', color: '#1F6FA3' },
-  { key: 'work', label: 'Workmates', emoji: '💼', color: '#4A3FB5' },
-  { key: 'school', label: 'Classmates', emoji: '🎓', color: '#17805A' },
-  { key: 'neighbours', label: 'Neighbours', emoji: '🏡', color: '#9A5B13' },
-  { key: 'acquaintance', label: 'Acquaintances', emoji: '👋', color: '#6B5A87' },
+  { key: 'family', label: 'Family', icon: 'users', color: '#C62F45' },
+  { key: 'partner', label: 'Partner', icon: 'heart', color: '#C2275F' },
+  { key: 'besties', label: 'Besties', icon: 'star', color: '#A86A00' },
+  { key: 'friends', label: 'Friends', icon: 'smile', color: '#1F6FA3' },
+  { key: 'work', label: 'Workmates', icon: 'briefcase', color: '#4A3FB5' },
+  { key: 'school', label: 'Classmates', icon: 'cap', color: '#17805A' },
+  { key: 'neighbours', label: 'Neighbours', icon: 'home', color: '#9A5B13' },
+  { key: 'acquaintance', label: 'Acquaintances', icon: 'hand', color: '#6B5A87' },
 ];
 
 // Not pickable: people who only reach you through a tree someone else made.
-export const SHARED = { key: 'shared', label: 'Shared trees', emoji: '🌳', color: '#2F7D4F' };
+export const SHARED = { key: 'shared', label: 'Shared trees', icon: 'tree', color: '#2F7D4F' };
 
 export const DEFAULT_CIRCLE = 'friends';
 const BY_KEY = Object.fromEntries([...CIRCLES, SHARED].map((c) => [c.key, c]));

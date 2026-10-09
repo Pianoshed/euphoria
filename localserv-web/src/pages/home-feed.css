@@ -195,6 +195,40 @@ body[data-backdrop='scene']::before {
   .hf-act__icon { width: 28px; height: 28px; }
 }
 
+/* ---------- phones: same language, quieter. Thinner side bars that fade into a soft wash,
+   slightly smaller type, gentler corners. Tablets and desktop keep the bolder bars. ---------- */
+@media (max-width: 699px) {
+  .page.hf { --hf-bar: 3px; font-size: .9375rem; }
+  .hf-chat, .hf-thought, .hf-act, .hf-next, .hf-trees, .hf-plan {
+    border-radius: 13px; border-left: var(--hf-bar) solid color-mix(in srgb, var(--acc) 85%, transparent);
+    background: linear-gradient(100deg, color-mix(in srgb, var(--acc) 15%, var(--hf-panel)) 0%, color-mix(in srgb, var(--acc) 5%, var(--hf-panel)) 55%, var(--hf-panel) 100%);
+  }
+  .hf-hero { padding: 16px 14px 16px 18px; border-left-width: 4px; border-radius: 16px; gap: 12px;
+    background: linear-gradient(105deg, color-mix(in srgb, var(--acc) 20%, var(--hf-panel)) 0%, color-mix(in srgb, var(--acc) 6%, var(--hf-panel)) 60%, var(--hf-panel) 100%); }
+  .hf-hero__hello { font-size: .72rem; }
+  .hf-hero h1 { font-size: clamp(1.5rem, 6.6vw, 1.95rem); }
+  .hf-hero__sub { margin: 3px 0 12px; font-size: .9rem; }
+  .hf-btn { min-height: 40px; padding: 6px 14px; font-size: .84rem; }
+  .hf a.hf-btn, .hf button.hf-btn { border-width: 1.5px; }
+  .hf-stat { border-radius: 11px; padding: 8px 9px 11px; }
+  .hf-stat::after { height: 3px; }
+  .hf-stat b { font-size: clamp(.98rem, 4.2vw, 1.4rem); }
+  .hf-stat__lbl { font-size: .66rem; }
+  .hf-act { font-size: .8rem; }
+  .hf-act__icon { width: 30px; height: 30px; border-radius: 9px; }
+  .hf-sec__head { padding-left: 10px; }
+  .hf-sec__head::before { width: 3px; }
+  .hf-sec__head h2 { font-size: 1rem; }
+  .hf-sec__head a { font-size: .78rem; }
+  .hf-chat__text strong { font-size: .9rem; }
+  .hf-chat__text small, .hf-next small { font-size: .76rem; }
+  .hf-thought p { font-size: .9rem; }
+  .hf-plan strong { font-size: .95rem; }
+  .hf-ring__o { border-width: 2.5px; }
+  .hf-dock a::before { height: 3px; }
+  .hf-dock a { font-size: .64rem; }
+}
+
 /* ---------- tablets ---------- */
 @media (min-width: 700px) {
   .page.hf { padding: 22px 26px calc(92px + env(safe-area-inset-bottom, 0px)); }

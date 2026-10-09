@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import PeoplePicker from '../../components/PeoplePicker';
+import { Icon } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import * as api from '../../api/square';
 import { shrinkImage, shrinkVideo, MAX_VIDEO_SECONDS } from './shrinkMedia';
@@ -52,7 +53,7 @@ const layers = []; // Escape only closes the top-most modal
 function Pill({ circle, count }) {
   return (
     <span className="sq-pill" style={{ '--c': circle.color }}>
-      <span aria-hidden="true">{circle.emoji}</span>{circle.label}{count != null && <b>{count}</b>}
+      <Icon name={circle.icon} size={12} />{circle.label}{count != null && <b>{count}</b>}
     </span>
   );
 }
@@ -121,10 +122,10 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
           <span className="sq-av sq-av--sm">{initial(status.user.name)}</span>
           <div className="sq-vname">
             <b>{status.user.name}</b>
-            <small>{circle ? `${circle.emoji} ${circle.label} · ` : ''}{hoursLeft(status.expires_at)}h left</small>
+            <small>{circle ? `${circle.label} · ` : ''}{hoursLeft(status.expires_at)}h left</small>
           </div>
         </div>
-        <button type="button" className="sq-x" onClick={close} aria-label="Close">✕</button>
+        <button type="button" className="sq-x" onClick={close} aria-label="Close"><Icon name="x" size={18} /></button>
       </div>
       {status.kind === 'image' && <img src={status.file} alt="" />}
       {isVideo && <video src={status.file} autoPlay playsInline controls={false} onEnded={() => advance.current()} />}
@@ -179,7 +180,7 @@ function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
     <button type="button" className={`sq-bub${big ? ' sq-bub--big' : ''}${mid ? ' sq-bub--mid' : ''}${live ? ' sq-bub--live' : ''}${edit ? ' sq-bub--edit' : ''}${you ? ' sq-bub--you' : ''}`}
       style={color ? { '--c': color } : undefined} onClick={onClick}
       aria-label={edit ? `Remove ${person.name}` : `${person.name}${you ? ' (you)' : ''}${live ? ', has a status' : ''}`}>
-      <i>{initial(person.name)}{edit && <em className="sq-bub__x" aria-hidden="true">✕</em>}</i>
+      <i>{initial(person.name)}{edit && <em className="sq-bub__x" aria-hidden="true"><Icon name="x" size={9} strokeWidth={3} /></em>}</i>
       <small>{you ? 'You' : person.name}</small>
     </button>
   );
@@ -194,9 +195,9 @@ function Pager({ page, pages, onPage, label = 'People pages' }) {
   if (pages <= 1) return null;
   return (
     <nav className="sq-pager" aria-label={label}>
-      <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page">‹</button>
+      <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page"><Icon name="chevronLeft" size={16} /></button>
       <span role="status">{page + 1} / {pages}</span>
-      <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page">›</button>
+      <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page"><Icon name="chevron" size={16} /></button>
     </nav>
   );
 }
@@ -213,11 +214,12 @@ function TreeCard({ tree, onOpen }) {
   return (
     <div className={`sq-card sq-tcard${open ? ' is-open' : ''}`}>
       <button type="button" className="sq-tcard__head" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((v) => !v)}>
+        <span className="sq-tcard__leaf" aria-hidden="true"><Icon name="tree" size={18} /></span>
         <span className="sq-tcard__info">
           <b>{tree.title}</b>
           <small>{plural(people.length, 'person', 'people')} · by {tree.mine ? 'you' : tree.owner.name}</small>
         </span>
-        <span className="sq-chev" aria-hidden="true">›</span>
+        <span className="sq-chev" aria-hidden="true"><Icon name="chevron" size={18} /></span>
       </button>
       {open && (
         <div className="sq-tcard__body" id={bodyId}>
@@ -235,7 +237,7 @@ function TreeCard({ tree, onOpen }) {
             })}
           </ul>
           <Pager page={safe} pages={pages} onPage={setPage} />
-          <button type="button" className="sq-cta sq-cta--sm sq-tcard__open" onClick={() => onOpen(tree)}>Open tree</button>
+          <button type="button" className="sq-cta sq-cta--sm sq-tcard__open" onClick={() => onOpen(tree)}><Icon name="tree" size={15} />Open tree</button>
         </div>
       )}
     </div>
@@ -281,7 +283,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
   const structured = hasLabels(tree);
   const partners = useMemo(() => (structured ? tree.members.filter((m) => labelFor(tree, m) === 'partner') : []), [tree, structured]);
   const groups = useMemo(() => {
-    if (!structured) return [{ key: 'in', label: 'In this tree', emoji: '🌳', color: 'var(--color-violet)', people: tree.members }];
+    if (!structured) return [{ key: 'in', label: 'In this tree', icon: 'tree', color: 'var(--color-violet)', people: tree.members }];
     return CIRCLES.filter((c) => c.key !== 'partner')
       .map((c) => ({ ...c, people: tree.members.filter((m) => labelFor(tree, m) === c.key) })).filter((g) => g.people.length);
   }, [tree, structured]);
@@ -336,14 +338,14 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
             </div>
             {owner && (
               <button type="button" className={`sq-edit${edit ? ' is-on' : ''}`} aria-pressed={edit}
-                onClick={() => { if (edit) saveName(); setEdit((v) => !v); }}>{edit ? '✓ Done' : '✏️ Edit'}</button>
+                onClick={() => { if (edit) saveName(); setEdit((v) => !v); }}><Icon name={edit ? 'check' : 'pencil'} size={14} />{edit ? 'Done' : 'Edit'}</button>
             )}
-            <button type="button" className="sq-x sq-x--soft" onClick={close} aria-label="Close">✕</button>
+            <button type="button" className="sq-x sq-x--soft" onClick={close} aria-label="Close"><Icon name="x" size={18} /></button>
           </header>
           {tree.note && <p className="sq-hint">{tree.note}</p>}
           {!owner && (
             <div className="sq-viewonly">
-              <span aria-hidden="true">👀</span>
+              <Icon name="eye" size={16} />
               <span className="sq-viewonly__txt">View only. {tree.owner.name} planted this tree; your spot is the one that glows. Everyone else stays hidden as 🍎🎁.</span>
               <button type="button" className="sq-viewonly__leave" onClick={() => onLeave(tree)}>Remove me</button>
             </div>
@@ -353,7 +355,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
               <Bubble person={tree.owner} big you={isMe(tree.owner)} live={!!statusByUser[tree.owner.id]} onClick={() => onMember(tree.owner)} />
               {partners.map((m) => (
                 <span key={m.id} className="sq-mate">
-                  <span className="sq-mate__link" aria-hidden="true">💞</span>
+                  <span className="sq-mate__link" aria-hidden="true"><Icon name="heart" size={11} strokeWidth={2.4} /></span>
                   <Bubble person={m} color={circleMeta('partner').color} mid edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
                     onClick={() => (edit && owner ? drop(m) : onMember(m))} />
                 </span>
@@ -363,7 +365,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
             <div className="sq-branches">
               {groups.map((g, gi) => (
                 <section key={g.key} className="sq-branch" style={{ '--c': g.color, '--bs': `${Math.max(28, 38 - gi * 2)}px` }}>
-                  <h4><span aria-hidden="true">{g.emoji}</span>{g.label}<b>{g.people.length}</b></h4>
+                  <h4><Icon name={g.icon} size={13} />{g.label}<b>{g.people.length}</b></h4>
                   <PagedBubs people={g.people} render={(m) => (
                     <Bubble key={m.id} person={m} color={g.color} edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
                       onClick={() => (edit && owner ? drop(m) : onMember(m))} />
@@ -373,13 +375,13 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
             </div>
             {tree.members.length === 0 && <p className="sq-hint">Nobody here yet.</p>}
           </div>
-          {owner && edit && <button type="button" className="sq-cta sq-cta--sm sq-add" onClick={() => onAdd(tree)}>＋ Add people</button>}
+          {owner && edit && <button type="button" className="sq-cta sq-cta--sm sq-add" onClick={() => onAdd(tree)}><Icon name="plus" size={15} />Add people</button>}
           {owner && <p className="sq-hint sq-center">{edit ? 'Tap a person to remove them. Rename the tree at the top.' : 'Tap anyone to change how you know them.'}</p>}
           <div className="sq-acts">
-            <button type="button" className="sq-ghost" onClick={download}>⬇ Image</button>
-            {canShare && <button type="button" className="sq-ghost" onClick={share}>↗ Share</button>}
-            {owner && <button type="button" className="sq-ghost" disabled={!!busy} onClick={asStatus}>{busy || '✨ Post as status'}</button>}
-            <button type="button" className="sq-ghost sq-ghost--danger" onClick={() => onLeave(tree)}>{owner ? '🗑 Delete tree' : '👋 Leave tree'}</button>
+            <button type="button" className="sq-ghost" onClick={download}><Icon name="download" size={16} />Save image</button>
+            {canShare && <button type="button" className="sq-ghost" onClick={share}><Icon name="share" size={16} />Share</button>}
+            {owner && <button type="button" className="sq-ghost" disabled={!!busy} onClick={asStatus}><Icon name="sparkle" size={16} />{busy || 'Post as status'}</button>}
+            <button type="button" className="sq-ghost sq-ghost--danger" onClick={() => onLeave(tree)}><Icon name={owner ? 'trash' : 'logout'} size={16} />{owner ? 'Delete tree' : 'Leave tree'}</button>
           </div>
         </div>
       )}
@@ -412,14 +414,14 @@ function MemberSheet({ tree, person, status, canEdit, meId, onLabel, onStatus, o
                   <button key={c.key} type="button" role="radio" aria-checked={current === c.key}
                     className={`sq-pick${current === c.key ? ' is-on' : ''}`} style={{ '--c': c.color }}
                     onClick={() => onLabel(tree, person, c.key)}>
-                    <span aria-hidden="true">{c.emoji}</span>{c.label}
+                    <Icon name={c.icon} size={14} />{c.label}
                   </button>
                 ))}
               </div>
             </>
           )}
           <div className="sq-row">
-            {status && <button type="button" className="sq-cta" onClick={() => onStatus(status)}>▶ View status</button>}
+            {status && <button type="button" className="sq-cta" onClick={() => onStatus(status)}><Icon name="play" size={15} />View status</button>}
             <Link to={`/profile/${person.id}`} className="sq-ghost sq-ghost--link">View profile</Link>
           </div>
           {canEdit && !isOwner && (
@@ -518,11 +520,11 @@ function Composer({ onClose, onPosted }) {
               {isImg && <img src={preview} alt="Selected" />}
               {isVid && <video src={preview} muted playsInline />}
               {!isImg && !isVid && <p className="sq-hint">Unsupported file</p>}
-              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => setFile(null)}>✕</button>
+              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => setFile(null)}><Icon name="x" size={16} /></button>
             </div>
           ) : (
             <label className="sq-drop">
-              <span aria-hidden="true">📷</span>
+              <span className="sq-drop__ico" aria-hidden="true"><Icon name="camera" size={22} /></span>
               <b>Add a photo or video</b>
               <small>Tap to choose from your phone</small>
               <input type="file" accept="image/*,video/*" onChange={(e) => setFile(e.target.files[0] || null)} />
@@ -554,7 +556,7 @@ function Drawer({ side, title, open, onClose, children }) {
       }}>
       <header className="sq-drawer__head">
         <h2>{title}</h2>
-        <button type="button" className="sq-x sq-x--soft" onClick={onClose} aria-label={`Close ${title}`}>✕</button>
+        <button type="button" className="sq-x sq-x--soft" onClick={onClose} aria-label={`Close ${title}`}><Icon name="x" size={18} /></button>
       </header>
       {children}
     </aside>
@@ -688,7 +690,7 @@ export default function Square() {
     if (labels) saveLocalLabels(t.id, labels);
     setTrees((cur) => [t, ...cur]);
     setTreeOpen(false); setTab('trees');
-    pop(`🌳 "${title}" planted`);
+    pop(`"${title}" planted`);
   };
   const setLabel = async (t, person, key) => {
     if (!ownsTree(t)) return;
@@ -763,21 +765,21 @@ export default function Square() {
       <Drawer side="left" title="My circles" open={drawer === 'left'} onClose={() => setDrawer(null)}>
         <div className="sq-dr">
           <div className="sq-dr__acts">
-            <button type="button" className="sq-cta" onClick={() => choose(() => setComposing(true))}>📷 Add status</button>
-            <button type="button" className="sq-ghost" onClick={() => choose(() => setThinking(true))}>💭 Share a thought</button>
-            <button type="button" className="sq-ghost" onClick={() => choose(() => setTreeOpen(true))}>🌳 New tree</button>
+            <button type="button" className="sq-cta" onClick={() => choose(() => setComposing(true))}><Icon name="camera" size={17} />Add status</button>
+            <button type="button" className="sq-ghost" onClick={() => choose(() => setThinking(true))}><Icon name="thought" size={17} />Share a thought</button>
+            <button type="button" className="sq-ghost" onClick={() => choose(() => setTreeOpen(true))}><Icon name="tree" size={17} />New tree</button>
           </div>
           <h3 className="sq-sec">Show me</h3>
           <ul className="sq-circles">
             <li>
               <button type="button" aria-pressed={active === 'all'} onClick={() => pickCircle('all')}>
-                <span className="sq-circles__e" aria-hidden="true">✨</span>Everyone<b>{people}</b>
+                <span className="sq-circles__e" aria-hidden="true"><Icon name="sparkle" size={16} /></span>Everyone<b>{people}</b>
               </button>
             </li>
             {circles.map((c) => (
               <li key={c.key}>
                 <button type="button" aria-pressed={active === c.key} style={{ '--c': c.color }} onClick={() => pickCircle(c.key)}>
-                  <span className="sq-circles__e" aria-hidden="true">{c.emoji}</span>{c.label}<b>{counts[c.key]}</b>
+                  <span className="sq-circles__e" aria-hidden="true"><Icon name={c.icon} size={16} /></span>{c.label}<b>{counts[c.key]}</b>
                 </button>
               </li>
             ))}
@@ -790,20 +792,20 @@ export default function Square() {
       <section className="sq-main">
         <header className="sq-hero">
           <div className="sq-hero__bar">
-            <button type="button" className="sq-ico sq-only-m" aria-label="Open my circles" onClick={() => setDrawer('left')}>☰</button>
+            <button type="button" className="sq-ico sq-only-m" aria-label="Open my circles" onClick={() => setDrawer('left')}><Icon name="menu" size={20} /></button>
             <div className="sq-hero__title">
               <h1>The Square</h1>
               <p>{people > 0 ? `${plural(people, 'person', 'people')} in your trees` : 'Plant a tree to see your people'}</p>
             </div>
-            <button type="button" className="sq-ico sq-only-m" aria-label="Open trending" onClick={() => setDrawer('right')}>🔥</button>
+            <button type="button" className="sq-ico sq-only-m" aria-label="Open trending" onClick={() => setDrawer('right')}><Icon name="flame" size={20} /></button>
           </div>
 
           {circles.length > 0 && (
             <div className="sq-chips sq-only-m" role="group" aria-label="Filter by circle">
-              <button type="button" aria-pressed={active === 'all'} onClick={() => setFilter('all')}>✨ All</button>
+              <button type="button" aria-pressed={active === 'all'} onClick={() => setFilter('all')}><Icon name="sparkle" size={13} />All</button>
               {circles.map((c) => (
                 <button key={c.key} type="button" aria-pressed={active === c.key} onClick={() => setFilter(c.key)}>
-                  <span aria-hidden="true">{c.emoji}</span> {c.label}
+                  <Icon name={c.icon} size={13} />{c.label}
                 </button>
               ))}
             </div>
@@ -811,11 +813,11 @@ export default function Square() {
 
           <div className="sq-stories-head">
             <h2>Status updates</h2>
-            {stories.length > 2 && <button type="button" className="sq-shuffle" onClick={() => setSeed(Math.random().toString(36).slice(2))}>🔀 Shuffle</button>}
+            {stories.length > 2 && <button type="button" className="sq-shuffle" onClick={() => setSeed(Math.random().toString(36).slice(2))}><Icon name="shuffle" size={13} />Shuffle</button>}
           </div>
           <div className="sq-rings">
             <button type="button" className="sq-ring sq-ring--add" onClick={() => setComposing(true)}>
-              <i aria-hidden="true">＋</i><small className="sq-ring__name">Add</small>
+              <i aria-hidden="true"><Icon name="plus" size={22} /></i><small className="sq-ring__name">Add</small>
             </button>
             {!loaded && [0, 1, 2, 3].map((n) => <span key={n} className="sq-skel" aria-hidden="true" />)}
             {stories.map((s) => {
@@ -823,8 +825,8 @@ export default function Square() {
               return (
                 <button key={s.id} type="button" className={`sq-ring${seen[s.id] ? ' sq-ring--seen' : ''}`} onClick={() => open(s)}>
                   <i>
-                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? '🎬' : initial(s.user.name)}
-                    {c && <em className="sq-badge" aria-hidden="true">{c.emoji}</em>}
+                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <Icon name="film" size={22} /> : initial(s.user.name)}
+                    {c && <em className="sq-badge" aria-hidden="true" style={{ '--c': c.color }}><Icon name={c.icon} size={11} strokeWidth={2.2} /></em>}
                   </i>
                   <small className="sq-ring__name">{s.user.id === user?.id ? 'You' : s.user.name}</small>
                 </button>
@@ -841,8 +843,8 @@ export default function Square() {
 
         <div className="sq-body">
           <div className="sq-seg" role="tablist" aria-label="Square sections">
-            <button type="button" role="tab" aria-selected={tab === 'thoughts'} onClick={() => setTab('thoughts')}>💭 Thoughts</button>
-            <button type="button" role="tab" aria-selected={tab === 'trees'} onClick={() => setTab('trees')}>🌳 Trees{trees.length ? ` · ${trees.length}` : ''}</button>
+            <button type="button" role="tab" aria-selected={tab === 'thoughts'} onClick={() => setTab('thoughts')}><Icon name="thought" size={16} />Thoughts</button>
+            <button type="button" role="tab" aria-selected={tab === 'trees'} onClick={() => setTab('trees')}><Icon name="tree" size={16} />Trees{trees.length > 0 && <b className="sq-seg__n">{trees.length}</b>}</button>
           </div>
 
           {tab === 'thoughts' && (
@@ -861,22 +863,25 @@ export default function Square() {
                   <Reactions mine={t.my_reaction} counts={t.reactions} onPick={(e) => reactThought(t, e)} />
                 </article>
               ))}
-              {shown.length === 0 && <p className="sq-empty">No thoughts yet. Tap ＋ to share the first one.</p>}
+              {shown.length === 0 && <p className="sq-empty">No thoughts yet. Tap the plus button to share the first one.</p>}
             </>
           )}
 
           {tab === 'trees' && (
             <>
-              <div className="sq-split">
-                <p className="sq-hint">Only you and the people you tag can see a tree.</p>
-                <button type="button" className="sq-cta sq-cta--sm" onClick={() => setTreeOpen(true)}>+ New tree</button>
+              <div className="sq-trees-head">
+                <div>
+                  <h2>Your trees</h2>
+                  <p className="sq-hint">Only you and the people you tag can see a tree.</p>
+                </div>
+                <button type="button" className="sq-plant" onClick={() => setTreeOpen(true)}><Icon name="plus" size={16} />New tree</button>
               </div>
               {trees.length === 0 && (
                 <div className="sq-card sq-empty-card">
-                  <span aria-hidden="true">🌳</span>
+                  <span className="sq-empty-card__ico" aria-hidden="true"><Icon name="tree" size={26} /></span>
                   <h3>Plant your first tree</h3>
                   <p className="sq-hint">Tag your people and label them: Family, Workmates, Besties… Their statuses will show up here.</p>
-                  <button type="button" className="sq-cta" onClick={() => setTreeOpen(true)}>Plant a tree</button>
+                  <button type="button" className="sq-plant" onClick={() => setTreeOpen(true)}><Icon name="plus" size={16} />Plant a tree</button>
                 </div>
               )}
               {treesShown.map((t) => <TreeCard key={t.id} tree={t} onOpen={(x) => setSheetId(x.id)} />)}
@@ -890,21 +895,21 @@ export default function Square() {
       <Drawer side="right" title="Trending" open={drawer === 'right'} onClose={() => setDrawer(null)}>
         <div className="sq-dr">
           <div className="sq-card">
-            <h2>🔥 Most liked statuses</h2>
+            <h2><Icon name="flame" size={16} />Most liked statuses</h2>
             {trendingStatuses.length === 0 && <p className="sq-hint">Nothing yet.</p>}
-            <ul>{trendingStatuses.map((s) => (
-              <li key={s.id}><button type="button" onClick={() => open(s)}><strong>{s.user.name}</strong> {s.text || (s.kind === 'video' ? 'Video' : 'Photo')}</button><b>❤️ {s.likes}</b></li>
-            ))}</ul>
+            <ol className="sq-rank">{trendingStatuses.map((s, i) => (
+              <li key={s.id}><i aria-hidden="true">{i + 1}</i><button type="button" onClick={() => open(s)}><strong>{s.user.name}</strong> {s.text || (s.kind === 'video' ? 'Video' : 'Photo')}</button><b><Icon name="heart" size={13} />{s.likes}</b></li>
+            ))}</ol>
           </div>
           <div className="sq-card">
-            <h2>💬 Trending thoughts</h2>
+            <h2><Icon name="trending" size={16} />Trending thoughts</h2>
             {trending.thoughts.length === 0 && <p className="sq-hint">Nothing yet.</p>}
-            <ul>{trending.thoughts.map((t) => (
-              <li key={t.id}><span>{t.text.length > 60 ? `${t.text.slice(0, 60)}…` : t.text}</span><b>{t.total}</b></li>
-            ))}</ul>
+            <ol className="sq-rank">{trending.thoughts.map((t, i) => (
+              <li key={t.id}><i aria-hidden="true">{i + 1}</i><span>{t.text.length > 60 ? `${t.text.slice(0, 60)}…` : t.text}</span><b>{t.total}</b></li>
+            ))}</ol>
           </div>
           <div className="sq-card">
-            <h2>Emoji right now</h2>
+            <h2><Icon name="sparkle" size={16} />Emoji right now</h2>
             <p className="sq-emoji">{trending.emoji.join(' ') || '—'}</p>
           </div>
         </div>
@@ -915,19 +920,19 @@ export default function Square() {
       {/* floating speed-dial (phones) */}
       {dial && (
         <div className="sq-dial" role="menu">
-          <button type="button" role="menuitem" onClick={() => choose(() => setTreeOpen(true))}><span>New tree</span><i aria-hidden="true">🌳</i></button>
-          <button type="button" role="menuitem" onClick={() => choose(() => setThinking(true))}><span>Thought</span><i aria-hidden="true">💭</i></button>
-          <button type="button" role="menuitem" onClick={() => choose(() => setComposing(true))}><span>Status</span><i aria-hidden="true">📷</i></button>
+          <button type="button" role="menuitem" onClick={() => choose(() => setTreeOpen(true))}><span>New tree</span><i aria-hidden="true"><Icon name="tree" size={20} /></i></button>
+          <button type="button" role="menuitem" onClick={() => choose(() => setThinking(true))}><span>Thought</span><i aria-hidden="true"><Icon name="thought" size={20} /></i></button>
+          <button type="button" role="menuitem" onClick={() => choose(() => setComposing(true))}><span>Status</span><i aria-hidden="true"><Icon name="camera" size={20} /></i></button>
         </div>
       )}
       <button type="button" className={`sq-fab${dial ? ' is-open' : ''}`} hidden={!!drawer} aria-expanded={dial}
-        aria-label={dial ? 'Close menu' : 'Create something'} onClick={() => setDial((d) => !d)}>＋</button>
+        aria-label={dial ? 'Close menu' : 'Create something'} onClick={() => setDial((d) => !d)}><Icon name="plus" size={26} strokeWidth={2.2} /></button>
 
       <div className="sq-pops" aria-live="polite">
         {pops.map((p) => (
           <button key={p.id} type="button" className="sq-pop"
             onClick={() => { setPops((c) => c.filter((x) => x.id !== p.id)); if (p.status) open(p.status); }}>
-            <span aria-hidden="true">{/could not/i.test(p.msg) ? '⚠️' : '✨'}</span>{p.msg}{p.status && <em>View</em>}
+            <span className={`sq-pop__ico${/could not/i.test(p.msg) ? ' is-bad' : ''}`} aria-hidden="true"><Icon name={/could not/i.test(p.msg) ? 'alert' : 'sparkle'} size={15} /></span>{p.msg}{p.status && <em>View</em>}
           </button>
         ))}
       </div>

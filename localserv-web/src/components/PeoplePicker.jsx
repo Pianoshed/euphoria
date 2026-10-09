@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as accountsApi from '../api/accounts';
 import { useAuth } from '../context/AuthContext';
 import { ErrorAlert } from './ui';
+import { Icon } from './icons';
 import '../pages/chat/group.css';
 import './people-picker.css';
 
@@ -168,7 +169,7 @@ export default function PeoplePicker({
                       <button key={o.key} type="button" role="radio" aria-checked={labels[p.id] === o.key}
                         className={`pp-lab${labels[p.id] === o.key ? ' is-on' : ''}`} style={{ '--c': o.color }}
                         onClick={() => setLabels((cur) => ({ ...cur, [p.id]: o.key }))}>
-                        <span aria-hidden="true">{o.emoji}</span> {o.label}
+                        <Icon name={o.icon} size={13} /> {o.label}
                       </button>
                     ))}
                   </div>
