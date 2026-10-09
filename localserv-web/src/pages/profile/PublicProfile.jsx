@@ -10,7 +10,7 @@ import { ErrorAlert, Spinner } from '../../components/ui';
 import { ReportButton } from '../../components/ReportButton';
 import { ROLE_META } from '../../utils/roles';
 import { lookFor } from '../../utils/bubbleLook';
-import { AgeTag } from '../../components/AgeGlow';
+import '../../components/age-glow.css';
 import { ageGlowProps } from '../../utils/ageGroups';
 
 export default function PublicProfile() {
@@ -76,7 +76,6 @@ export default function PublicProfile() {
           {meta && <span className={`pf-chip pf-chip--${profile.role.toLowerCase()}`}>{meta.label}</span>}
           {profile.general_location && <span className="pf-chip">📍 {profile.general_location}</span>}
           {profile.availability && <span className="pf-chip">🕒 {profile.availability}</span>}
-          {profile.age_range && <span className="pf-chip"><AgeTag group={profile.age_range} prefix="Age group: " /></span>}
         </p>
         {meta && <p className="pf-blurb">{meta.blurb}</p>}
       </header>

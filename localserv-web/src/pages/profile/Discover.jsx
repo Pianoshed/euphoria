@@ -7,8 +7,8 @@ import * as accountsApi from '../../api/accounts';
 import * as chatApi from '../../api/chat';
 import { ROLE_META } from '../../utils/roles';
 import { lookFor } from '../../utils/bubbleLook';
-import { AgeLegend, AgeTag } from '../../components/AgeGlow';
-import { ageGlowProps, ageGroup } from '../../utils/ageGroups';
+import '../../components/age-glow.css';
+import { ageGlowProps } from '../../utils/ageGroups';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, ChillLoader, Spinner } from '../../components/ui';
 
@@ -214,7 +214,6 @@ export default function Discover() {
       {!results && <ChillLoader kind="people" />}
       {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name, area or filter.</p></div>}
 
-      {results?.length > 0 && <AgeLegend />}
       {results?.length > 0 && <p className="dp-count">{results.length} {results.length === 1 ? 'person' : 'people'}</p>}
       <div className="dp-field">
         {shownPeople.map((p) => {
@@ -239,7 +238,6 @@ export default function Discover() {
             >
               <Avatar person={p} name={name} />
               <strong className="dp-card__name">{name}</strong>
-              {ageGroup(p.age_range) && <span className="sr-only">Age group {ageGroup(p.age_range).label}</span>}
               {meta && <span className={`dp-card__role dp-card__role--${p.role.toLowerCase()}`}>{meta.label}</span>}
             </button>
           );
@@ -278,7 +276,6 @@ export default function Discover() {
                 {ROLE_META[active.p.role].label} · {ROLE_META[active.p.role].blurb}
               </p>
             )}
-            {active.p.age_range && <p className="dp-pop__line"><AgeTag group={active.p.age_range} prefix="Age group: " /></p>}
             {active.p.general_location && <p className="dp-pop__line">📍 {active.p.general_location}</p>}
             {active.p.availability && <p className="dp-pop__line">🕒 {active.p.availability}</p>}
             {active.p.bio && <p className="dp-pop__bio">{active.p.bio}</p>}

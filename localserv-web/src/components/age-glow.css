@@ -7,33 +7,25 @@
 [data-age="AGE_36_60"] { --age: #2fbf71; --age-rgb: 47 191 113; }
 [data-age="OVER_60"]   { --age: #f5a524; --age-rgb: 245 165 36; }
 
-/* The glow replaces the plain ring on any bubble that carries data-age. */
-.dp-card[data-age] {
-  box-shadow: 0 12px 22px -16px rgba(31, 29, 61, 0.55), 0 0 0 3px var(--age), 0 0 16px 3px rgb(var(--age-rgb) / 0.55);
+/* Soft ring that blends into the bubble: the colour fades in from the edge (inset) and
+   bleeds slightly outside. No hard outline, no text. Colour only. */
+.dp-card[data-age],
+.dp-pop__card[data-age],
+.pf-hero[data-age],
+.mp-preview__card[data-age] {
+  --glow-in: rgb(var(--age-rgb) / 0.42);
+  --glow-out: rgb(var(--age-rgb) / 0.26);
+  box-shadow:
+    inset 0 0 0 1.5px rgb(var(--age-rgb) / 0.30),
+    inset 0 0 22px 4px var(--glow-in),
+    0 0 18px 2px var(--glow-out),
+    0 12px 22px -16px rgba(31, 29, 61, 0.45);
 }
 .dp-card[data-age]:hover,
 .dp-card[data-age]:focus-visible {
-  box-shadow: 0 18px 28px -16px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--age), 0 0 22px 6px rgb(var(--age-rgb) / 0.7);
+  --glow-in: rgb(var(--age-rgb) / 0.55);
+  --glow-out: rgb(var(--age-rgb) / 0.38);
 }
-.dp-pop__card[data-age] {
-  box-shadow: 0 24px 60px -20px rgba(31, 29, 61, 0.7), 0 0 0 3px var(--age), 0 0 26px 6px rgb(var(--age-rgb) / 0.6);
-}
-.pf-hero[data-age] {
-  box-shadow: 0 22px 40px -28px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--age), 0 0 26px 6px rgb(var(--age-rgb) / 0.55);
-}
-.mp-preview__card[data-age] {
-  box-shadow: 0 0 0 3px var(--age), 0 0 18px 4px rgb(var(--age-rgb) / 0.5);
-}
-
-/* Small coloured dot + label ("● 16–25") used in popups, profiles and the legend. */
-.age-tag { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; font-weight: 600; }
-.age-tag__dot {
-  width: 10px; height: 10px; border-radius: 50%; flex: none;
-  background: var(--age); box-shadow: 0 0 6px 1px rgb(var(--age-rgb) / 0.7);
-}
-
-.age-legend { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; margin: 0 0 12px; font-size: 0.78rem; opacity: 0.85; }
-.age-legend__title { font-weight: 700; }
 
 /* Sign-up / edit picker */
 .demo { border: 0; padding: 0; margin: 0 0 1rem; min-width: 0; }

@@ -12,7 +12,6 @@ import { useAlerts } from '../../context/AlertsContext';
 import DemographicsFields, { EMPTY_DEMOGRAPHICS } from '../../components/DemographicsFields';
 import LegalFootnote from '../../components/LegalFootnote';
 import { ageGlowProps, ageGroupForBirthYear, demographicsPayload, sexLabel } from '../../utils/ageGroups';
-import { AgeTag } from '../../components/AgeGlow';
 
 // Saved age/sex -> the form's shape. A stored birth year means the person gave a year, so show it as one.
 const demoFromUser = (u) => ({
@@ -121,7 +120,6 @@ function ProfilePreview({ user, form, privacy, ageRange }) {
           <strong>{name}</strong>
           {form.general_location && <span>{form.general_location}</span>}
           {form.availability && <span className="soft">{form.availability}</span>}
-          {ageRange && <AgeTag group={ageRange} prefix="Age group: " />}
           {privacy.show_online_status && <span className="live">Online now</span>}
           {!privacy.show_online_status && privacy.show_last_seen && <span className="soft">Last seen recently</span>}
           {form.bio && <span className="bio">{form.bio}</span>}
@@ -131,7 +129,7 @@ function ProfilePreview({ user, form, privacy, ageRange }) {
         {privacy.profile_visibility === 'PUBLIC' && <li>Visible to anyone, including visitors who are not signed in.</li>}
         {privacy.profile_visibility === 'REGISTERED_USERS' && <li>Visible to signed-in people only.</li>}
         {hidden && <li>You will not appear in "Find people".</li>}
-        {ageRange && <li>Your age group shows as a coloured glow. Your birth year and sex are never shown.</li>}
+        {ageRange && <li>Your age group only shows as a soft coloured glow around your bubble. No number or label, and your birth year and sex are never shown.</li>}
         {privacy.who_can_message === 'NOBODY' && <li>No one can start a new chat with you.</li>}
         {!privacy.show_online_status && !privacy.show_last_seen && <li>Your activity is hidden.</li>}
       </ul>
