@@ -16,6 +16,7 @@ from .models import User
 from .serializers import (
     BlockCreateSerializer,
     BlockedUserSerializer,
+    DeviceTakeoverSerializer,
     DiscoverQuerySerializer,
     EmailVerifySerializer,
     GoogleLoginSerializer,
@@ -50,6 +51,11 @@ class CSRFBootstrapView(APIView):
     @method_decorator(ensure_csrf_cookie)
     def get(self, request):
         return Response({"detail": "CSRF cookie set.", "csrfToken": get_token(request)})
+
+
+def _conflict_payload(result: dict, **extra) -> dict:
+    """Login stopped because the account is signed in on another device (see services._login_or_conflict)."""
+    return {**extra, "session_conflict": True, "challenge": result["session_conflict"], "devices": result["devices"]}
 
 
 class RegisterView(APIView):
@@ -103,6 +109,8 @@ class LoginView(APIView):
         result = services.authenticate_login(request, **serializer.validated_data)
         if "mfa_challenge" in result:
             return Response({"mfa_required": True, "challenge": result["mfa_challenge"]})
+        if "session_conflict" in result:
+            return Response(_conflict_payload(result, mfa_required=False))
         return Response({"mfa_required": False, "user": UserPublicSerializer(result["user"]).data})
 
 
@@ -115,7 +123,26 @@ class LoginMFAView(APIView):
     def post(self, request):
         serializer = LoginMFASerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        user = services.verify_login_mfa(request, **serializer.validated_data)
+        result = services.verify_login_mfa(request, **serializer.validated_data)
+        if "session_conflict" in result:
+            return Response(_conflict_payload(result))
+        return Response({"user": UserPublicSerializer(result["user"]).data})
+
+
+class DeviceTakeoverView(APIView):
+    """Second step when the account is already signed in elsewhere: the person agreed to sign the
+    other device(s) out. The signed challenge from login is the proof, so session auth (and its
+    CSRF check) is skipped, as for LoginMFAView."""
+
+    permission_classes = [AllowAny]
+    authentication_classes = []
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "login"
+
+    def post(self, request):
+        serializer = DeviceTakeoverSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = services.confirm_device_takeover(request, **serializer.validated_data)
         return Response({"user": UserPublicSerializer(user).data})
 
 
@@ -374,6 +401,8 @@ class GoogleLoginView(APIView):
         serializer = GoogleLoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         result = services.authenticate_google_login(request, **serializer.validated_data)
+        if result.get("session_conflict"):
+            return Response({"needs_signup": False, **_conflict_payload(result)})
         if result["needs_signup"]:
             return Response({
                 "needs_signup": True,

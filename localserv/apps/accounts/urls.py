@@ -11,6 +11,7 @@ urlpatterns = [
     path("resend-verification/", views.ResendVerificationView.as_view(), name="resend-verification"),
     path("login/", views.LoginView.as_view(), name="login"),
     path("login/verify-2fa/", views.LoginMFAView.as_view(), name="login-verify-2fa"),
+    path("login/confirm-device/", views.DeviceTakeoverView.as_view(), name="login-confirm-device"),
     path("logout/", views.LogoutView.as_view(), name="logout"),
     path("password/reset/", views.PasswordResetRequestView.as_view(), name="password-reset"),
     path("password/reset/confirm/", views.PasswordResetConfirmView.as_view(), name="password-reset-confirm"),

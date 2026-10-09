@@ -65,6 +65,10 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
 
 
+class DeviceTakeoverSerializer(serializers.Serializer):
+    challenge = serializers.CharField()
+
+
 class LoginMFASerializer(serializers.Serializer):
     challenge = serializers.CharField()
     code = serializers.CharField(max_length=10)

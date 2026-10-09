@@ -44,6 +44,8 @@ EMAIL_TOKEN_TTL = timedelta(hours=24)
 PASSWORD_RESET_TOKEN_TTL = timedelta(hours=1)
 MFA_CHALLENGE_TTL_SECONDS = 300
 MFA_SIGNING_SALT = "accounts.mfa-challenge"
+TAKEOVER_SIGNING_SALT = "accounts.device-takeover"
+TAKEOVER_TTL_SECONDS = 300
 
 # Generic messages -- deliberately identical whether or not the email
 # exists, so these endpoints can't be used to enumerate accounts.
@@ -217,6 +219,86 @@ def _finish_login(request, user: User) -> User:
     return user
 
 
+# --- One device at a time --------------------------------------------------------
+# An account may be signed in on one device at a time. Logging in somewhere new, after the
+# password / 2FA / Google proof, does NOT sign the new device in straight away: we answer with a
+# signed "takeover" token plus a description of the device(s) that are signed in. The person
+# confirms (confirm_device_takeover) and only then are the old sessions ended. Turn the rule off
+# with SINGLE_DEVICE_LOGIN = False in settings.
+# "Device" = a browser session: two browsers on one computer count as two devices.
+
+def _single_device_enabled() -> bool:
+    return bool(getattr(settings, "SINGLE_DEVICE_LOGIN", True))
+
+
+def _describe_device(user_agent: str) -> str:
+    ua = user_agent or ""
+    browser = next((n for k, n in (("Edg/", "Edge"), ("OPR/", "Opera"), ("Firefox/", "Firefox"),
+                                   ("Chrome/", "Chrome"), ("Safari/", "Safari")) if k in ua), "A browser")
+    system = next((n for k, n in (("Windows", "Windows"), ("Android", "Android"), ("iPhone", "iPhone"),
+                                  ("iPad", "iPad"), ("Mac OS X", "Mac"), ("Linux", "Linux")) if k in ua), "")
+    return f"{browser} on {system}" if system else browser
+
+
+def _live_other_sessions(request, user: User) -> list:
+    """Active sessions of this user other than the browser that is logging in now.
+    A UserSession row can outlive its Django session (idle expiry), so rows whose session
+    is gone are closed here instead of being reported as devices."""
+    from django.contrib.sessions.models import Session
+
+    rows = UserSession.objects.filter(user=user, revoked_at__isnull=True)
+    current = request.session.session_key
+    if current:
+        rows = rows.exclude(session_key=current)
+    rows = list(rows)
+    live_keys = set(
+        Session.objects.filter(session_key__in=[r.session_key for r in rows], expire_date__gt=timezone.now())
+        .values_list("session_key", flat=True)
+    )
+    live = []
+    for row in rows:
+        if row.session_key in live_keys:
+            live.append(row)
+        else:
+            row.revoked_at = timezone.now()
+            row.save(update_fields=["revoked_at"])
+    return live
+
+
+def _login_or_conflict(request, user: User) -> dict:
+    """Finish the login, or ask first if the account is signed in on another device.
+    Returns {"user": user} or {"session_conflict": token, "devices": [...]}."""
+    if _single_device_enabled():
+        others = _live_other_sessions(request, user)
+        if others:
+            token = signing.dumps({"user_id": str(user.id)}, salt=TAKEOVER_SIGNING_SALT)
+            return {
+                "session_conflict": token,
+                "devices": [
+                    {"device": _describe_device(o.user_agent), "last_active": o.last_seen_at}
+                    for o in others
+                ],
+            }
+    _finish_login(request, user)
+    return {"user": user}
+
+
+def confirm_device_takeover(request, *, challenge: str) -> User:
+    """The person agreed to sign out their other device(s): end those sessions, then log in here."""
+    try:
+        payload = signing.loads(challenge, salt=TAKEOVER_SIGNING_SALT, max_age=TAKEOVER_TTL_SECONDS)
+    except signing.BadSignature as exc:
+        raise AuthenticationFailed("This login attempt has expired. Please log in again.") from exc
+    try:
+        user = User.objects.get(id=payload["user_id"])
+    except User.DoesNotExist as exc:
+        raise AuthenticationFailed(GENERIC_AUTH_ERROR) from exc
+    _check_account_usable(user)
+    _revoke_all_sessions(user, except_session_key=request.session.session_key)
+    _finish_login(request, user)
+    return user
+
+
 def _check_account_usable(user: User) -> None:
     if user.status == AccountStatus.SUSPENDED:
         raise DomainError("Your account is suspended. Contact support for help.")
@@ -242,11 +324,11 @@ def authenticate_login(request, *, email: str, password: str) -> dict:
         challenge = signing.dumps({"user_id": str(user.id)}, salt=MFA_SIGNING_SALT)
         return {"mfa_challenge": challenge}
 
-    _finish_login(request, user)
-    return {"user": user}
+    return _login_or_conflict(request, user)
 
 
-def verify_login_mfa(request, *, challenge: str, code: str) -> User:
+def verify_login_mfa(request, *, challenge: str, code: str) -> dict:
+    """Returns {"user": user} or {"session_conflict": token, "devices": [...]}."""
     try:
         payload = signing.loads(challenge, salt=MFA_SIGNING_SALT, max_age=MFA_CHALLENGE_TTL_SECONDS)
     except signing.BadSignature as exc:
@@ -262,8 +344,7 @@ def verify_login_mfa(request, *, challenge: str, code: str) -> User:
     if not user.two_factor_enabled or not _totp_valid(user, code):
         raise AuthenticationFailed("Invalid authentication code.")
 
-    _finish_login(request, user)
-    return user
+    return _login_or_conflict(request, user)
 
 
 def logout_user(request) -> None:
@@ -787,8 +868,7 @@ def authenticate_google_login(request, id_token: str) -> dict:
         user.refresh_from_db()
 
     _check_account_usable(user)
-    _finish_login(request, user)
-    return {"needs_signup": False, "user": user}
+    return {"needs_signup": False, **_login_or_conflict(request, user)}
 
 
 @transaction.atomic
