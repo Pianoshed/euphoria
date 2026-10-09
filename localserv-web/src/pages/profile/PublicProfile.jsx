@@ -51,7 +51,7 @@ export default function PublicProfile() {
     }
   };
 
-  if (error) return <div className="page"><ErrorAlert error={error} /></div>;
+  if (error) return <div className="page"><ErrorAlert error={error} onRetry={() => window.location.reload()} /></div>;
   if (!profile) return <div className="page"><Spinner /></div>;
 
   const isSelf = user?.id === profile.id;

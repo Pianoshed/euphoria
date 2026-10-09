@@ -120,7 +120,7 @@ export default function Wallet() {
   return (
     <div className="page">
       <h1>Your wallet</h1>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); loadAll(); }} />
 
       {SHOW_IN_PROGRESS_NOTICE && (
         <p

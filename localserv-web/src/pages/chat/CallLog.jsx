@@ -180,7 +180,7 @@ export default function CallLog() {
         </div>
       )}
 
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => window.location.reload()} />
       {!rows && !error && <Spinner />}
 
       {rows && (

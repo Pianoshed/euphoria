@@ -41,7 +41,7 @@ export default function Sessions() {
     <div className="page page--narrow">
       <h1>Active sessions</h1>
       <p className="muted">Devices and browsers currently signed in to your account.</p>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); load(); }} />
       {!sessions && <Spinner />}
       {sessions?.length > 1 && (
         <button className="btn btn--sm" disabled={busy} onClick={handleRevokeAll} style={{ marginBottom: 'var(--space-4)' }}>

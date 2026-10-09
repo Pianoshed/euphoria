@@ -156,7 +156,7 @@ export default function ModerationDashboard() {
           </button>
         ))}
       </div>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); load(); }} />
       {!reports && <Spinner />}
       {reports?.length === 0 && <div className="empty-state"><p>No {statusFilter.toLowerCase()} reports.</p></div>}
       <div className="stack">

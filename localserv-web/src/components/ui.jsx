@@ -8,7 +8,7 @@ export function Spinner() {
 /** Renders a caught ApiError (or any Error) as an alert. Pulls DRF's
  * {"detail": "..."} or per-field validation errors into one readable
  * string rather than dumping the raw object. */
-export function ErrorAlert({ error }) {
+export function ErrorAlert({ error, onRetry }) {
   if (!error) return null;
   // Bad network or a server hiccup: a faint, calm note instead of a red error, so nobody panics.
   if (isTransientError(error)) {
@@ -16,6 +16,7 @@ export function ErrorAlert({ error }) {
       <div className="soft-notice" role="status" aria-live="polite">
         <span>{CALM_NETWORK_MESSAGE}</span>
         <span className="chill__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
+        {onRetry && <button type="button" className="soft-notice__retry" onClick={onRetry}>Try again</button>}
       </div>
     );
   }

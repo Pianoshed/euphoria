@@ -56,7 +56,7 @@ export default function BookingDetail() {
     }
   };
 
-  if (error && !booking) return <div className="page"><ErrorAlert error={error} /></div>;
+  if (error && !booking) return <div className="page"><ErrorAlert error={error} onRetry={() => window.location.reload()} /></div>;
   if (!booking) return <div className="page"><Spinner /></div>;
 
   const isCustomer = user.id === booking.customer.id;

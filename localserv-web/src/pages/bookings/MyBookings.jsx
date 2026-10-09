@@ -29,7 +29,7 @@ export default function MyBookings() {
         <button type="button" className={role === 'customer' ? 'active' : ''} aria-pressed={role === 'customer'} onClick={() => setRole('customer')}>Joined</button>
         <button type="button" className={role === 'provider' ? 'active' : ''} aria-pressed={role === 'provider'} onClick={() => setRole('provider')}>Hosting</button>
       </div>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => window.location.reload()} />
       {!bookings && <ChillLoader kind="plans" />}
       {bookings?.length === 0 && (
         <div className="pl-empty">

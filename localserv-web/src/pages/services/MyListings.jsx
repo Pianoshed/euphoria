@@ -60,7 +60,7 @@ export default function MyListings() {
         </div>
         <p className="pl-sub">Publish, edit or archive what you've put up for people to join.</p>
       </header>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); load(); }} />
       {!listings && <ChillLoader kind="plans" />}
       {listings?.length === 0 && (
         <div className="pl-empty">

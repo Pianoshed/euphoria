@@ -60,7 +60,7 @@ export default function BlockedPeople() {
         You can unblock someone for 6 months after blocking them, and your chat comes back with all its old
         messages. After that the block is permanent.
       </p>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); load(); }} />
       {!blocks && !error && <Spinner />}
       {blocks?.length === 0 && <p className="muted text-sm">You haven't blocked anyone.</p>}
       <div className="stack-sm">

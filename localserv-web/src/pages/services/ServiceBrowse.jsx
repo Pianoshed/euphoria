@@ -233,7 +233,7 @@ export default function ServiceBrowse() {
             </label>
           </div>
 
-          <ErrorAlert error={error} />
+          <ErrorAlert error={error} onRetry={() => window.location.reload()} />
           {loading && <ChillLoader kind="plans" />}
           {!loading && list.length === 0 && (
             <div className="empty-state">

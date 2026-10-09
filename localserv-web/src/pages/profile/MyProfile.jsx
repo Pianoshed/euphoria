@@ -233,7 +233,7 @@ export default function MyProfile() {
   if (error && !privacy) return (
     <div className="page page--narrow">
       <h1>My profile</h1>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => window.location.reload()} />
     </div>
   );
 

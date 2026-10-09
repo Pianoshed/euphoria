@@ -208,7 +208,7 @@ export default function Discover() {
         </details>
       </section>
 
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => window.location.reload()} />
       {!results && <ChillLoader kind="people" />}
       {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name, area or filter.</p></div>}
 

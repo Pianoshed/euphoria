@@ -56,7 +56,7 @@ export default function ServiceDetail() {
     }
   };
 
-  if (error) return <div className="page"><ErrorAlert error={error} /></div>;
+  if (error) return <div className="page"><ErrorAlert error={error} onRetry={() => window.location.reload()} /></div>;
   if (!service) return <div className="page"><Spinner /></div>;
 
   const isOwnListing = user && user.id === service.provider.id;

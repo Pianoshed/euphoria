@@ -14,3 +14,9 @@
 /* Calm note for slow networks / server hiccups (replaces the red error box) */
 .soft-notice { margin: 8px 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; font-style: italic; color: var(--ink-soft, #6b6890); background: rgba(120, 110, 180, 0.08); border: 1px solid rgba(120, 110, 180, 0.14); animation: chill-in 0.5s ease both; }
 @media (prefers-reduced-motion: reduce) { .soft-notice { animation: none; } }
+
+/* Offline strip + the small retry button inside .soft-notice */
+.offline-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 200; padding: 6px 12px; text-align: center; font-size: 0.82rem; font-style: italic; color: var(--ink-soft, #6b6890); background: rgba(240, 238, 252, 0.94); border-bottom: 1px solid rgba(120, 110, 180, 0.2); animation: chill-in 0.4s ease both; }
+.soft-notice__retry { margin-left: 10px; padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(120, 110, 180, 0.35); background: transparent; color: inherit; font: inherit; font-style: normal; font-size: 0.82rem; cursor: pointer; }
+.soft-notice__retry:hover { background: rgba(120, 110, 180, 0.12); }
+@media (prefers-reduced-motion: reduce) { .offline-banner { animation: none; } }

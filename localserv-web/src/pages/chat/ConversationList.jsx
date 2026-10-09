@@ -143,7 +143,7 @@ export default function ConversationList() {
         </div>
       </header>
 
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error} onRetry={() => { setError(null); load().catch(setError); }} />
 
       {conversations?.length > 0 && (
         <div className="inbox__tabs" role="group" aria-label="Which chats to show">
