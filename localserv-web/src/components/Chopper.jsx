@@ -1,20 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 
 /**
- * A flat-illustration helicopter that crosses the page once, towing a banner and dropping
- * hearts, confetti and little parachute parcels.
+ * A real 3D helicopter (three.js, built from primitives, no model files) that
+ * flies a random curved path across the screen towing a waving banner.
  *
- * What makes it feel natural:
- *  - every flight is random: direction, speed, height and a weaving path (sums of slow sines)
- *  - it pitches nose-down as it speeds up and tilts with climbs and dives, plus a little turbulence
- *  - the banner is NOT glued to the craft: it hangs on a sagging tow rope and follows the exact
- *    path the craft flew a moment ago, so it swings round every bend
- *  - drops leave the hatch with the craft's forward momentum, then slow down and flutter
- *    (hearts wobble, confetti tumbles, parcels swing under their chute)
+ * - Every mount gets a new random path, height, depth, speed and banner words.
+ * - Touch / click / key anywhere and it fades out and frees the GPU at once.
+ *   (The touch is not swallowed, so whatever you tapped still works.)
+ * - Needs `npm i three`. It is loaded lazily, so other pages don't pay for it.
+ * - Nothing renders under prefers-reduced-motion or if WebGL is unavailable.
  *
- * It never catches clicks, and it gets out of the way: any press, tap, scroll or key press
- * makes it fade out at once. It also removes itself when the pass is over.
- * Remount it (change `key`) to fly again. prefers-reduced-motion = it never starts.
+ * Remount it (change the `key`) to replay.
  */
 
 const PHRASES = [
@@ -25,314 +21,324 @@ const PHRASES = [
   'New drop, go collect',
   'Plot twist incoming',
   'Reply them, they are waiting',
-  'Special delivery, handle with love',
+  'Special delivery',
   'Low-flying gist alert',
-  'No cap, someone asked about you',
+  'Someone asked about you',
   'Weekend plans loading...',
-  'Spill the tea, I will carry it',
+  'Spill the tea',
   'Cupid air service',
   'Vibes delivered, no delay',
   'Do not leave them on read',
   'Hello from above',
 ];
-const COLORS = ['#e8451f', '#2d3fd1', '#f7b928', '#d63471', '#6a3de8'];
 
 const rand = (a, b) => a + Math.random() * (b - a);
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
-const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
-// ---- geometry of the art (viewBox "-12 8 262 118", faces left) ----
-const ART_W = 262;
-const ART_H = 118;
-const TAIL = { x: 0.962, y: 0.356 };   // where the tow rope hooks on (fraction of the craft box)
-const HATCH = { x: 0.382, y: 0.839 };  // where drops come out
-const BANNER = { w: 200, h: 46 };
-
-const heartSvg = (c) => `<svg viewBox="0 0 24 22" width="22" height="20"><path d="M12 21C5 15.5 1 12 1 7.2 1 3.9 3.6 1.5 6.6 1.5c2.2 0 4.1 1.2 5.4 3.1 1.3-1.9 3.2-3.1 5.4-3.1C20.4 1.5 23 3.9 23 7.2c0 4.8-4 8.3-11 13.8Z" fill="${c}"/></svg>`;
-const parcelSvg = (c) => `<svg viewBox="0 0 44 64" width="38" height="55"><path d="M3 22C3 10 11 2 22 2s19 8 19 20c-4-3-8-3-11 0-3-3-5-3-8 0-3-3-5-3-8 0-3-3-7-3-11 0Z" fill="${c}"/><path d="M22 2c-4 4-5 12-5 20M22 2c4 4 5 12 5 20" stroke="#fff" stroke-opacity=".55" stroke-width="1.5" fill="none"/><path d="M5 22 18 46M22 22v24M39 22 26 46" stroke="#1f1d3d" stroke-width="1.2" fill="none"/><rect x="14" y="46" width="16" height="14" rx="1.5" fill="#f7b928"/><path d="M22 46v14M14 53h16" stroke="#e8451f" stroke-width="2"/></svg>`;
-const confettiSvg = (c, shape) => (shape === 0
-  ? `<svg viewBox="0 0 10 14" width="9" height="13"><rect width="10" height="14" rx="1" fill="${c}"/></svg>`
-  : shape === 1
-    ? `<svg viewBox="0 0 12 12" width="11" height="11"><circle cx="6" cy="6" r="6" fill="${c}"/></svg>`
-    : `<svg viewBox="0 0 16 8" width="15" height="7"><rect width="16" height="8" rx="2" fill="${c}"/></svg>`);
-
-const DROP_SIZE = { heart: [22, 20], parcel: [38, 55], confetti: [11, 11] };
-
-function ChopperArt() {
-  return (
-    <svg className="chopper__svg" viewBox="-12 8 262 118" aria-hidden="true">
-      {/* tail boom, fin, stabiliser */}
-      <path d="M150 62 L232 52 L232 68 L150 80Z" fill="#2d3fd1" />
-      <path d="M150 62 L232 52 L232 57 L150 67Z" fill="#fff" opacity=".16" />
-      <path d="M200 63 L222 59 L222 65 L206 70Z" fill="#1f1d3d" opacity=".85" />
-      <path d="M222 44 L240 34 L240 70 L226 68Z" fill="#e8451f" />
-      <circle className="chopper__beacon" cx="239" cy="36" r="2.6" fill="#ff3b30" />
-
-      {/* tail rotor with its blur disc */}
-      <g transform="translate(240 56)">
-        <circle r="15" fill="#1f1d3d" opacity=".09" />
-        <g className="chopper__tail"><rect x="-2.5" y="-16" width="5" height="32" rx="2.5" fill="#1f1d3d" /></g>
-      </g>
-
-      {/* main rotor: blur disc + spinning blade, mast and hub */}
-      <ellipse cx="90" cy="16.5" rx="102" ry="3.6" fill="#1f1d3d" opacity=".1" />
-      <g className="chopper__rotor"><rect x="-8" y="14" width="196" height="5" rx="2.5" fill="#1f1d3d" /></g>
-      <rect x="88" y="19" width="6" height="14" fill="#1f1d3d" />
-      <rect x="84" y="15.5" width="14" height="5" rx="2" fill="#1f1d3d" />
-
-      {/* cabin */}
-      <path d="M24 78C24 52 52 32 94 32c42 0 68 16 72 40 2 12-2 26-12 34H46C32 106 24 94 24 78Z" fill="#e8451f" />
-      <path d="M30 98c4 5 9 8 16 8h108c6-4 10-9 12-15-30 9-92 12-136 7Z" fill="#000" opacity=".12" />
-      <path d="M26 88h134c-1 5-3 9-6 12H34c-4-3-7-7-8-12Z" fill="#f7b928" />
-      {/* windscreen, glare, pilot */}
-      <path d="M34 76c0-14 14-26 38-28 6 0 10 4 10 10v22H40c-4 0-6-2-6-4Z" fill="#dce6ee" />
-      <path d="M43 68 60 53" stroke="#fff" strokeOpacity=".75" strokeWidth="3" strokeLinecap="round" />
-      <circle cx="58" cy="66" r="9" fill="#a8623a" />
-      <path d="M49 63c2-7 14-8 18 0-5-2-12-2-18 0Z" fill="#1f1d3d" />
-      <rect x="52" y="63" width="14" height="5" rx="2.5" fill="#1f1d3d" />
-      <path d="M54 72q4 3 8 0" stroke="#fff" strokeWidth="1.4" fill="none" strokeLinecap="round" />
-      {/* side door */}
-      <path d="M94 50h40c8 0 14 6 14 14v22H94Z" fill="#f4562a" />
-      <rect x="104" y="58" width="30" height="16" rx="4" fill="#dce6ee" />
-      <rect x="124" y="82" width="12" height="3" rx="1.5" fill="#1f1d3d" />
-
-      {/* skids */}
-      <path d="M40 116h112" stroke="#1f1d3d" strokeWidth="4" strokeLinecap="round" />
-      <path d="M60 106v10M128 106v10" stroke="#1f1d3d" strokeWidth="3" />
-      <path d="M152 116c8 0 12-4 14-10" stroke="#1f1d3d" strokeWidth="4" strokeLinecap="round" fill="none" />
-      {/* cargo hatch the drops come out of */}
-      <rect x="76" y="106" width="24" height="3" fill="#1f1d3d" />
-    </svg>
-  );
-}
-
-function BannerArt({ phrase, dir }) {
-  const flip = dir > 0; // flying right: banner trails to the left, so the swallowtail goes left
-  const len = Math.min(150, Math.round(phrase.length * 7.2));
-  return (
-    <svg viewBox={`0 0 ${BANNER.w} ${BANNER.h}`} width="100%" height="100%" overflow="visible" aria-hidden="true">
-      <g className={`chopper__cloth${flip ? ' chopper__cloth--r' : ''}`}>
-        <g transform={flip ? `translate(${BANNER.w} 0) scale(-1 1)` : undefined}>
-          <path d="M0 6 L200 10 L183 23 L200 36 L0 40Z" fill="#f7b928" />
-          <path d="M0 6 L200 10 L183 23 L200 36 L0 40" stroke="#1f1d3d" strokeWidth="1.4" fill="none" strokeLinejoin="round" />
-          <path d="M2 11 L190 14" stroke="#fff" strokeOpacity=".4" strokeWidth="1.6" />
-        </g>
-        <text
-          x={flip ? 106 : 94} y="27" textAnchor="middle"
-          fontFamily="Sora, sans-serif" fontWeight="800" fontSize="12.5" fill="#1f1d3d"
-          textLength={len} lengthAdjust="spacingAndGlyphs"
-        >{phrase}</text>
-      </g>
-    </svg>
-  );
+function bannerCanvas(text, mirror) {
+  const c = document.createElement('canvas');
+  c.width = 512;
+  c.height = 128;
+  const g = c.getContext('2d');
+  if (mirror) { g.translate(c.width, 0); g.scale(-1, 1); }
+  g.fillStyle = '#f7b928';
+  g.fillRect(0, 0, c.width, c.height);
+  g.fillStyle = '#e8451f';
+  g.fillRect(0, 0, c.width, 10);
+  g.fillRect(0, c.height - 10, c.width, 10);
+  g.fillStyle = '#1f1d3d';
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  let size = 54;
+  g.font = `800 ${size}px Sora, system-ui, sans-serif`;
+  while (g.measureText(text).width > c.width - 40 && size > 20) {
+    size -= 2;
+    g.font = `800 ${size}px Sora, system-ui, sans-serif`;
+  }
+  g.fillText(text, c.width / 2, c.height / 2 + 3);
+  return c;
 }
 
 export default function Chopper() {
-  const reduced = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-  const [gone, setGone] = useState(reduced);
-  const [flight] = useState(() => {
-    const W = typeof window !== 'undefined' ? window.innerWidth : 390;
-    const cw = clamp(W * 0.24, 150, 300);
-    const bw = cw * 1.3;
-    return {
-      phrase: pick(PHRASES),
-      dir: Math.random() < 0.5 ? -1 : 1, // -1 = flies right-to-left, 1 = left-to-right
-      cw, ch: cw * (ART_H / ART_W), bw, bh: bw * (BANNER.h / BANNER.w),
-    };
-  });
-  const stageRef = useRef(null);
-  const craftRef = useRef(null);
-  const bannerRef = useRef(null);
-  const ropeRef = useRef(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
-    if (gone) return undefined;
-    const stage = stageRef.current;
-    const craftEl = craftRef.current;
-    const bannerEl = bannerRef.current;
-    const ropeEl = ropeRef.current;
-    if (!stage || !craftEl || !bannerEl || !ropeEl) return undefined;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
+    const canvas = canvasRef.current;
+    if (!canvas) return undefined;
 
-    const { dir, cw, ch, bw, bh } = flight;
-    const W = window.innerWidth;
-    const H = window.innerHeight;
-    const dur = rand(7.5, 10.5);                              // seconds to cross, roughly
-    const base = (W + cw * 1.5 + bw) / dur;                   // px per second
-    const yMin = 76;                                          // stay clear of the top bar
-    const yMax = Math.max(yMin + 60, H * 0.58);
-    const y0 = rand(yMin + 24, yMax - 24);
-    const A1 = rand(6, 14), A2 = rand(14, 34), drift = rand(-9, 9);
-    const p = Array.from({ length: 6 }, () => rand(0, Math.PI * 2));
-    const lag = clamp((cw * 0.45) / base, 0.3, 1.2);          // how far behind the banner hangs
-    const tailFx = dir < 0 ? TAIL.x : 1 - TAIL.x;
-    const hatchFx = dir < 0 ? HATCH.x : 1 - HATCH.x;
+    let cancelled = false;
+    let cleanup = () => {};
 
-    let t = 0;
-    let x = dir < 0 ? W + 8 : -cw - 8;
-    const yAt = (tt) => clamp(
-      y0 + A1 * Math.sin(1.1 * tt + p[0]) + A2 * Math.sin(0.45 * tt + p[1]) + drift * tt + 1.2 * Math.sin(9 * tt + p[2]),
-      yMin, yMax,
-    );
-    let y = yAt(0);
-    let svy = 0;
-    let ang = 0;
-    // path history, seeded behind the start so the banner has somewhere to hang from at t = 0
-    const hist = [{ t: -4, x: x - dir * base * 4, y }, { t: 0, x, y }];
-    const at = (tt) => {
-      for (let i = hist.length - 1; i > 0; i -= 1) {
-        const a = hist[i - 1], b = hist[i];
-        if (tt >= a.t) { const k = b.t === a.t ? 1 : (tt - a.t) / (b.t - a.t); return { x: a.x + (b.x - a.x) * Math.min(1, k), y: a.y + (b.y - a.y) * Math.min(1, k) }; }
-      }
-      return hist[0];
-    };
+    import('three')
+      .then((THREE) => {
+        if (cancelled) return;
 
-    const drops = [];
-    let spawned = 0, parcels = 0, nextDrop = rand(0.7, 1.0);
-    const spawn = (hx, hy, vx) => {
-      const r = Math.random();
-      const kind = r < 0.4 ? 'heart' : r < 0.78 || parcels >= 3 ? 'confetti' : 'parcel';
-      if (kind === 'parcel') parcels += 1;
-      const color = COLORS[spawned % COLORS.length];
-      const el = document.createElement('span');
-      el.className = `drop drop--${kind}`;
-      el.setAttribute('aria-hidden', 'true');
-      const body = document.createElement('span');
-      body.className = 'drop__body';
-      body.innerHTML = kind === 'heart' ? heartSvg(color) : kind === 'parcel' ? parcelSvg(color) : confettiSvg(color, spawned % 3);
-      el.appendChild(body);
-      stage.appendChild(el);
-      spawned += 1;
-      drops.push({
-        el, body, kind, age: 0, x: hx, y: hy, w: DROP_SIZE[kind][0],
-        vx: vx * 0.75, vy: 30, wind: rand(-12, 12),
-        term: kind === 'parcel' ? rand(68, 85) : kind === 'heart' ? rand(80, 112) : rand(95, 140),
-        k: kind === 'parcel' ? 1.8 : 1.1,
-        sway: kind === 'parcel' ? 8 : kind === 'heart' ? 10 : 14,
-        freq: rand(1.8, 3.2), ph: rand(0, Math.PI * 2), spin: rand(180, 420) * (Math.random() < 0.5 ? -1 : 1),
-      });
-    };
+        let renderer;
+        try {
+          renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true, powerPreference: 'low-power' });
+        } catch {
+          return; // no WebGL: just don't show it
+        }
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        renderer.setClearColor(0x000000, 0);
 
-    let rafId = 0;
-    let last = performance.now();
-    let leaving = false;
-    let timer = 0;
-    let stopped = false;
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+        camera.position.set(0, 0, 20);
 
-    const frame = (now) => {
-      if (stopped) return;
-      const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000));
-      last = now;
-      t += dt;
+        scene.add(new THREE.HemisphereLight(0xffffff, 0x6a5acd, 1.05));
+        const sun = new THREE.DirectionalLight(0xffffff, 2.1);
+        sun.position.set(-5, 8, 9);
+        scene.add(sun);
 
-      // ---- craft: weaving path, speed that breathes, pitch that follows the climb ----
-      const sp = base * (1 + 0.18 * Math.sin(0.9 * t + p[3]));
-      x += dir * sp * dt;
-      const prevY = y;
-      y = yAt(t);
-      svy += ((y - prevY) / dt - svy) * Math.min(1, dt * 4);
-      const climb = (Math.atan2(svy, sp) * 180) / Math.PI;   // + = descending
-      const noseDown = 4 + clamp(climb * 0.7, -7, 9) + Math.sin(2.3 * t + p[4]);
-      ang += (noseDown * dir - ang) * Math.min(1, dt * 5);
-      craftEl.style.transform = `translate3d(${x.toFixed(1)}px,${y.toFixed(1)}px,0) rotate(${ang.toFixed(2)}deg)`;
+        const disposables = [];
+        const mat = (color, opts = {}) => {
+          const m = new THREE.MeshStandardMaterial({ color, roughness: 0.45, metalness: 0.15, ...opts });
+          disposables.push(m);
+          return m;
+        };
+        const geo = (g) => { disposables.push(g); return g; };
 
-      const rad = (ang * Math.PI) / 180;
-      const cos = Math.cos(rad), sin = Math.sin(rad);
-      const world = (fx, fy) => {
-        const rx = fx * cw - cw / 2, ry = fy * ch - ch / 2;
-        return { x: x + cw / 2 + rx * cos - ry * sin, y: y + ch / 2 + rx * sin + ry * cos };
-      };
+        const red = mat(0xe8451f);
+        const darkRed = mat(0xc23512);
+        const blue = mat(0x2d3fd1);
+        const yellow = mat(0xf7b928);
+        const ink = mat(0x1f1d3d, { roughness: 0.6 });
+        const glass = mat(0xbfe3ff, { roughness: 0.05, metalness: 0.3, transparent: true, opacity: 0.82 });
+        const skin = mat(0xa8623a);
 
-      // ---- banner: hangs from the tail on a rope, follows the path flown `lag` seconds ago ----
-      hist.push({ t, x, y });
-      while (hist.length > 3 && hist[1].t < t - lag - 1) hist.shift();
-      const T = world(tailFx, TAIL.y);
-      const d = at(t - lag);
-      const B = { x: d.x + tailFx * cw, y: d.y + TAIL.y * ch };
-      const dx = B.x - T.x, dy = B.y - T.y;
-      const dist = Math.hypot(dx, dy) || 1;
-      const ux = dx / dist, uy = dy / dist;
-      const flutter = 2.5 * Math.sin(t * 6 + p[5]);
-      const theta = (dir < 0 ? Math.atan2(uy, ux) : Math.atan2(-uy, -ux)) * (180 / Math.PI) + flutter;
-      const ax = dir < 0 ? 0 : bw;
-      bannerEl.style.transform = `translate3d(${(B.x - ax).toFixed(1)}px,${(B.y - bh / 2).toFixed(1)}px,0) rotate(${theta.toFixed(2)}deg)`;
-      ropeEl.setAttribute('d', `M${T.x.toFixed(1)} ${T.y.toFixed(1)} Q${((T.x + B.x) / 2).toFixed(1)} ${((T.y + B.y) / 2 + 4 + dist * 0.1).toFixed(1)} ${B.x.toFixed(1)} ${B.y.toFixed(1)}`);
+        // ---------- the helicopter (nose points to +X) ----------
+        const heli = new THREE.Group();
+        const model = new THREE.Group(); // gets the bank / bob on top of the heading
+        heli.add(model);
 
-      // ---- drops: leave the hatch with the craft's momentum, then slow and flutter ----
-      const hatch = world(hatchFx, HATCH.y);
-      nextDrop -= dt;
-      if (!leaving && t > 0.8 && nextDrop <= 0 && hatch.x > W * 0.06 && hatch.x < W * 0.94 && drops.length < 10) {
-        spawn(hatch.x, hatch.y, dir * sp);
-        nextDrop = rand(0.4, 0.85);
-      }
-      for (let i = drops.length - 1; i >= 0; i -= 1) {
-        const o = drops[i];
-        o.age += dt;
-        o.vy += (o.term - o.vy) * Math.min(1, dt * o.k);
-        o.vx += (o.wind - o.vx) * Math.min(1, dt * 1.3);
-        o.x += o.vx * dt;
-        o.y += o.vy * dt;
-        const sx = Math.sin(o.age * o.freq + o.ph) * o.sway;
-        const fadeEnd = o.y > H * 0.86 ? clamp((H + 24 - o.y) / (H * 0.14 + 24), 0, 1) : 1;
-        o.el.style.transform = `translate3d(${(o.x + sx - o.w / 2).toFixed(1)}px,${o.y.toFixed(1)}px,0)`;
-        o.el.style.opacity = String(Math.min(1, o.age / 0.15) * fadeEnd);
-        if (o.kind === 'heart') o.body.style.transform = `rotate(${(Math.sin(o.age * 3 + o.ph) * 14).toFixed(1)}deg)`;
-        else if (o.kind === 'parcel') o.body.style.transform = `rotate(${(Math.sin(o.age * 2.2 + o.ph) * 9).toFixed(1)}deg)`;
-        else o.body.style.transform = `rotate(${(o.age * o.spin).toFixed(0)}deg) scaleX(${Math.cos(o.age * 6 + o.ph).toFixed(2)})`;
-        if (o.y > H + 30 || o.age > 14) { o.el.remove(); drops.splice(i, 1); }
-      }
+        const body = new THREE.Mesh(geo(new THREE.SphereGeometry(1, 32, 24)), red);
+        body.scale.set(1.15, 0.62, 0.6);
+        model.add(body);
 
-      // ---- finished once the banner has cleared the far edge and the last drop has landed ----
-      const cleared = dir < 0 ? B.x + bw < -20 : B.x - bw > W + 20;
-      if ((t > 2 && cleared && drops.length === 0) || t > 25) { stopped = true; setGone(true); return; }
-      rafId = requestAnimationFrame(frame);
-    };
+        const belly = new THREE.Mesh(geo(new THREE.SphereGeometry(1, 24, 16)), yellow);
+        belly.scale.set(1.0, 0.16, 0.56);
+        belly.position.set(0.02, -0.34, 0);
+        model.add(belly);
 
-    // get out of the way: any press, scroll or key fades it out quickly
-    const leave = () => {
-      if (leaving) return;
-      leaving = true;
-      stage.classList.add('chopper--leaving');
-      timer = window.setTimeout(() => { stopped = true; cancelAnimationFrame(rafId); setGone(true); }, 280);
-    };
-    const onHide = () => { if (document.hidden) leave(); };
-    const events = ['pointerdown', 'touchstart', 'wheel', 'keydown'];
-    const arm = window.setTimeout(() => {
-      events.forEach((e) => window.addEventListener(e, leave, { capture: true, passive: true }));
-    }, 250);
-    document.addEventListener('visibilitychange', onHide);
+        const cockpit = new THREE.Mesh(geo(new THREE.SphereGeometry(1, 32, 20)), glass);
+        cockpit.scale.set(0.55, 0.42, 0.5);
+        cockpit.position.set(0.72, 0.16, 0);
+        model.add(cockpit);
 
-    rafId = requestAnimationFrame((now) => { last = now; frame(now); });
+        const pilot = new THREE.Mesh(geo(new THREE.SphereGeometry(0.17, 16, 12)), skin);
+        pilot.position.set(0.72, 0.16, 0.06);
+        model.add(pilot);
+        const cap = new THREE.Mesh(geo(new THREE.SphereGeometry(0.18, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2)), ink);
+        cap.position.set(0.72, 0.2, 0.06);
+        model.add(cap);
+
+        const boom = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.1, 0.2, 1.9, 14)), blue);
+        boom.rotation.z = Math.PI / 2;
+        boom.position.set(-1.9, 0.12, 0);
+        model.add(boom);
+
+        const fin = new THREE.Mesh(geo(new THREE.BoxGeometry(0.34, 0.62, 0.06)), darkRed);
+        fin.position.set(-2.82, 0.4, 0);
+        fin.rotation.z = -0.35;
+        model.add(fin);
+
+        const mast = new THREE.Mesh(geo(new THREE.CylinderGeometry(0.06, 0.08, 0.3, 10)), ink);
+        mast.position.set(0, 0.7, 0);
+        model.add(mast);
+
+        const rotor = new THREE.Group();
+        rotor.position.set(0, 0.86, 0);
+        const bladeGeo = geo(new THREE.BoxGeometry(3.3, 0.025, 0.14));
+        const blade1 = new THREE.Mesh(bladeGeo, ink);
+        const blade2 = new THREE.Mesh(bladeGeo, ink);
+        blade2.rotation.y = Math.PI / 2;
+        rotor.add(blade1, blade2);
+        // soft disc so the spinning rotor reads as a blur, like the real thing
+        const disc = new THREE.Mesh(
+          geo(new THREE.CircleGeometry(1.65, 40)),
+          mat(0x1f1d3d, { transparent: true, opacity: 0.1, side: THREE.DoubleSide, roughness: 1, metalness: 0 })
+        );
+        disc.rotation.x = -Math.PI / 2;
+        rotor.add(disc);
+        model.add(rotor);
+
+        const tailRotor = new THREE.Group();
+        tailRotor.position.set(-2.88, 0.42, 0.1);
+        const tBlade = new THREE.Mesh(geo(new THREE.BoxGeometry(0.04, 0.62, 0.07)), ink);
+        const tBlade2 = tBlade.clone();
+        tBlade2.rotation.x = Math.PI / 2;
+        tailRotor.add(tBlade, tBlade2);
+        model.add(tailRotor);
+
+        // skids
+        const skidGeo = geo(new THREE.CylinderGeometry(0.035, 0.035, 1.9, 8));
+        const strutGeo = geo(new THREE.CylinderGeometry(0.03, 0.03, 0.4, 8));
+        [-0.42, 0.42].forEach((z) => {
+          const skid = new THREE.Mesh(skidGeo, ink);
+          skid.rotation.z = Math.PI / 2;
+          skid.position.set(0.05, -0.74, z);
+          model.add(skid);
+          [-0.5, 0.55].forEach((x) => {
+            const strut = new THREE.Mesh(strutGeo, ink);
+            strut.position.set(x, -0.54, z * 0.92);
+            model.add(strut);
+          });
+        });
+
+        // ---------- the banner it tows ----------
+        const phrase = pick(PHRASES);
+        const texFront = new THREE.CanvasTexture(bannerCanvas(phrase, false));
+        const texBack = new THREE.CanvasTexture(bannerCanvas(phrase, true));
+        [texFront, texBack].forEach((t) => { t.anisotropy = 4; t.colorSpace = THREE.SRGBColorSpace; disposables.push(t); });
+        const BW = 3.0;
+        const BH = 0.75;
+        const bannerGeo = geo(new THREE.PlaneGeometry(BW, BH, 24, 1));
+        const frontMat = mat(0xffffff, { map: texFront, side: THREE.FrontSide, roughness: 0.9, metalness: 0 });
+        const backMat = mat(0xffffff, { map: texBack, side: THREE.BackSide, roughness: 0.9, metalness: 0 });
+        const banner = new THREE.Group();
+        banner.add(new THREE.Mesh(bannerGeo, frontMat), new THREE.Mesh(bannerGeo, backMat));
+        // plane's local +X runs to the right; the banner trails to -X of the craft, so flip it to read left-to-right when the nose points +X
+        banner.position.set(-2.9 - 0.25 - BW / 2, 0.12, 0);
+        model.add(banner);
+
+        const ropeGeo = geo(new THREE.CylinderGeometry(0.012, 0.012, 0.3, 4));
+        const rope = new THREE.Mesh(ropeGeo, ink);
+        rope.rotation.z = Math.PI / 2;
+        rope.position.set(-2.9 - 0.12, 0.12, 0);
+        model.add(rope);
+
+        scene.add(heli);
+
+        // ---------- sizing ----------
+        let halfW = 10;
+        let halfH = 7;
+        const resize = () => {
+          const w = window.innerWidth;
+          const h = window.innerHeight;
+          renderer.setSize(w, h, false);
+          canvas.style.width = '100%'; // CSS size, so high-DPI screens don't blow the canvas up
+          canvas.style.height = '100%';
+          camera.aspect = w / h;
+          camera.updateProjectionMatrix();
+          halfH = Math.tan((camera.fov * Math.PI) / 360) * camera.position.z;
+          halfW = halfH * camera.aspect;
+          // keep it small on every screen: roughly a quarter of the width
+          const s = Math.min(1, Math.max(0.35, (halfW * 2 * 0.3) / 7));
+          heli.scale.setScalar(s);
+        };
+        resize();
+        window.addEventListener('resize', resize);
+
+        // ---------- random path ----------
+        const fromLeft = Math.random() < 0.5;
+        const dir = fromLeft ? 1 : -1;
+        const margin = 6.5;
+        const pts = [
+          new THREE.Vector3(-dir * (halfW + margin), rand(-halfH, halfH) * 0.9, rand(-3, 3)),
+          new THREE.Vector3(-dir * halfW * rand(0.45, 0.8), rand(-halfH, halfH) * 0.8, rand(-5, 3)),
+          new THREE.Vector3(dir * halfW * rand(-0.1, 0.3), rand(-halfH, halfH) * 0.8, rand(-5, 4)),
+          new THREE.Vector3(dir * halfW * rand(0.5, 0.85), rand(-halfH, halfH) * 0.8, rand(-5, 3)),
+          new THREE.Vector3(dir * (halfW + margin), rand(-halfH, halfH) * 0.9, rand(-3, 3)),
+        ];
+        const curve = new THREE.CatmullRomCurve3(pts, false, 'catmullrom', 0.5);
+        const duration = rand(5.5, 7); // seconds
+
+        // ---------- loop ----------
+        const clock = new THREE.Clock();
+        let raf = 0;
+        let ending = false;
+        let fade = 1;
+        let yawPrev = null;
+        let bank = 0;
+        let done = false;
+        const T = new THREE.Vector3();
+        const P = new THREE.Vector3();
+        const bannerPos = bannerGeo.attributes.position;
+        const baseX = Float32Array.from({ length: bannerPos.count }, (_, i) => bannerPos.getX(i));
+        const baseY = Float32Array.from({ length: bannerPos.count }, (_, i) => bannerPos.getY(i));
+
+        const finish = () => {
+          if (done) return;
+          done = true;
+          cancelAnimationFrame(raf);
+          window.removeEventListener('resize', resize);
+          removeListeners();
+          disposables.forEach((d) => d.dispose && d.dispose());
+          renderer.dispose();
+          renderer.forceContextLoss();
+          canvas.style.display = 'none';
+        };
+
+        const dismiss = () => { ending = true; };
+        const evs = ['pointerdown', 'touchstart', 'mousedown', 'keydown', 'wheel'];
+        const removeListeners = () => evs.forEach((e) => window.removeEventListener(e, dismiss, true));
+        // capture + passive: never blocks or swallows what the person tapped
+        evs.forEach((e) => window.addEventListener(e, dismiss, { capture: true, passive: true }));
+
+        const tick = () => {
+          raf = requestAnimationFrame(tick);
+          const dt = Math.min(clock.getDelta(), 0.05);
+          const t = clock.elapsedTime;
+
+          if (ending) {
+            fade -= dt / 0.25;
+            canvas.style.opacity = String(Math.max(fade, 0));
+            if (fade <= 0) { finish(); return; }
+          }
+
+          const u = Math.min(t / duration, 1);
+          // gentle ease at the ends, steady through the middle
+          const e = u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2;
+          const k = u * 0.7 + e * 0.3;
+
+          curve.getPointAt(k, P);
+          curve.getTangentAt(k, T);
+          heli.position.copy(P);
+          const yaw = Math.atan2(-T.z, T.x);
+          heli.rotation.set(0, yaw, 0);
+
+          // bank into turns, nose slightly down, little hover bob
+          let yawRate = 0;
+          if (yawPrev !== null && dt > 0) {
+            let d = yaw - yawPrev;
+            while (d > Math.PI) d -= 2 * Math.PI;
+            while (d < -Math.PI) d += 2 * Math.PI;
+            yawRate = d / dt;
+          }
+          yawPrev = yaw;
+          bank += (THREE.MathUtils.clamp(-yawRate * 0.35, -0.5, 0.5) - bank) * Math.min(1, dt * 4);
+          model.rotation.set(bank, 0, -0.08 + Math.sin(t * 2.2) * 0.02);
+          model.position.y = Math.sin(t * 3.1) * 0.05;
+
+          rotor.rotation.y += dt * 38;
+          tailRotor.rotation.z += dt * 50;
+
+          // flutter the banner: wave grows toward the free end
+          for (let i = 0; i < bannerPos.count; i++) {
+            const x = baseX[i];
+            const along = (BW / 2 - x) / BW; // 0 at the rope, 1 at the free end
+            const amp = 0.02 + along * 0.2;
+            bannerPos.setZ(i, Math.sin(along * 7 - t * 9) * amp);
+            bannerPos.setY(i, baseY[i] + Math.sin(along * 4 - t * 6) * amp * 0.5);
+          }
+          bannerPos.needsUpdate = true;
+
+          renderer.render(scene, camera);
+          if (u >= 1 && !ending) ending = true;
+        };
+        raf = requestAnimationFrame(tick);
+
+        cleanup = () => { ending = true; finish(); };
+      })
+      .catch(() => { /* three not installed or blocked: skip the flourish */ });
 
     return () => {
-      stopped = true;
-      cancelAnimationFrame(rafId);
-      window.clearTimeout(arm);
-      window.clearTimeout(timer);
-      events.forEach((e) => window.removeEventListener(e, leave, { capture: true }));
-      document.removeEventListener('visibilitychange', onHide);
-      drops.forEach((o) => o.el.remove());
+      cancelled = true;
+      cleanup();
     };
-  }, [flight, gone]);
+  }, []);
 
-  if (gone) return null;
-
-  const { dir, cw, ch, bw, bh, phrase } = flight;
-  const parked = { transform: 'translate3d(-9999px,0,0)' };
-  return (
-    <div className="chopper" ref={stageRef} aria-hidden="true">
-      <svg className="chopper__rope"><path ref={ropeRef} d="M0 0" /></svg>
-      <div
-        className="chopper__banner"
-        ref={bannerRef}
-        style={{ width: bw, height: bh, transformOrigin: `${dir < 0 ? 0 : bw}px ${bh / 2}px`, ...parked }}
-      >
-        <BannerArt phrase={phrase} dir={dir} />
-      </div>
-      <div className="chopper__craft" ref={craftRef} style={{ width: cw, height: ch, ...parked }}>
-        <div className="chopper__flip" style={{ transform: dir > 0 ? 'scaleX(-1)' : undefined }}>
-          <ChopperArt />
-        </div>
-      </div>
-    </div>
-  );
+  return <canvas ref={canvasRef} className="chopper" aria-hidden="true" />;
 }
