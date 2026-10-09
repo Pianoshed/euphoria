@@ -81,3 +81,14 @@
 
 /* ---------- Age chips (sign-up + profile edit) ---------- */
 :root[data-theme='dark'] .demo__chip { background: rgba(245, 239, 251, 0.08); border-color: rgba(245, 239, 251, 0.25); }
+
+/* ---------- Banners and boxes that sat on cream (Find people notes, Plans empty states, reviews, filter panel) ---------- */
+:root[data-theme='dark'] .dp-note { background: var(--color-surface); border-color: var(--color-line-strong); border-left-color: var(--dp-indigo); }
+:root[data-theme='dark'] .dp-note--safety { border-left-color: var(--dp-accent); }
+:root[data-theme='dark'] .dp-note summary { color: var(--dp-ink); }
+:root[data-theme='dark'] .dp-note li { color: var(--dp-muted); }
+:root[data-theme='dark'] .dp-note__link { color: var(--dp-indigo); }
+:root[data-theme='dark'] .pl-empty { background: var(--color-surface); border-color: var(--color-line-strong); color: var(--pl-ink); }
+:root[data-theme='dark'] .pl-empty p { color: var(--pl-muted); }
+:root[data-theme='dark'] .pl-review { background: var(--color-surface); border-color: var(--color-line-strong); color: var(--pl-ink); }
+:root[data-theme='dark'] .sb-side { background: var(--color-surface); }

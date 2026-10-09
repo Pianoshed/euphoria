@@ -197,10 +197,12 @@ export default function Discover() {
         <details className="dp-note dp-note--privacy" open={notesOpen}>
           <summary>
             <span aria-hidden="true">🔒</span>{' '}
-            <span className="dp-note__long">You decide what people see</span>
+            <span className="dp-note__long">Your privacy comes first</span>
             <span className="dp-note__short">Your privacy</span>
           </summary>
           <ul>
+            <li>Your messages are encrypted on the way and stored encrypted on our servers.</li>
+            <li>We don't use your chats or profile for analytics or advertising, and we never sell your data.</li>
             <li>Show your profile to everyone, only to signed-in people, or keep it private.</li>
             <li>Your online status and last seen are hidden unless you turn them on.</li>
             <li>People only see your general area. Your exact location stays with you.</li>
