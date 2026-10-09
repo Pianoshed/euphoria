@@ -1,5 +1,6 @@
 import '../../styles/index.css';
 import './callLog.css';
+import './chat-dark.css';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as chatApi from '../../api/chat';

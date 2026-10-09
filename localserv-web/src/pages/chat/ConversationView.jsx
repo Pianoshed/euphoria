@@ -22,6 +22,7 @@ import ChatHeaderActions, { useIsMobile } from './ChatHeaderActions';
 import './group.css';
 import './chat-mobile.css';
 import './chat-desktop.css';
+import './chat-dark.css';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
 // Resolve against the API host so the image loads from the backend, not the frontend.

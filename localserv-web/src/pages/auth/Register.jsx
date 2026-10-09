@@ -151,7 +151,7 @@ export default function Register() {
                 autoComplete="new-password"
                 value={form.confirm} onChange={update('confirm')} />
               {form.confirm && form.confirm !== form.password && (
-                <span className="hint" role="status" style={{ color: '#b91c1c' }}>The passwords do not match yet.</span>
+                <span className="hint" role="status" style={{ color: 'var(--color-danger, #b91c1c)' }}>The passwords do not match yet.</span>
               )}
             </div>
             <DemographicsFields value={demo} onChange={setDemo} idPrefix="reg" />

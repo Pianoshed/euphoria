@@ -1,0 +1,83 @@
+/* ============================================================
+   Dark mode for the pages that carry their own colour palette
+   (My profile, Find people, Public profile, Plans / Bookings / Listings,
+   sign-in + register, age chips).
+
+   Those pages hard-coded dark ink (#1f1d3d) and white panels, so on the dark page
+   background the titles and text vanished. Here each page palette is remapped to the
+   theme, and the pastel "tint" cards (person bubbles, plan heroes) keep dark ink on
+   their pastel fill.
+   ============================================================ */
+
+/* ---------- page palettes ---------- */
+:root[data-theme='dark'] .page.mp {
+  --mp-ink: #F5EFFB; --mp-muted: #B9AFCF; --mp-line: rgba(245, 239, 251, 0.16);
+  --mp-paper: rgba(35, 26, 63, 0.94); --mp-accent: #FF8C9D; --mp-indigo: #B7A8FF;
+  --mp-green: #4ADE9F; --mp-amber: #F2B53C;
+}
+:root[data-theme='dark'] .page.dp {
+  --dp-ink: #F5EFFB; --dp-muted: #B9AFCF; --dp-line: rgba(245, 239, 251, 0.16);
+  --dp-accent: #FF8C9D; --dp-indigo: #B7A8FF; --dp-green: #4ADE9F;
+}
+:root[data-theme='dark'] .page.pf { --pf-ink: #F5EFFB; --pf-muted: #B9AFCF; --pf-line: rgba(245, 239, 251, 0.16); }
+:root[data-theme='dark'] .page.pl { --pl-ink: #F5EFFB; --pl-muted: #B9AFCF; --pl-line: rgba(245, 239, 251, 0.16); }
+
+/* pastel tinted cards stay light, so their text stays dark */
+:root[data-theme='dark'] :is(.dp-card, .dp-pop__card, .pf-hero, .pl-hero, .pl-row) {
+  --dp-ink: #1f1d3d; --dp-muted: #5f5d7a; --dp-line: rgba(31, 29, 61, 0.14);
+  --dp-accent: #e2394a; --dp-indigo: #3d3b94; --dp-green: #1f9d6a;
+  --pf-ink: #1f1d3d; --pf-muted: #5f5d7a; --pf-line: rgba(31, 29, 61, 0.14);
+  --pl-ink: #1f1d3d; --pl-muted: #5f5d7a; --pl-line: rgba(31, 29, 61, 0.14);
+  color: #1f1d3d;
+}
+/* MyListings rows have a tint but the hero may not */
+:root[data-theme='dark'] .pl-hero:not([style*='--tint']) { background: linear-gradient(135deg, #fff0b8 0%, #ffd7c8 55%, #e4defa 100%); }
+
+/* ---------- buttons: "solid" used the ink colour as its fill ---------- */
+:root[data-theme='dark'] .dp-btn--solid,
+:root[data-theme='dark'] .pf-btn--solid,
+:root[data-theme='dark'] .pl-btn--solid { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+:root[data-theme='dark'] .dp-btn--solid:hover:not(:disabled),
+:root[data-theme='dark'] .pf-btn--solid:hover:not(:disabled),
+:root[data-theme='dark'] .pl-btn--solid:hover:not(:disabled) { background: var(--color-primary-deep); color: #fff; }
+:root[data-theme='dark'] .dp-btn:hover:not(:disabled),
+:root[data-theme='dark'] .pf-btn:hover:not(:disabled),
+:root[data-theme='dark'] .pl-btn:hover:not(:disabled),
+:root[data-theme='dark'] .dp-pager__btn:hover:not(:disabled) { background: rgba(245, 239, 251, 0.12); }
+:root[data-theme='dark'] .pl-btn--danger { border-color: #FF8C9D; color: #FF8C9D; }
+/* inside the pastel cards, keep the original buttons */
+:root[data-theme='dark'] :is(.dp-card, .dp-pop__card, .pf-hero, .pl-hero, .pl-row) :is(.dp-btn, .pf-btn, .pl-btn):hover:not(:disabled) { background: rgba(255, 255, 255, 0.7); }
+:root[data-theme='dark'] :is(.dp-card, .dp-pop__card, .pf-hero, .pl-hero, .pl-row) .dp-btn--solid { background: #1f1d3d; border-color: #1f1d3d; }
+:root[data-theme='dark'] :is(.dp-card, .dp-pop__card, .pf-hero, .pl-hero, .pl-row) :is(.pf-btn--solid, .pl-btn--solid) { background: #1f1d3d; border-color: #1f1d3d; }
+:root[data-theme='dark'] .pl-tabs { background: rgba(245, 239, 251, 0.1); }
+:root[data-theme='dark'] .pl-tabs button.active { background: var(--color-primary); color: #fff; }
+
+/* ---------- Plans: cards that sat on cream ---------- */
+:root[data-theme='dark'] .pl-card { background: var(--color-surface); border-color: var(--color-line-strong); }
+:root[data-theme='dark'] .pl-quote { background: rgba(245, 239, 251, 0.08); }
+:root[data-theme='dark'] .pf-card { border-color: var(--color-line-strong); }
+
+/* ---------- My profile ---------- */
+:root[data-theme='dark'] .mp-meter { background: rgba(245, 239, 251, 0.1); }
+:root[data-theme='dark'] :is(.mp-tile, .mp-choice, .mp-checkup__item, .mp-secure__card, .mp-pass, .mp-menu-btn) { background: var(--color-surface); color: var(--mp-ink); }
+:root[data-theme='dark'] .mp-tile--staff { background: rgba(255, 140, 157, 0.12); }
+:root[data-theme='dark'] .mp-callout { background: rgba(255, 140, 157, 0.12); color: var(--mp-ink); }
+:root[data-theme='dark'] .mp-segment label.is-on { background: #3A2E66; color: var(--mp-ink); }
+:root[data-theme='dark'] .mp-side { background: #231A3F; }
+
+/* ---------- Sign in / register ---------- */
+:root[data-theme='dark'] .auth-shell {
+  --auth-ink: #F5EFFB; --auth-muted: #B9AFCF; --auth-cream: #231A3F; --auth-line: #4A3D6C; --auth-indigo: #B7A8FF;
+}
+:root[data-theme='dark'] .auth-shell input[type='email'],
+:root[data-theme='dark'] .auth-shell input[type='text'],
+:root[data-theme='dark'] .auth-shell input[type='password'],
+:root[data-theme='dark'] .auth-shell .field input:not([type='radio']):not([type='checkbox']),
+:root[data-theme='dark'] .auth-field input { background: #2C2150; color: #F5EFFB; border-color: var(--color-line-strong); }
+:root[data-theme='dark'] .auth-shell input::placeholder { color: #B9AFCF; }
+:root[data-theme='dark'] .auth-shell .card { background: var(--color-surface); color: #F5EFFB; }
+:root[data-theme='dark'] .auth-panel--couples .auth-chip { background: var(--color-surface); color: var(--color-ink); border-color: var(--color-line-strong); }
+:root[data-theme='dark'] .role-card--active { background: var(--color-chip-a-bg); }
+
+/* ---------- Age chips (sign-up + profile edit) ---------- */
+:root[data-theme='dark'] .demo__chip { background: rgba(245, 239, 251, 0.08); border-color: rgba(245, 239, 251, 0.25); }

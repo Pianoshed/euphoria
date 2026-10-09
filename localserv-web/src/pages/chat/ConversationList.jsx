@@ -11,6 +11,7 @@ import PeoplePicker from '../../components/PeoplePicker';
 import { useDataSaver } from '../../hooks/useDataSaver';
 import { useAuth } from '../../context/AuthContext';
 import './group.css';
+import './chat-dark.css';
 import Chopper from '../../components/Chopper';
 import { presenceLabel } from '../../utils/presence';
 import { archiveHint, isShelved, startedLabel } from '../../utils/chatAge';

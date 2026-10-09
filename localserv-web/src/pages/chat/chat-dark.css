@@ -1,0 +1,55 @@
+/* Dark theme for the chats section: inbox (/chat), call log, group picker, message action bar.
+   These pieces had white / pastel backgrounds baked in while their text follows the theme
+   (light ink in dark mode), so text vanished. Specificity beats the base rules, so import order doesn't matter. */
+
+/* ---------- Inbox ---------- */
+:root[data-theme='dark'] .page.inbox { --ix-bubble: rgba(35, 26, 63, 0.92); }
+:root[data-theme='dark'] .inbox__title { color: var(--color-ink); }
+:root[data-theme='dark'] .bubble { box-shadow: 0 1px 0 rgba(0, 0, 0, 0.3), 0 12px 24px -18px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .bubble__name { color: var(--color-ink); }
+:root[data-theme='dark'] .bubble__aside,
+:root[data-theme='dark'] .bubble__text,
+:root[data-theme='dark'] .bubble__started { color: var(--color-ink-soft); }
+:root[data-theme='dark'] .bubble__badge { color: var(--ink-fixed); }          /* dark text on the gold pill */
+:root[data-theme='dark'] .drop-row--shelved .bubble { --b-bg: rgba(35, 26, 63, 0.7); }
+
+/* unread = solid pink bubble, keep everything white on it */
+:root[data-theme='dark'] .drop-row--unread .bubble__name,
+:root[data-theme='dark'] .drop-row--unread .bubble__aside,
+:root[data-theme='dark'] .drop-row--unread .bubble__text { color: #fff; }
+:root[data-theme='dark'] .drop-row--unread .bubble__started { color: rgba(255, 255, 255, 0.85); }
+
+:root[data-theme='dark'] .inbox__tab { background: rgba(35, 26, 63, 0.85); color: var(--color-ink); }
+:root[data-theme='dark'] .inbox__tab[aria-pressed='true'] { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+:root[data-theme='dark'] .inbox__tab[aria-pressed='true'] span { color: rgba(255, 255, 255, 0.85); }
+:root[data-theme='dark'] .inbox__archive { background: var(--color-surface); border-color: var(--color-line-strong); color: var(--color-ink); }
+:root[data-theme='dark'] .inbox__archive:hover { border-color: var(--color-primary); color: var(--color-chip-a-ink); }
+:root[data-theme='dark'] .inbox__empty { box-shadow: 0 12px 28px -20px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .inbox__empty p { color: var(--color-ink-soft); }
+:root[data-theme='dark'] .inbox__empty .inbox__empty-title { color: var(--color-ink); }
+
+/* ---------- Call log (phone cards were pastel with light text) ---------- */
+:root[data-theme='dark'] .calllog__card { background: var(--color-neutral-soft); color: var(--color-ink); box-shadow: 0 10px 20px -16px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .calllog__card.is-missed { box-shadow: inset 4px 0 0 var(--color-danger), 0 10px 20px -16px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .calllog__av { background: rgba(245, 239, 251, 0.12); color: var(--color-ink); }
+:root[data-theme='dark'] .calllog__av i { background: var(--color-surface); color: var(--color-ink); }
+:root[data-theme='dark'] .calllog__act { background: rgba(245, 239, 251, 0.12); color: var(--color-ink); }
+:root[data-theme='dark'] .calllog__day h2 small { background: rgba(245, 239, 251, 0.12); }
+
+/* ---------- Group picker modal ---------- */
+:root[data-theme='dark'] .gp-box { background: #231A3F; color: #F5EFFB; box-shadow: 0 20px 60px -20px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .gp-input { background: #2C2150; border-color: rgba(245, 239, 251, 0.18); color: #F5EFFB; }
+:root[data-theme='dark'] .gp-input::placeholder { color: #B9AFCF; }
+:root[data-theme='dark'] .gp-chip,
+:root[data-theme='dark'] .gp-avatar { background: #3A2E66; color: #E4DCFF; }
+:root[data-theme='dark'] .gp-row input { accent-color: #B7A8FF; }
+:root[data-theme='dark'] .gp-row:hover,
+:root[data-theme='dark'] .gp-row.is-on { background: rgba(245, 239, 251, 0.1); }
+:root[data-theme='dark'] .gp-note,
+:root[data-theme='dark'] .gp-who small,
+:root[data-theme='dark'] .gp-count { color: #B9AFCF; }
+
+/* ---------- Message action bar (long-press / tap a bubble) ---------- */
+:root[data-theme='dark'] .cv-actions { background: #231A3F; border-color: rgba(245, 239, 251, 0.14); }
+:root[data-theme='dark'] .cv-actions__btn { color: #F5EFFB; }
+:root[data-theme='dark'] .cv-actions__btn:hover { background: rgba(245, 239, 251, 0.1); }

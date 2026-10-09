@@ -123,7 +123,7 @@ export default function Login() {
             <ResendVerification email={form.email} />
           )}
           {notice && (
-            <p role="status" className="auth-sub" style={{ color: '#1d4ed8', fontWeight: 500 }}>
+            <p role="status" className="auth-sub" style={{ color: 'var(--auth-indigo, #1d4ed8)', fontWeight: 500 }}>
               {notice}
             </p>
           )}
