@@ -2,7 +2,7 @@ import '../../styles/index.css';
 import './publicprofile.css';
 import { usePageBackdrop } from '../../hooks/usePageBackdrop';
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
 import * as chatApi from '../../api/chat';
 import { useAuth } from '../../context/AuthContext';
@@ -92,7 +92,7 @@ export default function PublicProfile() {
           <ReportButton targetType="USER" targetId={profile.id} />
         </div>
       )}
-      {blocked && <p className="alert alert--info" style={{ marginTop: 'var(--space-4)' }}>You've blocked this user.</p>}
+      {blocked && <p className="alert alert--info" style={{ marginTop: 'var(--space-4)' }}>You've blocked this user. You can undo it for 6 months from <Link to="/profile/blocked">Blocked people</Link>.</p>}
     </div>
   );
 }

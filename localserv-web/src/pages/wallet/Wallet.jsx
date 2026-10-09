@@ -1,6 +1,7 @@
 import '../../styles/index.css';
 import { useEffect, useState } from 'react';
 import * as walletApi from '../../api/wallet';
+import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
 import { formatNaira } from '../../utils/money';
 
@@ -10,7 +11,9 @@ const SHOW_IN_PROGRESS_NOTICE = true;
 const WALLET_LOCKED = true;
 
 export default function Wallet() {
+  const { user } = useAuth();
   const [balance, setBalance] = useState(null);
+  const [credits, setCredits] = useState(null);
   const [ledger, setLedger] = useState(null);
   const [payoutAccounts, setPayoutAccounts] = useState(null);
   const [withdrawals, setWithdrawals] = useState(null);
@@ -23,11 +26,12 @@ export default function Wallet() {
   const [payoutForm, setPayoutForm] = useState({ bank_code: '', raw_account_number: '' });
   const [payoutBusy, setPayoutBusy] = useState(false);
 
-  const [withdrawForm, setWithdrawForm] = useState({ amount: '', payout_account_id: '', current_password: '' });
+  const [withdrawForm, setWithdrawForm] = useState({ amount: '', payout_account_id: '', current_password: '', code: '' });
   const [withdrawBusy, setWithdrawBusy] = useState(false);
 
   const loadAll = () => {
     walletApi.getBalance().then((b) => setBalance(b.balance)).catch(setError);
+    walletApi.getPromotionalBalance().then(setCredits).catch(() => setCredits(null));
     walletApi.getLedger().then((l) => setLedger(l.results)).catch(setError);
     walletApi.listPayoutAccounts().then(setPayoutAccounts).catch(setError);
     walletApi.listWithdrawals().then((w) => setWithdrawals(w.results ?? w)).catch(setError);
@@ -98,8 +102,13 @@ export default function Wallet() {
     setWithdrawBusy(true);
     setError(null);
     try {
-      await walletApi.requestWithdrawal({ ...withdrawForm, idempotency_key: walletApi.newIdempotencyKey() });
-      setWithdrawForm({ amount: '', payout_account_id: '', current_password: '' });
+      const { code, ...fields } = withdrawForm;
+      await walletApi.requestWithdrawal({
+        ...fields,
+        ...(user?.two_factor_enabled ? { otp_code: code.trim() } : {}),
+        idempotency_key: walletApi.newIdempotencyKey(),
+      });
+      setWithdrawForm({ amount: '', payout_account_id: '', current_password: '', code: '' });
       loadAll();
     } catch (err) {
       setError(err);
@@ -147,6 +156,11 @@ export default function Wallet() {
         <p className="price">
           {balance === null ? <Spinner /> : formatNaira(balance)}
         </p>
+        {Number(credits?.promotional_balance) > 0 && (
+          <p className="text-sm muted m-0">
+            + {formatNaira(credits.promotional_balance)} platform credits. Used first when you pay for plans; they can't be withdrawn.
+          </p>
+        )}
       </div>
 
       <div className="grid" style={{ marginBottom: 'var(--space-5)' }}>
@@ -201,7 +215,7 @@ export default function Wallet() {
       <div className="card stack" style={{ marginBottom: 'var(--space-6)' }}>
         <h3>Withdraw</h3>
         <p className="text-sm muted">
-          A newly-added payout account can't be used for 24 hours. Your password is required to
+          A newly-added payout account can't be used for 24 hours. Your password{user?.two_factor_enabled ? ' and an authenticator code are' : ' is'} required to
           confirm a withdrawal. Transfers usually arrive within minutes; the status below updates
           from "processing" once your bank confirms.
         </p>
@@ -219,6 +233,11 @@ export default function Wallet() {
             <input type="password" className="input" autoComplete="current-password" placeholder="Your password" aria-label="Your password" required
               value={withdrawForm.current_password} onChange={(e) => setWithdrawForm((f) => ({ ...f, current_password: e.target.value }))} />
           </div>
+          {user?.two_factor_enabled && (
+            <input className="input" inputMode="numeric" autoComplete="one-time-code" maxLength={8} required
+              placeholder="Authenticator code" aria-label="Authenticator code"
+              value={withdrawForm.code} onChange={(e) => setWithdrawForm((f) => ({ ...f, code: e.target.value.replace(/\s/g, '') }))} />
+          )}
           <button className="btn btn--primary btn--block" disabled={withdrawBusy} type="submit">
             {withdrawBusy ? 'Requesting…' : 'Request withdrawal'}
           </button>

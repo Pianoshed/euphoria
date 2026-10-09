@@ -495,6 +495,7 @@ export default function MyProfile() {
               Open their profile and choose <em>Block</em> to stop seeing each other, or <em>Report</em> so our moderators
               can look into it. Never share your password or a login code with anyone.
             </p>
+            <p><Link to="/profile/blocked">Blocked people</Link></p>
           </aside>
         </Modal>
       )}

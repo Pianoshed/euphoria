@@ -28,3 +28,8 @@ export const requestWithdrawal = (fields) =>
  * every write here takes one (protects against double-submit on a slow network). */
 export const newIdempotencyKey = () =>
   (crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+
+
+// Platform (promotional) credits: { paid_balance, promotional_balance, total_usable, promotional_withdrawable }.
+// Plan bookings spend these first, then the paid balance.
+export const getPromotionalBalance = () => apiFetch('/api/economy/wallet/promotional-balance/');

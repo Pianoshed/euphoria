@@ -36,6 +36,7 @@ import MyProfile from './pages/profile/MyProfile';
 import PublicProfile from './pages/profile/PublicProfile';
 import Discover from './pages/profile/Discover';
 import Sessions from './pages/profile/Sessions';
+import BlockedPeople from './pages/profile/BlockedPeople';
 import TwoFactorSettings from './pages/profile/TwoFactorSettings';
 import ModerationDashboard from './pages/profile/ModerationDashboard';
 
@@ -84,6 +85,7 @@ function AppRoutes() {
       <Route path="/providers" element={<ProtectedRoute><Discover /></ProtectedRoute>} />
       <Route path="/profile/me" element={<ProtectedRoute><MyProfile /></ProtectedRoute>} />
       <Route path="/profile/sessions" element={<ProtectedRoute><Sessions /></ProtectedRoute>} />
+      <Route path="/profile/blocked" element={<ProtectedRoute><BlockedPeople /></ProtectedRoute>} />
       <Route path="/profile/2fa" element={<ProtectedRoute><TwoFactorSettings /></ProtectedRoute>} />
       <Route path="/profile/:id" element={<ProtectedRoute><PublicProfile /></ProtectedRoute>} />
 

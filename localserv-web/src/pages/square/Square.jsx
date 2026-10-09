@@ -185,29 +185,73 @@ function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
   );
 }
 
-// Compact row in the list; tap to open the full tree in a sheet.
-function TreeCard({ tree, onOpen }) {
-  const counts = useMemo(() => {
-    const c = {};
-    if (hasLabels(tree)) tree.members.forEach((m) => { const k = labelFor(tree, m); c[k] = (c[k] || 0) + 1; });
-    return CIRCLES.filter((x) => c[x.key]).map((x) => ({ circle: x, n: c[x.key] }));
-  }, [tree]);
-  const faces = tree.members.slice(0, 4);
+// Collapsed: only the tree's name, how many people are in it and who planted it.
+// Tap to expand a small paged list of the people; "Open tree" shows the full tree in a sheet.
+const PEOPLE_PER_PAGE = 6;
+const BRANCH_PER_PAGE = 12;
+
+function Pager({ page, pages, onPage, label = 'People pages' }) {
+  if (pages <= 1) return null;
   return (
-    <button type="button" className="sq-card sq-tcard" onClick={() => onOpen(tree)}>
-      <span className="sq-stack" aria-hidden="true">
-        {faces.map((m, i) => (
-          <i key={m.id} style={{ '--c': hasLabels(tree) ? circleMeta(labelFor(tree, m)).color : 'var(--color-violet)', zIndex: 5 - i }}>{m.hidden ? fruitFor(m.id) : initial(m.name)}</i>
-        ))}
-        {tree.members.length > 4 && <i className="sq-stack__more">+{tree.members.length - 4}</i>}
-      </span>
-      <span className="sq-tcard__info">
-        <b>{tree.title}</b>
-        <small>{plural(tree.members.length, 'person', 'people')}{tree.mine ? '' : ` · by ${tree.owner.name}`}</small>
-        {counts.length > 0 && <span className="sq-pills">{counts.map(({ circle, n }) => <Pill key={circle.key} circle={circle} count={n} />)}</span>}
-      </span>
-      <span className="sq-chev" aria-hidden="true">›</span>
-    </button>
+    <nav className="sq-pager" aria-label={label}>
+      <button type="button" disabled={page === 0} onClick={() => onPage(page - 1)} aria-label="Previous page">‹</button>
+      <span role="status">{page + 1} / {pages}</span>
+      <button type="button" disabled={page >= pages - 1} onClick={() => onPage(page + 1)} aria-label="Next page">›</button>
+    </nav>
+  );
+}
+
+function TreeCard({ tree, onOpen }) {
+  const [open, setOpen] = useState(false);
+  const [page, setPage] = useState(0);
+  const people = tree.members;
+  const pages = Math.max(1, Math.ceil(people.length / PEOPLE_PER_PAGE));
+  const safe = Math.min(page, pages - 1);
+  const shown = people.slice(safe * PEOPLE_PER_PAGE, (safe + 1) * PEOPLE_PER_PAGE);
+  const labelled = hasLabels(tree);
+  const bodyId = `tree-${tree.id}`;
+  return (
+    <div className={`sq-card sq-tcard${open ? ' is-open' : ''}`}>
+      <button type="button" className="sq-tcard__head" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((v) => !v)}>
+        <span className="sq-tcard__info">
+          <b>{tree.title}</b>
+          <small>{plural(people.length, 'person', 'people')} · by {tree.mine ? 'you' : tree.owner.name}</small>
+        </span>
+        <span className="sq-chev" aria-hidden="true">›</span>
+      </button>
+      {open && (
+        <div className="sq-tcard__body" id={bodyId}>
+          {people.length === 0 && <p className="sq-hint">Nobody tagged yet.</p>}
+          <ul className="sq-plist">
+            {shown.map((m) => {
+              const circle = labelled && !m.hidden ? circleMeta(labelFor(tree, m)) : null;
+              return (
+                <li key={m.id} style={{ '--c': circle ? circle.color : 'var(--color-violet)' }}>
+                  <i aria-hidden="true">{m.hidden ? fruitFor(m.id) : initial(m.name)}</i>
+                  <span>{m.hidden ? 'Someone else' : m.name}</span>
+                  {circle && <em>{circle.label}</em>}
+                </li>
+              );
+            })}
+          </ul>
+          <Pager page={safe} pages={pages} onPage={setPage} />
+          <button type="button" className="sq-cta sq-cta--sm sq-tcard__open" onClick={() => onOpen(tree)}>Open tree</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// People inside one branch of the open tree: a page at a time when there are many.
+function PagedBubs({ people, render }) {
+  const [page, setPage] = useState(0);
+  const pages = Math.max(1, Math.ceil(people.length / BRANCH_PER_PAGE));
+  const safe = Math.min(page, pages - 1);
+  return (
+    <>
+      <div className="sq-bubs">{people.slice(safe * BRANCH_PER_PAGE, (safe + 1) * BRANCH_PER_PAGE).map(render)}</div>
+      <Pager page={safe} pages={pages} onPage={setPage} label="Branch pages" />
+    </>
   );
 }
 
@@ -320,12 +364,10 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
               {groups.map((g, gi) => (
                 <section key={g.key} className="sq-branch" style={{ '--c': g.color, '--bs': `${Math.max(28, 38 - gi * 2)}px` }}>
                   <h4><span aria-hidden="true">{g.emoji}</span>{g.label}<b>{g.people.length}</b></h4>
-                  <div className="sq-bubs">
-                    {g.people.map((m) => (
-                      <Bubble key={m.id} person={m} color={g.color} edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
-                        onClick={() => (edit && owner ? drop(m) : onMember(m))} />
-                    ))}
-                  </div>
+                  <PagedBubs people={g.people} render={(m) => (
+                    <Bubble key={m.id} person={m} color={g.color} edit={edit && owner} you={isMe(m)} live={!edit && !!statusByUser[m.id]}
+                      onClick={() => (edit && owner ? drop(m) : onMember(m))} />
+                  )} />
                 </section>
               ))}
             </div>
