@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 /**
  * A flat-illustration helicopter that crosses the page once, towing a banner
@@ -14,30 +14,46 @@ import { useMemo } from 'react';
  * left offset (see dropLeft).
  */
 
-const FLIGHT_S = 7.5;
+const FLIGHT_S = 4.2; // quick pass; the random banner + height make each flight feel different
 const HATCH = 0.355; // the cargo hatch sits this fraction of the craft's width from its left edge
 
 // CSS expression for "where is the hatch at time t". --cw (craft width) is set in inbox.css.
 const dropLeft = (t) => `calc(100vw - (102vw + var(--cw)) * ${(t / FLIGHT_S).toFixed(4)} + var(--cw) * ${HATCH})`;
 
+const PHRASES = [
+  'Gist on the way',
+  'Fresh gist, hot off the press',
+  'Someone is typing...',
+  'Your crush just got online',
+  'New drop, go collect',
+  'Plot twist incoming',
+  'Reply them, they are waiting',
+  'Special delivery, handle with love',
+  'Low-flying gist alert',
+  'No cap, someone asked about you',
+  'Weekend plans loading...',
+  'Spill the tea, I will carry it',
+  'Cupid air service',
+  'Vibes delivered, no delay',
+  'Do not leave them on read',
+  'Hello from above',
+];
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
 const COLORS = ['#e8451f', '#2d3fd1', '#f7b928', '#d63471', '#6a3de8'];
 
 // Fixed schedule so the drop pattern is the same every render (no Math.random in render).
 const DROPS = [
-  { t: 1.2, kind: 'heart', fall: 4.2, sway: 18 },
-  { t: 1.6, kind: 'confetti', fall: 3.6, sway: 26 },
-  { t: 1.9, kind: 'parcel', fall: 6.4, sway: 30 },
-  { t: 2.3, kind: 'confetti', fall: 3.9, sway: 22 },
-  { t: 2.6, kind: 'heart', fall: 4.6, sway: 20 },
-  { t: 3.0, kind: 'confetti', fall: 3.4, sway: 28 },
-  { t: 3.3, kind: 'parcel', fall: 6.8, sway: 34 },
-  { t: 3.7, kind: 'heart', fall: 4.0, sway: 16 },
-  { t: 4.0, kind: 'confetti', fall: 3.8, sway: 24 },
-  { t: 4.4, kind: 'confetti', fall: 3.5, sway: 20 },
-  { t: 4.8, kind: 'parcel', fall: 6.2, sway: 28 },
-  { t: 5.1, kind: 'heart', fall: 4.4, sway: 22 },
-  { t: 5.5, kind: 'confetti', fall: 3.7, sway: 26 },
-  { t: 5.9, kind: 'heart', fall: 4.1, sway: 18 },
+  { t: 0.7, kind: 'heart', fall: 3.2, sway: 14 },
+  { t: 1.0, kind: 'confetti', fall: 2.8, sway: 20 },
+  { t: 1.3, kind: 'parcel', fall: 4.6, sway: 22 },
+  { t: 1.6, kind: 'confetti', fall: 2.9, sway: 18 },
+  { t: 1.9, kind: 'heart', fall: 3.4, sway: 16 },
+  { t: 2.2, kind: 'confetti', fall: 2.7, sway: 22 },
+  { t: 2.5, kind: 'parcel', fall: 4.8, sway: 24 },
+  { t: 2.8, kind: 'heart', fall: 3.1, sway: 12 },
+  { t: 3.1, kind: 'confetti', fall: 2.8, sway: 18 },
+  { t: 3.4, kind: 'heart', fall: 3.2, sway: 14 },
 ];
 
 function Heart({ color }) {
@@ -73,9 +89,9 @@ function Confetti({ color, shape }) {
   );
 }
 
-function ChopperArt() {
+function ChopperArt({ phrase }) {
   return (
-    <svg className="chopper__svg" viewBox="0 0 580 150" role="img" aria-label="A helicopter towing a banner that says gist on the way">
+    <svg className="chopper__svg" viewBox="0 0 580 150" role="img" aria-label={`A helicopter towing a banner that says ${phrase}`}>
       {/* tow rope from the tail to the banner */}
       <path d="M358 58C372 62 380 66 392 70" stroke="#1f1d3d" strokeWidth="1.6" fill="none" />
 
@@ -83,7 +99,7 @@ function ChopperArt() {
       <g className="chopper__cloth">
         <path d="M392 52 L568 56 L552 80 L568 104 L392 100Z" fill="#f7b928" />
         <path d="M392 52 L568 56 L552 80 L568 104 L392 100" stroke="#1f1d3d" strokeWidth="1.2" fill="none" strokeLinejoin="round" />
-        <text x="404" y="82" fontFamily="Sora, sans-serif" fontWeight="800" fontSize="13" fill="#1f1d3d" letterSpacing=".5">Gist on the way</text>
+        <text x="402" y="82" fontFamily="Sora, sans-serif" fontWeight="800" fontSize="13" fill="#1f1d3d" textLength={Math.min(138, Math.round(phrase.length * 7.6))} lengthAdjust="spacingAndGlyphs">{phrase}</text>
       </g>
 
       <g transform="translate(118 8)">
@@ -129,6 +145,11 @@ function ChopperArt() {
 }
 
 export default function Chopper() {
+  // each mount (page load or "send again") gets its own banner words and flight height
+  const [flight] = useState(() => ({
+    phrase: pick(PHRASES),
+    top: `${(6 + Math.random() * 62).toFixed(1)}vh`,
+  }));
   const drops = useMemo(
     () =>
       DROPS.map((d, i) => ({
@@ -143,9 +164,9 @@ export default function Chopper() {
   );
 
   return (
-    <div className="chopper">
+    <div className="chopper" style={{ '--top': flight.top }}>
       <div className="chopper__craft" style={{ '--flight': `${FLIGHT_S}s` }}>
-        <ChopperArt />
+        <ChopperArt phrase={flight.phrase} />
       </div>
 
       {drops.map((d) => (

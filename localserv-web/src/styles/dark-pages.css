@@ -92,3 +92,21 @@
 :root[data-theme='dark'] .pl-empty p { color: var(--pl-muted); }
 :root[data-theme='dark'] .pl-review { background: var(--color-surface); border-color: var(--color-line-strong); color: var(--pl-ink); }
 :root[data-theme='dark'] .sb-side { background: var(--color-surface); }
+
+/* ---------- Fix: pastel banners/cards were unreadable in dark mode ----------
+   1) global h1/h2/h3 use --color-ink (light in dark mode), so titles on the pastel
+      hero/rows came out near-white on pastel.
+   2) the My profile banner (.mp-hero) was never in the pastel list, so its text and
+      the completeness meter used the light dark-mode palette on a light gradient. */
+:root[data-theme='dark'] .mp-hero {
+  --mp-ink: #1f1d3d; --mp-muted: #5f5d7a; --mp-line: rgba(31, 29, 61, 0.14);
+  --mp-accent: #e2394a; --mp-indigo: #3d3b94; --mp-green: #1f9d6a; --mp-amber: #b7791f;
+  color: #1f1d3d;
+}
+:root[data-theme='dark'] .mp-hero .mp-meter { background: rgba(255, 255, 255, 0.7); color: #1f1d3d; }
+:root[data-theme='dark'] .mp-hero .mp-meter__bar { background: rgba(31, 29, 61, 0.1); }
+:root[data-theme='dark'] .mp-hero .mp-menu-btn { background: rgba(255, 255, 255, 0.75); color: #1f1d3d; }
+:root[data-theme='dark'] .mp-hero .mp-chip--info { color: #3d3b94; background: rgba(61, 59, 148, 0.14); }
+:root[data-theme='dark'] :is(.mp-hero, .pl-hero, .pl-row, .pf-hero, .dp-card, .dp-pop__card) :is(h1, h2, h3, h4, strong) { color: inherit; }
+:root[data-theme='dark'] :is(.mp-hero__handle, .pl-sub, .pl-row__text small) { color: #5f5d7a; }
+:root[data-theme='dark'] .mp-hero__view { color: #3d3b94; }
