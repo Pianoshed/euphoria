@@ -471,3 +471,98 @@ def credit_gift_refund(user, *, amount: Decimal, idempotency_key: str, note: str
     # A declined gift returns the sender's own funds. It is still a gift-credit
     # movement, but the idempotency key makes it impossible to return twice.
     return credit_gift(user, amount=amount, idempotency_key=idempotency_key, note=note or "Declined gift returned.")
+
+
+# --- Promo codes -------------------------------------------------------------------
+import secrets
+from datetime import timedelta
+
+from django.core.cache import cache
+from django.db import IntegrityError
+
+from apps.common.constants import AccountStatus
+
+from .models import PromoCode, PromoRedemption
+
+PROMO_MAX_FAILURES = 8          # wrong/invalid codes tried in the window before a short lock (stops guessing codes)
+PROMO_LOCK_SECONDS = 15 * 60
+_PROMO_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"  # no 0/O/1/I
+
+
+def normalize_promo_code(code: str) -> str:
+    return "".join((code or "").split()).upper()
+
+
+def generate_promo_code(prefix: str = "EUPH") -> str:
+    for _ in range(20):
+        candidate = f"{prefix}-" + "".join(secrets.choice(_PROMO_ALPHABET) for _ in range(6))
+        if not PromoCode.objects.filter(code=candidate).exists():
+            return candidate
+    raise DomainError("Could not generate a unique code. Try again.")
+
+
+def create_promo_code(staff_user, *, name, amount, code="", max_redemptions=None, starts_at=None, valid_until=None,
+                      credit_valid_days=None, plan=None, category=None) -> PromoCode:
+    if not _is_staff(staff_user):
+        raise AccountNotEligibleError("Only staff can create promo codes.")
+    amount = Decimal(amount).quantize(Decimal("0.01"))
+    if amount <= 0:
+        raise DomainError("The amount must be positive.")
+    if valid_until is not None and valid_until <= timezone.now():
+        raise DomainError("The end date must be in the future.")
+    code = normalize_promo_code(code) or generate_promo_code()
+    if PromoCode.objects.filter(code=code).exists():
+        raise DomainError("That code already exists.")
+    return PromoCode.objects.create(
+        code=code, name=name.strip(), amount=amount, max_redemptions=max_redemptions, starts_at=starts_at,
+        valid_until=valid_until, credit_valid_days=credit_valid_days, plan=plan, category=category, created_by=staff_user,
+    )
+
+
+def _promo_fail(user, message="That code isn't valid."):
+    key = f"promo-fail:{user.id}"
+    cache.add(key, 0, PROMO_LOCK_SECONDS)
+    try:
+        cache.incr(key)
+    except ValueError:
+        cache.set(key, 1, PROMO_LOCK_SECONDS)
+    raise DomainError(message)
+
+
+@transaction.atomic
+def redeem_promo_code(user, code: str) -> PromotionalCredit:
+    """Turn a promo code into platform credit for `user`, once per person. Never touches the paid balance."""
+    if (cache.get(f"promo-fail:{user.id}") or 0) >= PROMO_MAX_FAILURES:
+        raise DomainError("Too many invalid codes. Try again in 15 minutes.")
+    if user.status != AccountStatus.ACTIVE or not user.email_verified:
+        raise AccountNotEligibleError("Verify your email to redeem a promo code.")
+
+    code = normalize_promo_code(code)
+    if not code:
+        raise DomainError("Enter a promo code.")
+    promo = PromoCode.objects.select_for_update().filter(code=code).first()
+    now = timezone.now()
+    # One generic message for unknown / switched-off / not-started / expired, so codes can't be probed.
+    if (promo is None or not promo.is_active or (promo.starts_at and promo.starts_at > now)
+            or (promo.valid_until and promo.valid_until <= now)):
+        _promo_fail(user)
+    if PromoRedemption.objects.filter(promo_code=promo, user=user).exists():
+        raise DomainError("You've already used this code.")
+    if promo.max_redemptions is not None and promo.redeemed_count >= promo.max_redemptions:
+        _promo_fail(user, "This code has been fully claimed.")
+
+    expires_at = now + timedelta(days=promo.credit_valid_days) if promo.credit_valid_days else None
+    credit = grant_promotional_credit(
+        user, amount=promo.amount, expires_at=expires_at, plan=promo.plan, category=promo.category,
+        source=promo.name[:80], reference=f"promo-code:{promo.id}:{user.id}",
+        metadata={"promo_code": promo.code, "promo_id": str(promo.id)},
+    )
+    try:
+        with transaction.atomic():
+            PromoRedemption.objects.create(promo_code=promo, user=user, credit=credit)
+    except IntegrityError as exc:  # two simultaneous taps: the other one won
+        raise DomainError("You've already used this code.") from exc
+    promo.redeemed_count += 1
+    promo.save(update_fields=["redeemed_count", "updated_at"])
+    cache.delete(f"promo-fail:{user.id}")
+    return credit

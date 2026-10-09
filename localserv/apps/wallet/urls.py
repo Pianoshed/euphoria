@@ -15,6 +15,9 @@ urlpatterns = [
     path("payout-accounts/", views.PayoutAccountListCreateView.as_view(), name="payout-accounts"),
     path("withdrawals/", views.WithdrawalListCreateView.as_view(), name="withdrawals"),
     path("withdrawals/<uuid:withdrawal_id>/reverse/", views.WithdrawalReverseView.as_view(), name="withdrawal-reverse"),
+    path("promo-codes/redeem/", views.PromoRedeemView.as_view(), name="promo-redeem"),
+    path("promo-codes/", views.PromoCodeListCreateView.as_view(), name="promo-codes"),
+    path("promo-codes/<uuid:promo_id>/", views.PromoCodeDetailView.as_view(), name="promo-code-detail"),
     path("banks/", views.BankListView.as_view(), name="banks"),
     path("withdrawals/webhook/", views.WithdrawalWebhookView.as_view(), name="withdrawal-webhook"),
 ]

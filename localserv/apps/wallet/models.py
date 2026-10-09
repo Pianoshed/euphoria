@@ -209,6 +209,43 @@ class PromotionalCredit(BaseModel):
 
 
 
+class PromoCode(BaseModel):
+    """A code a person types in to receive platform (promotional) credit. Created by staff only.
+
+    Redeeming never touches the paid balance: it grants a PromotionalCredit, which is spendable on
+    plans only and is never withdrawable. Each person can redeem a given code once (see PromoRedemption).
+    """
+    code = models.CharField(max_length=40, unique=True)  # always stored upper-case
+    name = models.CharField(max_length=80, help_text="Shown to the person who redeems it, e.g. 'Welcome gift'.")
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    max_redemptions = models.PositiveIntegerField(null=True, blank=True, help_text="Empty = unlimited.")
+    redeemed_count = models.PositiveIntegerField(default=0)
+    starts_at = models.DateTimeField(null=True, blank=True)
+    valid_until = models.DateTimeField(null=True, blank=True, help_text="The code stops working after this. Empty = never.")
+    credit_valid_days = models.PositiveIntegerField(null=True, blank=True, help_text="How long the credit lasts once redeemed. Empty = no expiry.")
+    plan = models.ForeignKey("services.Service", on_delete=models.PROTECT, null=True, blank=True, related_name="promo_codes")
+    category = models.ForeignKey("services.ServiceCategory", on_delete=models.PROTECT, null=True, blank=True, related_name="promo_codes")
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="promo_codes_created")
+
+    class Meta(BaseModel.Meta):
+        db_table = "wallet_promo_code"
+        constraints = [models.CheckConstraint(condition=models.Q(amount__gt=0), name="promo_code_amount_positive")]
+
+    def __str__(self):
+        return self.code
+
+
+class PromoRedemption(BaseModel):
+    promo_code = models.ForeignKey(PromoCode, on_delete=models.PROTECT, related_name="redemptions")
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="promo_redemptions")
+    credit = models.OneToOneField(PromotionalCredit, on_delete=models.PROTECT, related_name="redemption")
+
+    class Meta(BaseModel.Meta):
+        db_table = "wallet_promo_redemption"
+        constraints = [models.UniqueConstraint(fields=["promo_code", "user"], name="promo_redeem_once_per_user")]
+
+
 class PayoutAccount(BaseModel):
     """
     A withdrawal destination. The raw account/card number the user

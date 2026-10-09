@@ -31,6 +31,27 @@ class PromotionalBalanceView(APIView):
         })
 
 
+class PromotionalCreditListView(APIView):
+    """Read-only: the caller's own live promotional credits (name/source, code/reference, what is left, expiry).
+    Lets the wallet page show where platform credits came from. Cannot create or change anything."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Q
+        from django.utils import timezone
+        from apps.wallet.models import PromotionalCredit
+        qs = (PromotionalCredit.objects.filter(user=request.user, remaining_amount__gt=0)
+              .filter(Q(expires_at__isnull=True) | Q(expires_at__gt=timezone.now()))
+              .select_related("plan", "category").order_by("expires_at", "created_at")[:50])
+        return Response([{
+            "id": str(c.id), "source": c.source, "code": (c.metadata or {}).get("promo_code"),
+            "original_amount": str(c.original_amount), "remaining_amount": str(c.remaining_amount),
+            "expires_at": c.expires_at, "plan_title": c.plan.title if c.plan_id else None,
+            "category_name": c.category.name if c.category_id else None,
+            "withdrawable": False,
+        } for c in qs])
+
+
 class PromotionalCreditGrantView(APIView):
     """Staff-only grant endpoint; clients cannot mint promotional value."""
     permission_classes = [IsAdminUser]

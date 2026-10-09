@@ -26,7 +26,7 @@ import './chat-dark.css';
 
 // Live socket pushes send a relative /media/... path (REST sends an absolute URL).
 // Resolve against the API host so the image loads from the backend, not the frontend.
-const mediaUrl = (u) => (u && !/^(https?:|blob:|data:)/.test(u) ? `${API_BASE}${u}` : u);
+const mediaUrl = (u) => (u && !/^(https?:|blob:)/i.test(u) ? `${API_BASE}${u}` : u);
 
 /* ------------------------------------------------------------------ */
 /* Emoji data                                                          */

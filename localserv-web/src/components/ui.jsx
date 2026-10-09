@@ -50,7 +50,7 @@ export function humanizeStatus(status) {
 
 const STATUS_TONE = {
   // neutral: nothing for anyone to do yet, or finished without a verdict
-  DRAFT: 'neutral', PENDING: 'neutral', PROCESSING: 'neutral', OPEN: 'neutral',
+  DRAFT: 'neutral', PENDING: 'neutral', PROCESSING: 'neutral', REQUESTED: 'neutral', REVERSED: 'neutral', OPEN: 'neutral',
   ARCHIVED: 'neutral', DISMISSED: 'neutral',
   // accent: in progress / needs attention
   ACCEPTED: 'accent', FUNDED: 'accent', IN_PROGRESS: 'accent', PUBLISHED: 'accent', DISPUTED: 'accent',

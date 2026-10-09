@@ -62,6 +62,8 @@ export default function BookingDetail() {
   const isCustomer = user.id === booking.customer.id;
   const isProvider = user.id === booking.provider.id;
   const other = isCustomer ? booking.provider : booking.customer;
+  // What the server actually charges is gross_amount (unit price x quantity); agreed_price is only the unit price.
+  const total = booking.gross_amount ?? booking.agreed_price;
   const look = lookFor(booking.id, 0);
 
   return (
@@ -74,7 +76,7 @@ export default function BookingDetail() {
         <div className="pl-host">
           <span className="pl-av" aria-hidden="true">{other.username[0].toUpperCase()}</span>
           <small>{isCustomer ? `Hosted by ${other.username}` : `Hanging out with ${other.username}`}</small>
-          <span className="pl-price" style={{ marginLeft: 'auto' }}>{formatPrice(booking.agreed_price)}</span>
+          <span className="pl-price" style={{ marginLeft: 'auto' }}>{formatPrice(total)}</span>
         </div>
         {booking.note_from_customer && <p className="pl-quote">&ldquo;{booking.note_from_customer}&rdquo;</p>}
       </header>
@@ -94,7 +96,7 @@ export default function BookingDetail() {
         {booking.status === 'ACCEPTED' && isCustomer && (
           <>
             <button className="pl-btn pl-btn--solid" disabled={busy} onClick={runAction(() => bookingsApi.fundBooking(id))}>
-              Lock it in ({formatPrice(booking.agreed_price)})
+              Lock it in ({formatPrice(total)})
             </button>
             <button className="pl-btn" disabled={busy} onClick={runAction(() => bookingsApi.transitionBooking(id, 'CANCELLED'))}>Cancel</button>
           </>

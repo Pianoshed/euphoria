@@ -6,6 +6,7 @@ app_name = "economy"
 
 urlpatterns = [
     path("wallet/promotional-balance/", views.PromotionalBalanceView.as_view(), name="promotional-balance"),
+    path("wallet/promotional-credits/", views.PromotionalCreditListView.as_view(), name="promotional-credits"),
     path("wallet/promotional-credits/grant/", views.PromotionalCreditGrantView.as_view(), name="promotional-credit-grant"),
     path("orders/", views.OrderListView.as_view(), name="orders"),
     path("earnings/", views.EarningListView.as_view(), name="earnings"),

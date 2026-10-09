@@ -12,7 +12,9 @@ from rest_framework.views import APIView
 from apps.accounts.models import User
 
 from . import payment_services, services
-from .models import WithdrawalRequest
+from apps.common.exceptions import AccountNotEligibleError
+
+from .models import PromoCode, WithdrawalRequest
 from .serializers import (
     AdminAdjustSerializer,
     BankSerializer,
@@ -20,6 +22,10 @@ from .serializers import (
     LedgerEntrySerializer,
     PaymentIntentSerializer,
     PayoutAccountCreateSerializer,
+    PromoCodeCreateSerializer,
+    PromoCodeSerializer,
+    PromoCodeUpdateSerializer,
+    PromoRedeemSerializer,
     PayoutAccountSerializer,
     WalletBalanceSerializer,
     WithdrawalCreateSerializer,
@@ -32,7 +38,12 @@ class WalletBalanceView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(WalletBalanceSerializer({"balance": services.get_balance(request.user)}).data)
+        # Return the real promotional/total too (the serializer defaults used to make these read "0.00").
+        paid = services.get_balance(request.user)
+        promo = services.promotional_balance(request.user)
+        return Response(WalletBalanceSerializer({
+            "balance": paid, "promotional_balance": promo, "total_usable": paid + promo,
+        }).data)
 
 
 class LedgerPagination(PageNumberPagination):
@@ -209,3 +220,74 @@ class WithdrawalReverseView(APIView):
         except WithdrawalRequest.DoesNotExist as exc:
             raise NotFound("Withdrawal not found.") from exc
         return Response(WithdrawalSerializer(withdrawal).data)
+
+
+# ---------------------------------------------------------------------------
+# Promo codes. People redeem; staff create and manage. Redeeming grants platform credit only
+# (spendable on plans, never withdrawable) -- see services.redeem_promo_code.
+# ---------------------------------------------------------------------------
+class PromoRedeemView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "wallet_write"
+
+    def post(self, request):
+        serializer = PromoRedeemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        credit = services.redeem_promo_code(request.user, serializer.validated_data["code"])
+        return Response({
+            "name": credit.source, "amount": str(credit.original_amount),
+            "expires_at": credit.expires_at, "promotional_balance": str(services.promotional_balance(request.user)),
+        }, status=status.HTTP_201_CREATED)
+
+
+def _require_staff(user):
+    if not services._is_staff(user):
+        raise AccountNotEligibleError("Staff only.")
+
+
+class PromoCodeListCreateView(APIView):
+    """Staff: list every code with how many times it's been used, or create one (leave `code` blank to auto-generate)."""
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "wallet_write"
+
+    def get(self, request):
+        _require_staff(request.user)
+        qs = PromoCode.objects.select_related("plan", "category").order_by("-created_at")[:200]
+        return Response(PromoCodeSerializer(qs, many=True).data)
+
+    def post(self, request):
+        _require_staff(request.user)
+        serializer = PromoCodeCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = dict(serializer.validated_data)
+        from apps.services.models import Service, ServiceCategory
+        plan_id, category_id = data.pop("plan_id"), data.pop("category_id")
+        plan = Service.objects.filter(id=plan_id, is_plan=True).first() if plan_id else None
+        category = ServiceCategory.objects.filter(id=category_id).first() if category_id else None
+        if plan_id and plan is None:
+            raise NotFound("Plan not found.")
+        if category_id and category is None:
+            raise NotFound("Category not found.")
+        promo = services.create_promo_code(request.user, plan=plan, category=category, **data)
+        return Response(PromoCodeSerializer(promo).data, status=status.HTTP_201_CREATED)
+
+
+class PromoCodeDetailView(APIView):
+    permission_classes = [IsAuthenticated]
+    throttle_classes = [ScopedRateThrottle]
+    throttle_scope = "wallet_write"
+
+    def patch(self, request, promo_id):
+        _require_staff(request.user)
+        serializer = PromoCodeUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        with transaction.atomic():
+            promo = PromoCode.objects.select_for_update().filter(id=promo_id).first()
+            if promo is None:
+                raise NotFound("Promo code not found.")
+            for field, value in serializer.validated_data.items():
+                setattr(promo, field, value)
+            promo.save()
+        return Response(PromoCodeSerializer(promo).data)

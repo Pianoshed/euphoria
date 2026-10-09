@@ -51,7 +51,7 @@ export default function MyBookings() {
                 <span className="pl-av" aria-hidden="true">{other.username[0].toUpperCase()}</span>
                 <div className="pl-row__text">
                   <strong>{b.service_title}</strong>
-                  <small>{role === 'customer' ? `with ${other.username}` : `for ${other.username}`} · {formatPrice(b.agreed_price)}</small>
+                  <small>{role === 'customer' ? `with ${other.username}` : `for ${other.username}`} · {formatPrice(b.gross_amount ?? b.agreed_price)}</small>
                 </div>
               </div>
               <StatusPill status={b.status} />

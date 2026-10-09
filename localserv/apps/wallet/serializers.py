@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import LedgerEntry, PaymentIntent, PayoutAccount, WithdrawalRequest
+from .models import LedgerEntry, PaymentIntent, PayoutAccount, PromoCode, WithdrawalRequest
 
 
 class WalletBalanceSerializer(serializers.Serializer):
@@ -94,3 +94,39 @@ class WithdrawalSerializer(serializers.ModelSerializer):
 
 class WithdrawalReverseSerializer(serializers.Serializer):
     reason = serializers.CharField(max_length=500)
+
+
+# --- promo codes -------------------------------------------------------------------
+
+class PromoRedeemSerializer(serializers.Serializer):
+    code = serializers.CharField(max_length=60, trim_whitespace=True)
+
+
+class PromoCodeCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=80)
+    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
+    code = serializers.CharField(max_length=40, required=False, allow_blank=True, default="")  # blank = auto-generate
+    max_redemptions = serializers.IntegerField(min_value=1, required=False, allow_null=True, default=None)
+    starts_at = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    valid_until = serializers.DateTimeField(required=False, allow_null=True, default=None)
+    credit_valid_days = serializers.IntegerField(min_value=1, max_value=3650, required=False, allow_null=True, default=None)
+    plan_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+    category_id = serializers.UUIDField(required=False, allow_null=True, default=None)
+
+
+class PromoCodeUpdateSerializer(serializers.Serializer):
+    """Staff can switch a code off/on, move its end date, or change its cap. The amount never changes after creation."""
+    is_active = serializers.BooleanField(required=False)
+    valid_until = serializers.DateTimeField(required=False, allow_null=True)
+    max_redemptions = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+
+
+class PromoCodeSerializer(serializers.ModelSerializer):
+    plan_title = serializers.CharField(source="plan.title", read_only=True, default=None)
+    category_name = serializers.CharField(source="category.name", read_only=True, default=None)
+
+    class Meta:
+        model = PromoCode
+        fields = ["id", "code", "name", "amount", "max_redemptions", "redeemed_count", "starts_at", "valid_until",
+                  "credit_valid_days", "plan", "plan_title", "category", "category_name", "is_active", "created_at"]
+        read_only_fields = fields
