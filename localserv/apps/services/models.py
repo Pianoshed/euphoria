@@ -47,6 +47,15 @@ class Service(BaseModel):
     price = models.DecimalField(max_digits=10, decimal_places=2)
     service_area = models.CharField(max_length=100, blank=True)
 
+    # Plan/experience fields. Existing services remain valid because these are
+    # optional and `is_plan=False` preserves the old marketplace semantics.
+    is_plan = models.BooleanField(default=False)
+    capacity = models.PositiveIntegerField(null=True, blank=True)
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    location = models.CharField(max_length=255, blank=True)
+    cancellation_policy = models.CharField(max_length=30, default="FULL_REFUND")
+    platform_fee_rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+
     status = models.CharField(max_length=20, choices=ServiceStatus.choices, default=ServiceStatus.DRAFT)
 
     class Meta(BaseModel.Meta):

@@ -1,6 +1,7 @@
 from decimal import Decimal
+import uuid
 
-from django.db import transaction
+from django.db import models, transaction
 from django.utils import timezone
 
 from apps.common.constants import AccountRole, EscrowStatus, LedgerEntryType
@@ -8,7 +9,7 @@ from apps.common.exceptions import AccountNotEligibleError, DomainError, Insuffi
 from apps.common.models import AuditAction, AuditLog
 from apps.common.utils import clamp_page_size
 
-from .models import Escrow, LedgerEntry, Wallet
+from .models import Escrow, LedgerEntry, PromotionalCredit, Wallet
 
 
 def _is_staff(user) -> bool:
@@ -75,33 +76,144 @@ def deposit(user, *, amount: Decimal, idempotency_key: str = "", note: str = "")
 
 @transaction.atomic
 def hold_escrow(customer, *, booking, idempotency_key: str = "") -> Escrow:
-    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=customer)
+    """Hold a booking amount using paid wallet value only.
 
+    Euphoria Plan bookings use hold_escrow_for_plan so promotional credits can be
+    consumed separately and remain non-withdrawable. Existing service bookings keep
+    this original paid-wallet-only path.
+    """
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=customer)
     existing = _existing_entry_for_key(wallet, idempotency_key)
     if existing:
         return Escrow.objects.get(booking=booking)
-
-    amount = booking.agreed_price
+    amount = booking.gross_amount or booking.agreed_price
     if wallet.balance < amount:
         raise InsufficientBalanceError("Insufficient wallet balance to fund this booking.")
-
     new_balance = wallet.balance - amount
     wallet.balance = new_balance
     wallet.save(update_fields=["balance", "updated_at"])
     LedgerEntry.objects.create(
-        wallet=wallet,
-        entry_type=LedgerEntryType.ESCROW_HOLD,
-        amount=-amount,
-        balance_after=new_balance,
-        booking=booking,
-        idempotency_key=idempotency_key,
+        wallet=wallet, entry_type=LedgerEntryType.ESCROW_HOLD, amount=-amount,
+        balance_after=new_balance, booking=booking, idempotency_key=idempotency_key,
         note=f"Escrow hold for booking {booking.id}",
     )
-    return Escrow.objects.create(booking=booking, amount=amount, status=EscrowStatus.HELD)
+    return Escrow.objects.create(booking=booking, amount=amount, paid_amount=amount)
+
+
+def _sync_promotional_balance_locked(wallet):
+    now = timezone.now()
+    active_total = PromotionalCredit.objects.filter(
+        user=wallet.user, remaining_amount__gt=0
+    ).filter(models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)).aggregate(
+        total=models.Sum("remaining_amount")
+    )["total"] or Decimal("0")
+    active_total = active_total.quantize(Decimal("0.01"))
+    if wallet.promotional_balance != active_total:
+        wallet.promotional_balance = active_total
+        wallet.save(update_fields=["promotional_balance", "updated_at"])
+    return active_total
+
+
+@transaction.atomic
+def grant_promotional_credit(user, *, amount: Decimal, expires_at=None, plan=None, category=None,
+                            source="PROMOTION", reference=None, metadata=None) -> PromotionalCredit:
+    amount = Decimal(amount).quantize(Decimal("0.01"))
+    if amount <= 0:
+        raise DomainError("Promotional credit amount must be positive.")
+    if expires_at is not None and expires_at <= timezone.now():
+        raise DomainError("Promotional credit expiry must be in the future.")
+    reference = reference or f"promo:{uuid.uuid4()}"
+    credit = PromotionalCredit.objects.create(
+        user=user, original_amount=amount, remaining_amount=amount, expires_at=expires_at,
+        plan=plan, category=category, source=source, reference=reference, metadata=metadata or {}
+    )
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+    _sync_promotional_balance_locked(wallet)
+    LedgerEntry.objects.create(
+        wallet=wallet, entry_type=LedgerEntryType.PROMOTIONAL_CREDIT, amount=amount,
+        balance_after=wallet.balance, idempotency_key=f"promo-grant:{reference}",
+        note=f"Promotional credit: {source}",
+    )
+    return credit
+
+
+@transaction.atomic
+def hold_escrow_for_plan(customer, *, booking, plan, idempotency_key: str = "") -> Escrow:
+    """Fund a plan using promotional value first, then paid wallet value.
+
+    The escrow records exactly which promotional grants were consumed, allowing an
+    accurate refund without ever making promotional value withdrawable.
+    """
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=customer)
+    existing = _existing_entry_for_key(wallet, idempotency_key)
+    if existing:
+        return Escrow.objects.get(booking=booking)
+    amount = booking.gross_amount or booking.agreed_price
+    if amount <= 0:
+        raise DomainError("Booking amount must be positive.")
+
+    _sync_promotional_balance_locked(wallet)
+    now = timezone.now()
+    credits = list(PromotionalCredit.objects.select_for_update().filter(
+        user=customer, remaining_amount__gt=0
+    ).filter(models.Q(expires_at__isnull=True) | models.Q(expires_at__gt=now)).filter(
+        models.Q(plan__isnull=True) | models.Q(plan=plan)
+    ).filter(
+        models.Q(category__isnull=True) | models.Q(category_id=plan.category_id)
+    ).order_by("expires_at", "created_at"))
+
+    promo_remaining = amount
+    allocations = []
+    for credit in credits:
+        if promo_remaining <= 0:
+            break
+        take = min(credit.remaining_amount, promo_remaining)
+        credit.remaining_amount = (credit.remaining_amount - take).quantize(Decimal("0.01"))
+        credit.save(update_fields=["remaining_amount", "updated_at"])
+        allocations.append({"credit_id": str(credit.id), "amount": str(take)})
+        promo_remaining = (promo_remaining - take).quantize(Decimal("0.01"))
+
+    promotional_amount = amount - promo_remaining
+    paid_amount = promo_remaining
+    if wallet.balance < paid_amount:
+        # Roll back promotional allocations in the same transaction before raising.
+        for allocation in allocations:
+            credit = PromotionalCredit.objects.select_for_update().get(id=allocation["credit_id"])
+            credit.remaining_amount = (credit.remaining_amount + Decimal(allocation["amount"])).quantize(Decimal("0.01"))
+            credit.save(update_fields=["remaining_amount", "updated_at"])
+        raise InsufficientBalanceError("Insufficient wallet balance and promotional credits to fund this booking.")
+
+    wallet.balance = (wallet.balance - paid_amount).quantize(Decimal("0.01"))
+    wallet.save(update_fields=["balance", "updated_at"])
+    LedgerEntry.objects.create(
+        wallet=wallet, entry_type=LedgerEntryType.ESCROW_HOLD, amount=-paid_amount,  # paid part only: promo lives in PromotionalCredit
+        balance_after=wallet.balance, booking=booking, idempotency_key=idempotency_key,
+        note=f"Plan escrow hold: paid={paid_amount} promotional={promotional_amount}",
+    )
+    escrow = Escrow.objects.create(
+        booking=booking, amount=amount, paid_amount=paid_amount,
+        promotional_amount=promotional_amount, promotional_allocations=allocations,
+        status=EscrowStatus.HELD,
+    )
+    _sync_promotional_balance_locked(wallet)
+    return escrow
+
+
+def promotional_balance(user):
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+    with transaction.atomic():
+        wallet = Wallet.objects.select_for_update().get(user=user)
+        return _sync_promotional_balance_locked(wallet)
 
 
 @transaction.atomic
 def release_escrow(booking) -> Escrow:
+    """Legacy escrow release path kept for non-economy bookings.
+
+    Euphoria Plan bookings are settled through apps.economy.services.settle_booking,
+    which releases escrow without crediting the provider's customer wallet. This
+    function therefore remains for existing service bookings only.
+    """
     escrow = Escrow.objects.select_for_update().get(booking=booking)
     if escrow.status != EscrowStatus.HELD:
         raise InvalidStateTransitionError("This escrow is not currently held.")
@@ -116,6 +228,7 @@ def release_escrow(booking) -> Escrow:
         amount=escrow.amount,
         balance_after=new_balance,
         booking=booking,
+        idempotency_key=f"legacy-escrow-release:{booking.id}",
         note=f"Escrow release for booking {booking.id}",
     )
     escrow.status = EscrowStatus.RELEASED
@@ -131,17 +244,31 @@ def refund_escrow(booking) -> Escrow:
         raise InvalidStateTransitionError("This escrow is not currently held.")
 
     wallet, _ = Wallet.objects.select_for_update().get_or_create(user=booking.customer)
-    new_balance = wallet.balance + escrow.amount
-    wallet.balance = new_balance
+    paid_amount = Decimal(escrow.paid_amount or 0)
+    promotional_amount = Decimal(escrow.promotional_amount or 0)
+    if paid_amount + promotional_amount == 0:
+        # Escrow created before paid/promotional tracking existed (columns default to 0): it was
+        # funded entirely from the paid wallet, so refund the full amount rather than nothing.
+        paid_amount = Decimal(escrow.amount)
+
+    if paid_amount:
+        wallet.balance = (wallet.balance + paid_amount).quantize(Decimal("0.01"))
     wallet.save(update_fields=["balance", "updated_at"])
     LedgerEntry.objects.create(
-        wallet=wallet,
-        entry_type=LedgerEntryType.ESCROW_REFUND,
-        amount=escrow.amount,
-        balance_after=new_balance,
-        booking=booking,
-        note=f"Escrow refund for booking {booking.id}",
+        wallet=wallet, entry_type=LedgerEntryType.ESCROW_REFUND, amount=paid_amount,  # matches the balance change
+        balance_after=wallet.balance, booking=booking,
+        idempotency_key=f"escrow-refund:{booking.id}",
+        note=f"Plan escrow refund: paid={paid_amount} promotional={promotional_amount}",
     )
+
+    # Restore promotional value to the exact grants originally consumed. Expired grants
+    # retain their original expiry; they therefore cannot be revived as indefinitely valid cash-equivalent value.
+    for allocation in escrow.promotional_allocations or []:
+        credit = PromotionalCredit.objects.select_for_update().get(id=allocation["credit_id"])
+        credit.remaining_amount = (credit.remaining_amount + Decimal(allocation["amount"])).quantize(Decimal("0.01"))
+        credit.save(update_fields=["remaining_amount", "updated_at"])
+    _sync_promotional_balance_locked(wallet)
+
     escrow.status = EscrowStatus.REFUNDED
     escrow.refunded_at = timezone.now()
     escrow.save(update_fields=["status", "refunded_at", "updated_at"])
@@ -210,6 +337,9 @@ def reverse_withdrawal_credit(user, *, amount: Decimal, idempotency_key: str = "
 def admin_adjust_wallet(staff_user, target_user, *, amount: Decimal, reason: str) -> LedgerEntry:
     if not _is_staff(staff_user):
         raise AccountNotEligibleError("Only staff can manually adjust a wallet.")
+    if staff_user.pk == target_user.pk:
+        # Segregation of duties: nobody can mint or burn money in their own wallet.
+        raise AccountNotEligibleError("Staff cannot adjust their own wallet.")
     if not reason.strip():
         raise DomainError("A reason is required for a manual wallet adjustment.")
     if amount == 0:
@@ -237,3 +367,107 @@ def admin_adjust_wallet(staff_user, target_user, *, amount: Decimal, reason: str
         reason=reason,
     )
     return entry
+
+# --- Transaction-economy wallet movements -----------------------------------------
+# These helpers are deliberately kept in the canonical wallet service so every
+# balance-changing customer-wallet movement still uses the same row lock + ledger.
+
+@transaction.atomic
+def credit_refund(user, *, amount: Decimal, booking, idempotency_key: str, note: str = "") -> LedgerEntry:
+    if amount <= 0:
+        raise DomainError("Refund amount must be positive.")
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+    existing = _existing_entry_for_key(wallet, idempotency_key)
+    if existing:
+        return existing
+    new_balance = wallet.balance + amount
+    wallet.balance = new_balance
+    wallet.save(update_fields=["balance", "updated_at"])
+    return LedgerEntry.objects.create(
+        wallet=wallet,
+        entry_type=LedgerEntryType.PLAN_REFUND,
+        amount=amount,
+        balance_after=new_balance,
+        booking=booking,
+        idempotency_key=idempotency_key,
+        note=note or "Plan refund.",
+    )
+
+
+@transaction.atomic
+def credit_plan_refund(user, *, amount: Decimal, booking, promotional_amount: Decimal,
+                       promotional_allocations=None, idempotency_key: str, note: str = "") -> LedgerEntry:
+    """Refund a plan using the same paid/promotional composition used at purchase."""
+    amount = Decimal(amount).quantize(Decimal("0.01"))
+    promotional_amount = min(amount, Decimal(promotional_amount or 0)).quantize(Decimal("0.01"))
+    paid_amount = (amount - promotional_amount).quantize(Decimal("0.01"))
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+    existing = _existing_entry_for_key(wallet, idempotency_key)
+    if existing:
+        return existing
+    if paid_amount:
+        wallet.balance = (wallet.balance + paid_amount).quantize(Decimal("0.01"))
+        wallet.save(update_fields=["balance", "updated_at"])
+    else:
+        wallet.save(update_fields=["updated_at"])
+    for allocation in promotional_allocations or []:
+        credit = PromotionalCredit.objects.select_for_update().get(id=allocation["credit_id"])
+        credit.remaining_amount = (credit.remaining_amount + Decimal(allocation["amount"])).quantize(Decimal("0.01"))
+        credit.save(update_fields=["remaining_amount", "updated_at"])
+    _sync_promotional_balance_locked(wallet)
+    return LedgerEntry.objects.create(
+        wallet=wallet, entry_type=LedgerEntryType.PLAN_REFUND, amount=paid_amount,  # matches the balance change
+        balance_after=wallet.balance, booking=booking, idempotency_key=idempotency_key,
+        note=note or f"Plan refund: paid={paid_amount} promotional={promotional_amount}",
+    )
+
+
+@transaction.atomic
+def debit_gift(user, *, amount: Decimal, idempotency_key: str, note: str = "") -> LedgerEntry:
+    if amount <= 0:
+        raise DomainError("Gift amount must be positive.")
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+    existing = _existing_entry_for_key(wallet, idempotency_key)
+    if existing:
+        return existing
+    if wallet.balance < amount:
+        raise InsufficientBalanceError("Insufficient wallet balance for this gift.")
+    new_balance = wallet.balance - amount
+    wallet.balance = new_balance
+    wallet.save(update_fields=["balance", "updated_at"])
+    return LedgerEntry.objects.create(
+        wallet=wallet,
+        entry_type=LedgerEntryType.GIFT_DEBIT,
+        amount=-amount,
+        balance_after=new_balance,
+        idempotency_key=idempotency_key,
+        note=note or "Gift sent.",
+    )
+
+
+@transaction.atomic
+def credit_gift(user, *, amount: Decimal, idempotency_key: str, note: str = "") -> LedgerEntry:
+    if amount <= 0:
+        raise DomainError("Gift amount must be positive.")
+    wallet, _ = Wallet.objects.select_for_update().get_or_create(user=user)
+    existing = _existing_entry_for_key(wallet, idempotency_key)
+    if existing:
+        return existing
+    new_balance = wallet.balance + amount
+    wallet.balance = new_balance
+    wallet.save(update_fields=["balance", "updated_at"])
+    return LedgerEntry.objects.create(
+        wallet=wallet,
+        entry_type=LedgerEntryType.GIFT_CREDIT,
+        amount=amount,
+        balance_after=new_balance,
+        idempotency_key=idempotency_key,
+        note=note or "Gift received.",
+    )
+
+
+@transaction.atomic
+def credit_gift_refund(user, *, amount: Decimal, idempotency_key: str, note: str = "") -> LedgerEntry:
+    # A declined gift returns the sender's own funds. It is still a gift-credit
+    # movement, but the idempotency key makes it impossible to return twice.
+    return credit_gift(user, amount=amount, idempotency_key=idempotency_key, note=note or "Declined gift returned.")

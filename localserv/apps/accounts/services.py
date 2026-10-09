@@ -553,12 +553,38 @@ def block_user(blocker: User, *, target_user_id) -> Block:
     return block
 
 
+BLOCK_UNBLOCK_WINDOW = timedelta(days=183)  # ~6 months
+
+
+def block_is_permanent(block: Block, *, now=None) -> bool:
+    """A block can be undone for 6 months after it was made. After that it is permanent."""
+    return (now or timezone.now()) - block.created_at >= BLOCK_UNBLOCK_WINDOW
+
+
+def unblock_until(block: Block):
+    return block.created_at + BLOCK_UNBLOCK_WINDOW
+
+
 def unblock_user(blocker: User, *, target_user_id) -> None:
-    Block.objects.filter(blocker=blocker, blocked_id=target_user_id).delete()
+    """Idempotent. Allowed only within 6 months of blocking; after that the block is permanent.
+    Nothing is deleted when blocking, so within the window the old chat history comes back."""
+    block = Block.objects.filter(blocker=blocker, blocked_id=target_user_id).first()
+    if block is None:
+        return
+    if block_is_permanent(block):
+        raise AccountNotEligibleError("This block is permanent. It could only be undone within 6 months of blocking.")
+    block.delete()
+
+
+def blocked_ids_for(user_id) -> set:
+    """Everyone `user` has blocked OR who has blocked `user` (either direction hides the chat)."""
+    pairs = Block.objects.filter(Q(blocker_id=user_id) | Q(blocked_id=user_id)).values_list("blocker_id", "blocked_id")
+    return {uid for pair in pairs for uid in pair} - {user_id}
 
 
 def list_blocks(user: User):
-    return Block.objects.filter(blocker=user).select_related("blocked").order_by("-created_at")
+    """People `user` has blocked, newest first. This powers the "Blocked people" screen where they can be unblocked."""
+    return Block.objects.filter(blocker=user).select_related("blocked", "blocked__profile").order_by("-created_at")
 
 
 # --- Account moderation (Phase 8) -----------------------------------------------

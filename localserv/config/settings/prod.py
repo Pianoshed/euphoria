@@ -12,6 +12,21 @@ if PAYMENT_PROVIDER == "stub":
         "provider once one is integrated (see apps.wallet.providers)."
     )
 
+if PAYMENT_PROVIDER == "monnify":
+    from .base import (MONNIFY_API_KEY, MONNIFY_BASE_URL, MONNIFY_CONTRACT_CODE, MONNIFY_REDIRECT_URL,
+                       MONNIFY_SECRET_KEY, MONNIFY_SOURCE_ACCOUNT_NUMBER, PAYOUT_ENCRYPTION_KEYS)
+    _missing = [k for k, v in {
+        "MONNIFY_API_KEY": MONNIFY_API_KEY, "MONNIFY_SECRET_KEY": MONNIFY_SECRET_KEY,
+        "MONNIFY_CONTRACT_CODE": MONNIFY_CONTRACT_CODE, "MONNIFY_REDIRECT_URL": MONNIFY_REDIRECT_URL,
+        "MONNIFY_SOURCE_ACCOUNT_NUMBER": MONNIFY_SOURCE_ACCOUNT_NUMBER, "PAYOUT_ENCRYPTION_KEYS": PAYOUT_ENCRYPTION_KEYS,
+    }.items() if not v]
+    if _missing:
+        raise ImproperlyConfigured(f"PAYMENT_PROVIDER=monnify but these are not set: {', '.join(_missing)}")
+    if "sandbox" in MONNIFY_BASE_URL:
+        raise ImproperlyConfigured("Production is pointing at the Monnify SANDBOX. Set MONNIFY_BASE_URL=https://api.monnify.com")
+elif PAYMENT_PROVIDER != "monnify":
+    raise ImproperlyConfigured(f"Unknown PAYMENT_PROVIDER {PAYMENT_PROVIDER!r} for production.")
+
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 # Only meaningful because deploy/nginx/app.conf is the one setting

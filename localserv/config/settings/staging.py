@@ -7,6 +7,7 @@ DEBUG = False
 
 # Deliberately NOT importing from .prod: that triggers the stub guard.
 PAYMENT_PROVIDER = "stub"
+ALLOW_STUB_PAYMENTS = True  # required now: the stub is otherwise refused outside DEBUG/tests
 
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 

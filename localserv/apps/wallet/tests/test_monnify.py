@@ -156,6 +156,33 @@ def test_initiate_deposit_creates_pending_intent_with_checkout_url_and_no_credit
     assert wallet_services.get_balance(user) == Decimal("0.00")
 
 
+@pytest.fixture(autouse=True)
+def _provider_confirms_payment():
+    """Deposits are re-verified with Monnify before crediting; default to 'confirmed' (override per test)."""
+    with mock.patch.object(MonnifyProvider, "verify_deposit", return_value={"paid": True, "amount": Decimal("1000000")}):
+        yield
+
+
+@pytest.mark.django_db
+def test_webhook_not_confirmed_by_provider_is_not_credited(client):
+    user = make_user()
+    _pending(user)
+    with mock.patch.object(MonnifyProvider, "verify_deposit", return_value={"paid": False, "amount": Decimal("0")}):
+        resp = _post_webhook(client, event(reference="EUPH-abc", amount=300))
+    assert resp.status_code == 400
+    assert wallet_services.get_balance(user) == Decimal("0.00")
+
+
+@pytest.mark.django_db
+def test_webhook_provider_lookup_down_is_retried_not_credited(client):
+    user = make_user()
+    _pending(user)
+    with mock.patch.object(MonnifyProvider, "verify_deposit", side_effect=DomainError("down")):
+        resp = _post_webhook(client, event(reference="EUPH-abc", amount=300))
+    assert resp.status_code == 400
+    assert wallet_services.get_balance(user) == Decimal("0.00")
+
+
 def _pending(user, reference="EUPH-abc", amount="300.00"):
     return PaymentIntent.objects.create(
         user=user, amount=Decimal(amount), provider="monnify", provider_reference=reference,

@@ -33,6 +33,9 @@ class Wallet(models.Model):
 
     user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, primary_key=True, related_name="wallet")
     balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    # Promotional credits are tracked separately from paid wallet value. They are
+    # spendable on eligible Euphoria plans but are never withdrawable.
+    promotional_balance = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -40,6 +43,7 @@ class Wallet(models.Model):
         db_table = "wallet_wallet"
         constraints = [
             models.CheckConstraint(condition=models.Q(balance__gte=0), name="wallet_balance_non_negative"),
+            models.CheckConstraint(condition=models.Q(promotional_balance__gte=0), name="wallet_promotional_balance_non_negative"),
         ]
 
     def __str__(self):
@@ -55,7 +59,7 @@ class LedgerEntry(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     wallet = models.ForeignKey(Wallet, on_delete=models.PROTECT, related_name="ledger_entries")
-    entry_type = models.CharField(max_length=20, choices=LedgerEntryType.choices)
+    entry_type = models.CharField(max_length=30, choices=LedgerEntryType.choices)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     balance_after = models.DecimalField(max_digits=12, decimal_places=2)
     booking = models.ForeignKey(
@@ -94,6 +98,10 @@ class Escrow(BaseModel):
     status = models.CharField(max_length=10, choices=EscrowStatus.choices, default=EscrowStatus.HELD)
     released_at = models.DateTimeField(null=True, blank=True)
     refunded_at = models.DateTimeField(null=True, blank=True)
+    paid_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    promotional_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    promotional_allocations = models.JSONField(default=list, blank=True)
+    promotional_refunded_amount = models.DecimalField(max_digits=12, decimal_places=2, default=0)
 
     class Meta(BaseModel.Meta):
         db_table = "wallet_escrow"
@@ -171,6 +179,36 @@ class PaymentWebhookEvent(models.Model):
         return f"{self.provider}:{self.provider_event_id}"
 
 
+class PromotionalCredit(BaseModel):
+    """Non-cash promotional value. It can only be spent on eligible Euphoria plans.
+
+    Paid wallet balance and promotional balance are deliberately separate: promotional
+    value is never withdrawable and never used to fund gifts. Remaining value is tracked
+    per grant so expiry and auditability are preserved.
+    """
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="promotional_credits")
+    original_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    remaining_amount = models.DecimalField(max_digits=12, decimal_places=2)
+    expires_at = models.DateTimeField(null=True, blank=True)
+    plan = models.ForeignKey("services.Service", on_delete=models.PROTECT, null=True, blank=True, related_name="promotional_credits")
+    category = models.ForeignKey("services.ServiceCategory", on_delete=models.PROTECT, null=True, blank=True, related_name="promotional_credits")
+    non_transferable = models.BooleanField(default=True)
+    non_withdrawable = models.BooleanField(default=True)
+    source = models.CharField(max_length=80, default="PROMOTION")
+    reference = models.CharField(max_length=120, unique=True)
+    metadata = models.JSONField(default=dict, blank=True)
+
+    class Meta(BaseModel.Meta):
+        db_table = "wallet_promotional_credit"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(original_amount__gt=0), name="promo_original_positive"),
+            models.CheckConstraint(condition=models.Q(remaining_amount__gte=0), name="promo_remaining_non_negative"),
+            models.CheckConstraint(condition=models.Q(remaining_amount__lte=models.F("original_amount")), name="promo_remaining_lte_original"),
+        ]
+        indexes = [models.Index(fields=["user", "expires_at"]), models.Index(fields=["user", "remaining_amount"]) ]
+
+
+
 class PayoutAccount(BaseModel):
     """
     A withdrawal destination. The raw account/card number the user
@@ -234,6 +272,8 @@ class WithdrawalRequest(BaseModel):
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="withdrawal_requests")
     payout_account = models.ForeignKey(PayoutAccount, on_delete=models.PROTECT, related_name="withdrawal_requests")
     amount = models.DecimalField(max_digits=12, decimal_places=2)
+    source = models.CharField(max_length=20, default="WALLET")
+    earning_allocations = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=20, choices=WithdrawalStatus.choices, default=WithdrawalStatus.REQUESTED)
     idempotency_key = models.CharField(max_length=100, unique=True)
     provider = models.CharField(max_length=30, blank=True, default="")

@@ -378,11 +378,15 @@ def unpin_message(message: Message, user: User) -> Message:
 
 
 def list_conversations(user, *, page_size=None):
-    qs = (
-        Conversation.objects.filter(Q(user_a=user) | Q(user_b=user) | Q(members__user=user))
-        .distinct()
-        .order_by("-updated_at")
-    )
+    from apps.accounts.services import blocked_ids_for
+
+    qs = Conversation.objects.filter(Q(user_a=user) | Q(user_b=user) | Q(members__user=user))
+    hidden = blocked_ids_for(user.id)
+    if hidden:
+        # A blocked person (either direction) disappears from the chat list. Nothing is deleted:
+        # unblocking brings the whole conversation back. Group chats are not affected.
+        qs = qs.exclude(is_group=False, user_a_id__in=hidden).exclude(is_group=False, user_b_id__in=hidden)
+    qs = qs.distinct().order_by("-updated_at")
     return qs, clamp_page_size(page_size)
 
 

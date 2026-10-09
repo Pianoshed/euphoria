@@ -1,0 +1,115 @@
+from django.db import migrations, models
+import django.db.models.deletion
+from django.conf import settings
+import uuid
+from decimal import Decimal
+
+
+class Migration(migrations.Migration):
+    initial = True
+    dependencies = [
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+        ("bookings", "0004_transaction_snapshots"),
+        ("services", "0003_plan_fields"),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name="TransactionOrder",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("quantity", models.PositiveIntegerField(default=1)),
+                ("unit_price", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("gross_amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("platform_fee_rate", models.DecimalField(decimal_places=4, default=Decimal("15.0000"), max_digits=7)),
+                ("platform_fee_amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("planner_amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("currency", models.CharField(default="NGN", max_length=3)),
+                ("payment_source", models.CharField(default="WALLET", max_length=30)),
+                ("status", models.CharField(choices=[("PENDING", "Pending"), ("PAID", "Paid"), ("HELD", "Held"), ("COMPLETED", "Completed"), ("SETTLED", "Settled"), ("REFUNDED", "Refunded"), ("PARTIALLY_REFUNDED", "Partially refunded"), ("CANCELLED", "Cancelled"), ("DISPUTED", "Disputed"), ("FAILED", "Failed")], default="PENDING", max_length=24)),
+                ("idempotency_key", models.CharField(max_length=100, unique=True)),
+                ("settled_at", models.DateTimeField(blank=True, null=True)),
+                ("refunded_amount", models.DecimalField(decimal_places=2, default=Decimal("0.00"), max_digits=12)),
+                ("booking", models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name="transaction_order", to="bookings.booking")),
+                ("buyer", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="economy_orders_as_buyer", to=settings.AUTH_USER_MODEL)),
+                ("plan", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="economy_orders", to="services.service")),
+                ("planner", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="economy_orders_as_planner", to=settings.AUTH_USER_MODEL)),
+            ],
+            options={"db_table": "economy_transaction_order"},
+        ),
+        migrations.CreateModel(
+            name="PlannerEarning",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("gross_amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("platform_fee", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("net_amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("status", models.CharField(choices=[("PENDING", "Pending"), ("AVAILABLE", "Available"), ("PAID_OUT", "Paid out"), ("REVERSED", "Reversed"), ("REFUNDED", "Refunded")], default="PENDING", max_length=20)),
+                ("withdrawn_amount", models.DecimalField(decimal_places=2, default=Decimal("0.00"), max_digits=12)),
+                ("refunded_amount", models.DecimalField(decimal_places=2, default=Decimal("0.00"), max_digits=12)),
+                ("reserved_amount", models.DecimalField(decimal_places=2, default=Decimal("0.00"), max_digits=12)),
+                ("reservation_key", models.CharField(blank=True, default="", max_length=100)),
+                ("available_at", models.DateTimeField(blank=True, null=True)),
+                ("settled_at", models.DateTimeField(blank=True, null=True)),
+                ("reversed_at", models.DateTimeField(blank=True, null=True)),
+                ("order", models.OneToOneField(on_delete=django.db.models.deletion.PROTECT, related_name="planner_earning", to="economy.transactionorder")),
+                ("planner", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="planner_earnings", to=settings.AUTH_USER_MODEL)),
+            ],
+            options={"db_table": "economy_planner_earning"},
+        ),
+        migrations.CreateModel(
+            name="GiftTransaction",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("amount", models.DecimalField(decimal_places=2, max_digits=12)),
+                ("message", models.CharField(blank=True, max_length=500)),
+                ("status", models.CharField(choices=[("PENDING", "Pending"), ("ACCEPTED", "Accepted"), ("DECLINED", "Declined"), ("EXPIRED", "Expired")], default="PENDING", max_length=20)),
+                ("idempotency_key", models.CharField(max_length=100, unique=True)),
+                ("expires_at", models.DateTimeField(blank=True, null=True)),
+                ("accepted_at", models.DateTimeField(blank=True, null=True)),
+                ("declined_at", models.DateTimeField(blank=True, null=True)),
+                ("reference", models.UUIDField(default=uuid.uuid4, editable=False, unique=True)),
+                ("recipient", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="gifts_received", to=settings.AUTH_USER_MODEL)),
+                ("sender", models.ForeignKey(on_delete=django.db.models.deletion.PROTECT, related_name="gifts_sent", to=settings.AUTH_USER_MODEL)),
+            ],
+            options={"db_table": "economy_gift_transaction"},
+        ),
+        migrations.CreateModel(
+            name="PlatformFeeSetting",
+            fields=[
+                ("id", models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+                ("updated_at", models.DateTimeField(auto_now=True)),
+                ("name", models.CharField(max_length=80, unique=True)),
+                ("rate", models.DecimalField(decimal_places=4, default=Decimal("15.0000"), max_digits=7)),
+                ("is_active", models.BooleanField(default=True)),
+                ("category", models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.CASCADE, related_name="platform_fee_settings", to="services.servicecategory")),
+            ],
+            options={"db_table": "economy_platform_fee_setting"},
+        ),
+        migrations.AddIndex(model_name="transactionorder", index=models.Index(fields=["buyer", "created_at"], name="economy_tr_buyer_i_0b9d6f_idx")),
+        migrations.AddIndex(model_name="transactionorder", index=models.Index(fields=["planner", "status"], name="economy_tr_planner__2f1f9a_idx")),
+        migrations.AddIndex(model_name="transactionorder", index=models.Index(fields=["plan", "status"], name="economy_tr_plan_id_8a1b4c_idx")),
+        migrations.AddIndex(model_name="plannerearning", index=models.Index(fields=["planner", "status", "created_at"], name="economy_pl_planner__a2c4d8_idx")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(quantity__gt=0), name="economy_order_quantity_positive")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(unit_price__gte=0), name="economy_order_unit_price_non_negative")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(gross_amount__gte=0), name="economy_order_gross_non_negative")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(platform_fee_rate__gte=0) & models.Q(platform_fee_rate__lte=100), name="economy_order_fee_rate_valid")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(platform_fee_amount__gte=0), name="economy_order_fee_non_negative")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(planner_amount__gte=0), name="economy_order_planner_non_negative")),
+        migrations.AddConstraint(model_name="transactionorder", constraint=models.CheckConstraint(condition=models.Q(refunded_amount__gte=0), name="economy_order_refunded_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(gross_amount__gte=0), name="economy_earning_gross_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(platform_fee__gte=0), name="economy_earning_fee_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(net_amount__gte=0), name="economy_earning_net_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(withdrawn_amount__gte=0), name="economy_earning_withdrawn_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(refunded_amount__gte=0), name="economy_earning_refunded_non_negative")),
+        migrations.AddConstraint(model_name="plannerearning", constraint=models.CheckConstraint(condition=models.Q(reserved_amount__gte=0), name="economy_earning_reserved_non_negative")),
+        migrations.AddConstraint(model_name="gifttransaction", constraint=models.CheckConstraint(condition=models.Q(amount__gt=0), name="economy_gift_amount_positive")),
+        migrations.AddConstraint(model_name="platformfeesetting", constraint=models.CheckConstraint(condition=models.Q(rate__gte=0) & models.Q(rate__lte=100), name="economy_fee_setting_rate_valid")),
+    ]

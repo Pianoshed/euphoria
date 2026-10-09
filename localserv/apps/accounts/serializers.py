@@ -116,8 +116,24 @@ class BlockCreateSerializer(serializers.Serializer):
 class BlockedUserSerializer(serializers.Serializer):
     id = serializers.UUIDField(source="blocked.id")
     username = serializers.CharField(source="blocked.username")
+    display_name = serializers.SerializerMethodField()
+    can_unblock = serializers.SerializerMethodField()
+    unblock_until = serializers.SerializerMethodField()
     reason = serializers.CharField()
     created_at = serializers.DateTimeField()
+
+
+    def get_can_unblock(self, obj):
+        from .services import block_is_permanent
+        return not block_is_permanent(obj)
+
+    def get_unblock_until(self, obj):
+        from .services import unblock_until
+        return unblock_until(obj)  # after this date the block is permanent
+
+    def get_display_name(self, obj):
+        profile = getattr(obj.blocked, "profile", None)
+        return (profile.display_name if profile and profile.display_name else obj.blocked.username)
 
 
 class GoogleLoginSerializer(serializers.Serializer):

@@ -7,11 +7,18 @@ BASE = "/api/square"
 
 class SquareBackend(APITestCase):
     def setUp(self):
-        mk = lambda n: U.objects.create(username=n, display_name=n.title())
+        def mk(n):
+            # display_name lives on Profile (auto-created by a post_save signal), not on User.
+            u = U.objects.create_user(email=f"{n}@example.com", username=f"user_{n}", password="a-strong-password-1")
+            u.mark_email_verified()          # status -> ACTIVE, required by IsActiveAccount
+            u.profile.display_name = n.title()
+            u.profile.save(update_fields=["display_name"])
+            u.key = n                        # short handle used by the tests below ("a".."g")
+            return u
         self.me, self.b, self.c, self.d, self.e, self.f, self.g = (mk(n) for n in "abcdefg")
         def as_(u):
             cl = APIClient(); cl.force_authenticate(u); return cl
-        self.cl = {u.username: as_(u) for u in (self.me, self.b, self.c, self.d, self.e, self.f, self.g)}
+        self.cl = {u.key: as_(u) for u in (self.me, self.b, self.c, self.d, self.e, self.f, self.g)}
         # me owns a tree with b; d owns a tree that tags me and e; f owns a tree with g (unrelated to me)
         r = self.cl["a"].post(f"{BASE}/trees/", {"title": "Mine", "members": [str(self.b.id)],
                                                  "labels": {str(self.b.id): "family"}}, format="json")
@@ -20,8 +27,8 @@ class SquareBackend(APITestCase):
         self.cl["f"].post(f"{BASE}/trees/", {"title": "Eff", "members": [str(self.g.id)]}, format="json")
         self.st = {}
         for u in (self.me, self.b, self.c, self.d, self.e, self.f, self.g):
-            r = self.cl[u.username].post(f"{BASE}/statuses/", {"text": f"hi {u.username}"}, format="multipart")
-            self.assertEqual(r.status_code, 201, r.content); self.st[u.username] = r.json()["id"]
+            r = self.cl[u.key].post(f"{BASE}/statuses/", {"text": f"hi {u.key}"}, format="multipart")
+            self.assertEqual(r.status_code, 201, r.content); self.st[u.key] = r.json()["id"]
 
     # ---------- statuses: friend-tree people only ----------
     def test_statuses_only_from_my_trees(self):

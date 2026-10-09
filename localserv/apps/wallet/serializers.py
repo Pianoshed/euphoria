@@ -7,6 +7,8 @@ from .models import LedgerEntry, PaymentIntent, PayoutAccount, WithdrawalRequest
 
 class WalletBalanceSerializer(serializers.Serializer):
     balance = serializers.DecimalField(max_digits=12, decimal_places=2)
+    promotional_balance = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=Decimal("0.00"))
+    total_usable = serializers.DecimalField(max_digits=12, decimal_places=2, required=False, default=Decimal("0.00"))
 
 
 class DepositSerializer(serializers.Serializer):
@@ -74,6 +76,7 @@ class WithdrawalCreateSerializer(serializers.Serializer):
     amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"))
     payout_account_id = serializers.UUIDField()
     current_password = serializers.CharField(write_only=True)
+    otp_code = serializers.CharField(write_only=True, required=False, allow_blank=True, max_length=10, default="")
     idempotency_key = serializers.CharField(max_length=100)
 
 
@@ -83,7 +86,7 @@ class WithdrawalSerializer(serializers.ModelSerializer):
     class Meta:
         model = WithdrawalRequest
         fields = [
-            "id", "amount", "payout_account", "status", "provider",
+            "id", "amount", "source", "payout_account", "status", "provider",
             "provider_reference", "failure_reason", "completed_at", "created_at",
         ]
         read_only_fields = fields

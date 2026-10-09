@@ -19,7 +19,10 @@ OWNER_TRANSITIONS = {
 }
 
 
-def create_service(provider, *, category_id, title, description, price, service_area=""):
+def create_service(
+    provider, *, category_id, title, description, price, service_area="", is_plan=False,
+    capacity=None, scheduled_at=None, location="", cancellation_policy="FULL_REFUND", platform_fee_rate=None,
+):
     if provider.role != AccountRole.PROVIDER:
         raise AccountNotEligibleError("Only provider accounts can create service listings.")
     try:
@@ -28,6 +31,12 @@ def create_service(provider, *, category_id, title, description, price, service_
         raise DomainError("Selected category is not available.") from exc
     if price < 0:
         raise DomainError("Price cannot be negative.")
+    if is_plan and price <= 0:
+        raise DomainError("A paid Euphoria Plan must have a price greater than zero.")
+    if is_plan and capacity is not None and capacity < 1:
+        raise DomainError("Plan capacity must be at least 1.")
+    if cancellation_policy not in {"FULL_REFUND", "PARTIAL_REFUND", "NO_REFUND"}:
+        raise DomainError("Invalid cancellation policy.")
 
     return Service.objects.create(
         provider=provider,
@@ -36,6 +45,12 @@ def create_service(provider, *, category_id, title, description, price, service_
         description=description,
         price=price,
         service_area=service_area,
+        is_plan=is_plan,
+        capacity=capacity,
+        scheduled_at=scheduled_at,
+        location=location,
+        cancellation_policy=cancellation_policy,
+        platform_fee_rate=platform_fee_rate,
     )
 
 
@@ -44,8 +59,13 @@ SERVICE_UPDATABLE_FIELDS = {"title", "description", "price", "service_area", "ca
 
 def update_service(user, service: Service, **fields):
     _require_owner(user, service)
+    target_is_plan = fields.get("is_plan", service.is_plan)
     if "price" in fields and fields["price"] < 0:
         raise DomainError("Price cannot be negative.")
+    if target_is_plan and "price" in fields and fields["price"] <= 0:
+        raise DomainError("A paid Euphoria Plan must have a price greater than zero.")
+    if target_is_plan and "capacity" in fields and fields["capacity"] is not None and fields["capacity"] < 1:
+        raise DomainError("Plan capacity must be at least 1.")
     if "category_id" in fields:
         try:
             fields["category"] = ServiceCategory.objects.get(id=fields.pop("category_id"), is_active=True)

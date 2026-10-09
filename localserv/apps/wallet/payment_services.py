@@ -16,7 +16,7 @@ from apps.common.models import AuditAction, AuditLog
 from apps.common.utils import clamp_page_size
 
 from . import emails
-from .models import PaymentIntent, PaymentWebhookEvent, PayoutAccount, WithdrawalRequest
+from .models import PaymentIntent, PaymentWebhookEvent, PayoutAccount, Wallet, WithdrawalRequest
 from . import crypto
 from .providers import PayoutRejected, get_provider
 from .services import _is_staff, deposit as _credit_wallet, reverse_withdrawal_credit, withdraw
@@ -61,10 +61,18 @@ def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentI
         return existing  # replaying the same request returns the same intent, never double-charges
 
     provider = get_provider()
-    intent = PaymentIntent.objects.create(
-        user=user, amount=amount, provider=provider.name,
-        status=PaymentIntentStatus.PENDING, idempotency_key=idempotency_key,
-    )
+    try:
+        with transaction.atomic():  # savepoint: a unique-key clash must not poison the outer transaction
+            intent = PaymentIntent.objects.create(
+                user=user, amount=amount, provider=provider.name,
+                status=PaymentIntentStatus.PENDING, idempotency_key=idempotency_key,
+            )
+    except IntegrityError:
+        # Two simultaneous requests with the same key: the other one won. Return its intent.
+        existing = PaymentIntent.objects.get(idempotency_key=idempotency_key)
+        if existing.user_id != user.id:
+            raise DomainError("Invalid idempotency key.")
+        return existing
     result = provider.initiate_deposit(user=user, amount=amount, idempotency_key=idempotency_key)
     intent.provider_reference = result["provider_reference"]
     intent.checkout_url = result.get("client_action", {}).get("checkout_url", "")
@@ -81,9 +89,13 @@ def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentI
 
 
 @transaction.atomic
-def _complete_deposit(intent: PaymentIntent, *, provider_event_id: str) -> PaymentIntent:
+def _complete_deposit(intent: PaymentIntent, *, provider_event_id: str, allow_failed: bool = False) -> PaymentIntent:
     intent = PaymentIntent.objects.select_for_update().get(id=intent.id)
-    if intent.status != PaymentIntentStatus.PENDING:
+    # `allow_failed` is only set by a signed webhook that confirms the FULL amount was paid: a
+    # customer who really paid must be credited even if we had earlier marked the intent FAILED
+    # (e.g. an out-of-order "failed" attempt event, or a short payment that was topped up).
+    ok = (PaymentIntentStatus.PENDING, PaymentIntentStatus.FAILED) if allow_failed else (PaymentIntentStatus.PENDING,)
+    if intent.status not in ok:
         return intent  # already processed -- idempotent no-op, not an error; webhooks legitimately retry
 
     event, created = PaymentWebhookEvent.objects.get_or_create(
@@ -100,7 +112,8 @@ def _complete_deposit(intent: PaymentIntent, *, provider_event_id: str) -> Payme
     )
 
     intent.status = PaymentIntentStatus.SUCCEEDED
-    intent.save(update_fields=["status", "updated_at"])
+    intent.failure_reason = ""
+    intent.save(update_fields=["status", "failure_reason", "updated_at"])
     return intent
 
 
@@ -133,7 +146,12 @@ def process_deposit_webhook(*, headers, body: bytes) -> PaymentIntent | None:
                 )
                 intent.save(update_fields=["status", "failure_reason", "updated_at"])
             return intent
-        return _complete_deposit(intent, provider_event_id=event_data["event_id"])
+        if intent.status in (PaymentIntentStatus.PENDING, PaymentIntentStatus.FAILED):
+            confirmed = provider.verify_deposit(transaction_reference=event_data["event_id"])
+            if confirmed is not None and (not confirmed["paid"] or confirmed["amount"] < intent.amount):
+                logger.error("Deposit webhook for intent %s not confirmed by provider: %s", intent.id, confirmed)
+                raise DomainError("Payment could not be confirmed with the provider.")
+        return _complete_deposit(intent, provider_event_id=event_data["event_id"], allow_failed=True)
 
     if event_data["status"] == "failed":
         if intent.status == PaymentIntentStatus.PENDING:
@@ -245,12 +263,40 @@ def _check_password(user, password: str) -> None:
     cache.delete(key)
 
 
+def verify_password(user, password: str, otp_code: str = "") -> None:
+    """Public re-auth check (rate-limited). Call BEFORE reserving any money for a sensitive action."""
+    _check_password(user, password)
+    _check_otp(user, otp_code)
+
+
+def _check_otp(user, otp_code: str) -> None:
+    """When the user has 2FA on, a withdrawal also needs a current authenticator code."""
+    if not user.two_factor_enabled:
+        return
+    key = f"withdrawal-otp-fail:{user.id}"
+    if (cache.get(key) or 0) >= PASSWORD_MAX_FAILURES:
+        raise DomainError("Too many incorrect codes. Try again in 15 minutes.")
+    from apps.accounts.services import _totp_valid
+    if not _totp_valid(user, (otp_code or "").strip()):
+        cache.add(key, 0, PASSWORD_LOCK_SECONDS)
+        try:
+            cache.incr(key)
+        except ValueError:
+            cache.set(key, 1, PASSWORD_LOCK_SECONDS)
+        raise DomainError("A valid authenticator code is required to withdraw.")
+    cache.delete(key)
+
+
 def request_withdrawal(
-    user, *, amount: Decimal, payout_account_id, current_password: str, idempotency_key: str
+    user, *, amount: Decimal, payout_account_id, current_password: str, idempotency_key: str, source: str = "WALLET",
+    earning_allocations=None, otp_code: str = ""
 ) -> WithdrawalRequest:
     _check_password(user, current_password)
+    _check_otp(user, otp_code)
+    if source not in {"WALLET", "EARNINGS"}:
+        raise DomainError("Invalid withdrawal source.")
     withdrawal, created = _create_withdrawal(
-        user, amount=amount, payout_account_id=payout_account_id, idempotency_key=idempotency_key
+        user, amount=amount, payout_account_id=payout_account_id, idempotency_key=idempotency_key, source=source, earning_allocations=earning_allocations or []
     )
     if not created:
         return withdrawal  # replay of the same request: never pay twice
@@ -258,14 +304,21 @@ def request_withdrawal(
 
 
 @transaction.atomic
-def _create_withdrawal(user, *, amount, payout_account_id, idempotency_key):
+def _create_withdrawal(user, *, amount, payout_account_id, idempotency_key, source="WALLET", earning_allocations=None):
     if amount < MIN_WITHDRAWAL:
         raise DomainError(f"Minimum withdrawal is {MIN_WITHDRAWAL}.")
+
+    # Serialize every withdrawal attempt of this user on their wallet row BEFORE reading anything.
+    # Without this, two concurrent requests both read the same "withdrawn in last 24h" total, both
+    # pass the daily limit, and both go through (the balance check alone was locked, the limit wasn't).
+    Wallet.objects.select_for_update().get_or_create(user=user)
 
     existing = WithdrawalRequest.objects.filter(idempotency_key=idempotency_key).first()
     if existing is not None:
         if existing.user_id != user.id:
             raise DomainError("Invalid idempotency key.")
+        if existing.amount != amount or str(existing.payout_account_id) != str(payout_account_id):
+            raise DomainError("This idempotency key was already used for a different withdrawal.")
         return existing, False
 
     try:
@@ -292,14 +345,32 @@ def _create_withdrawal(user, *, amount, payout_account_id, idempotency_key):
     if recent + amount > MAX_DAILY_WITHDRAWAL:
         raise DomainError(f"Daily withdrawal limit is {MAX_DAILY_WITHDRAWAL}.")
 
-    # Raises InsufficientBalanceError (and rolls everything back) if the balance can't cover it.
-    withdraw(
-        user, amount=amount, idempotency_key=f"withdrawal:{idempotency_key}",
-        note=f"Withdrawal to {payout_account.label} {payout_account.masked_reference}.",
-    )
+    if source == "WALLET":
+        # Raises InsufficientBalanceError (and rolls everything back) if the customer
+        # spending balance cannot cover the withdrawal.
+        withdraw(
+            user, amount=amount, idempotency_key=f"withdrawal:{idempotency_key}",
+            note=f"Withdrawal to {payout_account.label} {payout_account.masked_reference}.",
+        )
+    else:
+        # Planner earnings have already been reserved by apps.economy.services.
+        # Never debit the customer wallet for an earnings payout.
+        from apps.economy.models import PlannerEarning
+        # The allocations come from the server (economy.withdraw_earnings), never from the client.
+        # Prove they really are reserved for this user and add up to exactly the payout amount.
+        total = Decimal("0")
+        for a in earning_allocations or []:
+            e = PlannerEarning.objects.select_for_update().filter(id=a["earning_id"], planner=user).first()
+            take = Decimal(str(a["amount"]))
+            if e is None or take <= 0 or e.reserved_amount < take:
+                raise DomainError("Insufficient available planner earnings.")
+            total += take
+        if total != amount:
+            raise DomainError("Insufficient available planner earnings.")
+
     try:
         withdrawal = WithdrawalRequest.objects.create(
-            user=user, amount=amount, payout_account=payout_account, status=WithdrawalStatus.PROCESSING,
+            user=user, amount=amount, source=source, earning_allocations=earning_allocations or [], payout_account=payout_account, status=WithdrawalStatus.PROCESSING,
             idempotency_key=idempotency_key, provider=provider.name,
             provider_reference=f"EUPW-{uuid.uuid4().hex}",  # OUR reference: also Monnify's idempotency key
         )
@@ -340,6 +411,9 @@ def _mark_completed(withdrawal_id):
     w = WithdrawalRequest.objects.select_for_update().get(id=withdrawal_id)
     if w.status != WithdrawalStatus.PROCESSING:
         return w, False
+    if w.source == "EARNINGS":
+        from apps.economy.services import finalize_earning_withdrawal
+        finalize_earning_withdrawal(amount=w.amount, user=w.user, reservation_key=w.idempotency_key, success=True, allocations=w.earning_allocations)
     w.status = WithdrawalStatus.COMPLETED
     w.completed_at = timezone.now()
     w.save(update_fields=["status", "completed_at", "updated_at"])
@@ -361,10 +435,20 @@ def _refund(withdrawal_id, *, reason: str, allowed=(WithdrawalStatus.PROCESSING,
     w = WithdrawalRequest.objects.select_for_update().get(id=withdrawal_id)
     if w.status not in allowed:
         return w, False
-    reverse_withdrawal_credit(
-        w.user, amount=w.amount, idempotency_key=f"withdrawal-refund:{w.id}",
-        note=f"Refund of withdrawal {w.id}: {reason}",
-    )
+    if w.source == "EARNINGS":
+        if w.status == WithdrawalStatus.COMPLETED:
+            # Money already counted as withdrawn (bank reversed it later): put it back as available.
+            from apps.economy.services import reverse_earning_withdrawal
+            reverse_earning_withdrawal(user=w.user, amount=w.amount, allocations=w.earning_allocations)
+        else:
+            from apps.economy.services import finalize_earning_withdrawal
+            finalize_earning_withdrawal(amount=w.amount, user=w.user, reservation_key=w.idempotency_key,
+                                        success=False, allocations=w.earning_allocations)
+    else:
+        reverse_withdrawal_credit(
+            w.user, amount=w.amount, idempotency_key=f"withdrawal-refund:{w.id}",
+            note=f"Refund of withdrawal {w.id}: {reason}",
+        )
     w.status = WithdrawalStatus.REVERSED
     w.failure_reason = reason[:255]
     w.save(update_fields=["status", "failure_reason", "updated_at"])
@@ -459,11 +543,15 @@ def reverse_withdrawal(staff_user, withdrawal_id, *, reason: str) -> WithdrawalR
     if withdrawal.status != WithdrawalStatus.COMPLETED:
         raise DomainError(f"Cannot reverse a withdrawal in status {withdrawal.status}.")
 
-    reverse_withdrawal_credit(
-        withdrawal.user, amount=withdrawal.amount,
-        idempotency_key=f"withdrawal-refund:{withdrawal.id}",  # same key as automatic refunds: can't double-refund
-        note=f"Reversal of withdrawal {withdrawal.id}: {reason}",
-    )
+    if withdrawal.source == "EARNINGS":
+        from apps.economy.services import reverse_earning_withdrawal
+        reverse_earning_withdrawal(user=withdrawal.user, amount=withdrawal.amount, allocations=withdrawal.earning_allocations)
+    else:
+        reverse_withdrawal_credit(
+            withdrawal.user, amount=withdrawal.amount,
+            idempotency_key=f"withdrawal-refund:{withdrawal.id}",  # same key as automatic refunds: can't double-refund
+            note=f"Reversal of withdrawal {withdrawal.id}: {reason}",
+        )
 
     withdrawal.status = WithdrawalStatus.REVERSED
     withdrawal.reversed_by = staff_user

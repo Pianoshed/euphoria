@@ -17,6 +17,7 @@ import hashlib
 import hmac
 import json
 import logging
+import sys
 import uuid
 from decimal import Decimal, InvalidOperation
 
@@ -56,6 +57,13 @@ class PaymentProvider(abc.ABC):
         """Deposit events. Returns {"event_id", "provider_reference", "status", "amount"} or
         {"status": "ignored"}."""
 
+    def verify_deposit(self, *, transaction_reference: str) -> dict | None:
+        """Ask the provider directly whether this transaction was really paid, so a credit never
+        rests on the webhook body alone. Returns {"paid": bool, "amount": Decimal}, or None when the
+        provider has no such lookup (the stub). Raises DomainError if the provider can't be reached,
+        so the webhook is retried instead of crediting on a guess."""
+        return None
+
     @abc.abstractmethod
     def initiate_payout(self, *, withdrawal, destination: dict | None = None) -> dict:
         """Returns {"provider_reference": str, "status": "completed" | "processing"}.
@@ -90,31 +98,39 @@ class StubProvider(PaymentProvider):
         }
 
     def verify_webhook_signature(self, *, headers, body: bytes) -> bool:
-        secret = settings.STUB_PAYMENT_WEBHOOK_SECRET.encode()
+        secret = (getattr(settings, "STUB_PAYMENT_WEBHOOK_SECRET", "") or "").encode()
+        if not secret:
+            return False  # never "verify" against an empty key
         expected = hmac.new(secret, body, hashlib.sha256).hexdigest()
         provided = headers.get("X-Stub-Signature", "")
         return hmac.compare_digest(expected, provided)
 
     def parse_webhook_event(self, *, body: bytes) -> dict:
-        data = json.loads(body)
-        return {
-            "event_id": data["event_id"],
-            "provider_reference": data["provider_reference"],
-            "status": data["status"],
-            "amount": Decimal(str(data["amount"])),
-        }
+        try:
+            data = json.loads(body)
+            return {
+                "event_id": data["event_id"],
+                "provider_reference": data["provider_reference"],
+                "status": data["status"],
+                "amount": Decimal(str(data["amount"])),
+            }
+        except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
+            raise DomainError("Malformed webhook payload.") from exc
 
     def initiate_payout(self, *, withdrawal, destination: dict | None = None) -> dict:
         return {"provider_reference": f"stub_payout_{uuid.uuid4().hex[:16]}", "status": "completed"}
 
     def parse_payout_webhook_event(self, *, body: bytes) -> dict:
-        data = json.loads(body)
-        return {
-            "event_id": data["event_id"],
-            "provider_reference": data["provider_reference"],
-            "status": data["status"],
-            "amount": Decimal(str(data["amount"])),
-        }
+        try:
+            data = json.loads(body)
+            return {
+                "event_id": data["event_id"],
+                "provider_reference": data["provider_reference"],
+                "status": data["status"],
+                "amount": Decimal(str(data["amount"])),
+            }
+        except (ValueError, KeyError, TypeError, InvalidOperation) as exc:
+            raise DomainError("Malformed webhook payload.") from exc
 
     def get_payout_status(self, *, reference: str) -> str:
         return "completed"
@@ -184,7 +200,7 @@ class MonnifyProvider(PaymentProvider):
     def initiate_deposit(self, *, user, amount: Decimal, idempotency_key: str) -> dict:
         reference = f"EUPH-{uuid.uuid4().hex}"
         payload = {
-            "amount": float(amount),
+            "amount": float(Decimal(amount).quantize(Decimal("0.01"))),
             "customerName": getattr(user, "username", "") or user.email,
             "customerEmail": user.email,
             "paymentReference": reference,
@@ -236,6 +252,20 @@ class MonnifyProvider(PaymentProvider):
         except (KeyError, InvalidOperation) as exc:
             raise DomainError("Malformed webhook payload.") from exc
 
+    def verify_deposit(self, *, transaction_reference: str) -> dict | None:
+        from urllib.parse import quote
+        try:
+            resp = requests.get(
+                f"{self._base()}/api/v2/transactions/{quote(transaction_reference, safe='')}",
+                headers=self._auth(), timeout=self.TIMEOUT,
+            )
+            resp.raise_for_status()
+            body = resp.json()["responseBody"]
+            return {"paid": str(body.get("paymentStatus", "")).upper() == "PAID",
+                    "amount": Decimal(str(body["amountPaid"]))}
+        except (requests.RequestException, KeyError, ValueError, TypeError, InvalidOperation) as exc:
+            raise DomainError("Could not confirm the payment with the provider yet.") from exc
+
     # -- bank list / account check ---------------------------------------------------
     def list_banks(self) -> list[dict]:
         cached = cache.get(self.BANKS_CACHE_KEY)
@@ -283,7 +313,7 @@ class MonnifyProvider(PaymentProvider):
             raise PayoutRejected("MONNIFY_SOURCE_ACCOUNT_NUMBER is not configured.")
 
         payload = {
-            "amount": float(withdrawal.amount),
+            "amount": float(Decimal(withdrawal.amount).quantize(Decimal("0.01"))),
             "reference": reference,
             "narration": "Euphoria wallet withdrawal",
             "destinationBankCode": destination["bank_code"],
@@ -392,10 +422,20 @@ class MonnifyProvider(PaymentProvider):
         return "unknown"
 
 
+def _running_tests() -> bool:
+    return "pytest" in sys.modules or (len(sys.argv) > 1 and sys.argv[1] == "test")
+
+
 def get_provider() -> PaymentProvider:
     name = getattr(settings, "PAYMENT_PROVIDER", "stub")
     if name == "monnify":
         return MonnifyProvider()
     if name == "stub":
+        # The stub auto-credits wallets with no real money. It must never run in production.
+        if not (settings.DEBUG or getattr(settings, "ALLOW_STUB_PAYMENTS", False) or _running_tests()):
+            raise ImproperlyConfigured(
+                "PAYMENT_PROVIDER='stub' is only allowed with DEBUG=True, ALLOW_STUB_PAYMENTS=True or under tests. "
+                "Set PAYMENT_PROVIDER='monnify' in production."
+            )
         return StubProvider()
     raise ImproperlyConfigured(f"Unknown PAYMENT_PROVIDER {name!r}.")

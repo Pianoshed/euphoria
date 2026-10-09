@@ -2,6 +2,7 @@
 Base settings shared by dev/prod. Do not put environment-specific
 values here directly -- read them via env.
 """
+from decimal import Decimal
 from pathlib import Path
 
 import environ
@@ -34,6 +35,7 @@ INSTALLED_APPS = [
     "apps.services.apps.ServicesConfig",
     "apps.bookings.apps.BookingsConfig",
     "apps.wallet.apps.WalletConfig",
+    "apps.economy.apps.EconomyConfig",
     "apps.moderation.apps.ModerationConfig",
     "apps.chat.apps.ChatConfig",
     "apps.square",
@@ -76,6 +78,9 @@ ASGI_APPLICATION = "config.asgi.application"
 DATABASES = {
     "default": env.db("DATABASE_URL"),
 }
+# Keep False: a withdrawal must commit its wallet debit BEFORE the bank transfer is sent.
+DATABASES["default"]["ATOMIC_REQUESTS"] = False
+DATABASES["default"].setdefault("CONN_MAX_AGE", 60)
 
 CACHES = {
     "default": {
@@ -84,6 +89,15 @@ CACHES = {
         "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
     }
 }
+
+import sys
+
+if "test" in sys.argv:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        }
+    }
 
 CHANNEL_LAYERS = {
     "default": {
@@ -201,7 +215,29 @@ CSRF_COOKIE_AGE = None  # default is 1 year; None = cookie dies with the browser
 
 # --- Payments (Phase 6) ---
 PAYMENT_PROVIDER = env("PAYMENT_PROVIDER", default="stub")
+DEFAULT_PLATFORM_FEE_RATE = Decimal(env("DEFAULT_PLATFORM_FEE_RATE", default="15.00"))
 STUB_PAYMENT_WEBHOOK_SECRET = env("STUB_PAYMENT_WEBHOOK_SECRET", default="stub-secret-change-me")
+# The stub provider is refused unless this is True (or DEBUG / tests). Only staging.py turns it on.
+ALLOW_STUB_PAYMENTS = False
+
+# Monnify (real payments). All empty by default; prod.py refuses to start without them when PAYMENT_PROVIDER=monnify.
+MONNIFY_BASE_URL = env("MONNIFY_BASE_URL", default="https://sandbox.monnify.com")  # live: https://api.monnify.com
+MONNIFY_API_KEY = env("MONNIFY_API_KEY", default="")
+MONNIFY_SECRET_KEY = env("MONNIFY_SECRET_KEY", default="")
+MONNIFY_CONTRACT_CODE = env("MONNIFY_CONTRACT_CODE", default="")
+MONNIFY_REDIRECT_URL = env("MONNIFY_REDIRECT_URL", default="")
+MONNIFY_SOURCE_ACCOUNT_NUMBER = env("MONNIFY_SOURCE_ACCOUNT_NUMBER", default="")
+
+# Encrypts stored bank details. Comma-separated Fernet keys; the FIRST encrypts, all decrypt (for rotation).
+# Generate: python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+PAYOUT_ENCRYPTION_KEYS = env("PAYOUT_ENCRYPTION_KEYS", default="")
+PAYOUT_FINGERPRINT_KEY = env("PAYOUT_FINGERPRINT_KEY", default="")  # falls back to SECRET_KEY if empty
+
+# Business limits (all optional)
+PAYOUT_ACCOUNT_COOLDOWN_HOURS = env.int("PAYOUT_ACCOUNT_COOLDOWN_HOURS", default=24)
+MAX_DAILY_WITHDRAWAL = env("MAX_DAILY_WITHDRAWAL", default="500000.00")
+MAX_PAYOUT_ACCOUNTS = env.int("MAX_PAYOUT_ACCOUNTS", default=5)
+GIFT_EXPIRY_DAYS = env.int("GIFT_EXPIRY_DAYS", default=7)
 
 
 # --- Email ---

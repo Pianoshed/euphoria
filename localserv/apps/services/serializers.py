@@ -20,6 +20,12 @@ class ServiceCreateSerializer(serializers.Serializer):
     description = serializers.CharField(max_length=3000)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"))
     service_area = serializers.CharField(max_length=100, allow_blank=True, required=False)
+    is_plan = serializers.BooleanField(required=False, default=False)
+    capacity = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    scheduled_at = serializers.DateTimeField(required=False, allow_null=True)
+    location = serializers.CharField(max_length=255, allow_blank=True, required=False)
+    cancellation_policy = serializers.ChoiceField(choices=["FULL_REFUND", "PARTIAL_REFUND", "NO_REFUND"], required=False)
+    platform_fee_rate = serializers.DecimalField(max_digits=7, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
 
 
 class ServiceUpdateSerializer(serializers.Serializer):
@@ -28,6 +34,12 @@ class ServiceUpdateSerializer(serializers.Serializer):
     description = serializers.CharField(max_length=3000, required=False)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, min_value=Decimal("0"), required=False)
     service_area = serializers.CharField(max_length=100, allow_blank=True, required=False)
+    is_plan = serializers.BooleanField(required=False)
+    capacity = serializers.IntegerField(min_value=1, required=False, allow_null=True)
+    scheduled_at = serializers.DateTimeField(required=False, allow_null=True)
+    location = serializers.CharField(max_length=255, allow_blank=True, required=False)
+    cancellation_policy = serializers.ChoiceField(choices=["FULL_REFUND", "PARTIAL_REFUND", "NO_REFUND"], required=False)
+    platform_fee_rate = serializers.DecimalField(max_digits=7, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
 
     def validate(self, attrs):
         if not attrs:
@@ -52,7 +64,8 @@ class ServiceSerializer(serializers.ModelSerializer):
         model = Service
         fields = [
             "id", "provider", "category", "title", "description",
-            "price", "service_area", "status", "created_at", "updated_at",
+            "price", "service_area", "is_plan", "capacity", "scheduled_at", "location",
+            "cancellation_policy", "platform_fee_rate", "status", "created_at", "updated_at",
         ]
         read_only_fields = fields
 

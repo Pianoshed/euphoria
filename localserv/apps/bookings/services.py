@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -6,6 +8,7 @@ from apps.common.exceptions import AccountNotEligibleError, DomainError, Invalid
 from apps.common.models import AuditAction, AuditLog
 from apps.common.utils import clamp_page_size
 from apps.services.models import Service
+from apps.economy import services as economy_services
 from apps.wallet import services as wallet_services
 
 from .models import Booking, BookingEvent
@@ -46,14 +49,23 @@ TRANSITIONS = {
 
 
 @transaction.atomic
-def create_booking(customer, *, service_id, note_from_customer="", scheduled_for=None):
+def create_booking(customer, *, service_id, note_from_customer="", scheduled_for=None, quantity=1, idempotency_key=None):
     if customer.status != AccountStatus.ACTIVE:
         raise AccountNotEligibleError("Your account is not eligible to book services.")
+    if quantity < 1:
+        raise DomainError("Quantity must be at least 1.")
 
     try:
-        service = Service.objects.select_related("provider", "provider__privacy").get(id=service_id)
+        service = Service.objects.select_for_update().select_related("provider", "provider__privacy", "category").get(id=service_id)
     except Service.DoesNotExist as exc:
         raise DomainError("Service not found.") from exc
+
+    if idempotency_key:
+        existing = Booking.objects.filter(purchase_idempotency_key=idempotency_key).first()
+        if existing:
+            if existing.customer_id != customer.id:
+                raise DomainError("Invalid idempotency key.")
+            return existing
 
     if service.status != ServiceStatus.PUBLISHED:
         raise DomainError("This service is not currently available for booking.")
@@ -62,18 +74,32 @@ def create_booking(customer, *, service_id, note_from_customer="", scheduled_for
     if service.provider.privacy.who_can_send_service_requests == ContactPermission.NOBODY:
         raise AccountNotEligibleError("This provider is not currently accepting requests.")
 
-    # Price is snapshotted NOW, from the service's current price, and
-    # never recalculated later even if the provider changes the listed
-    # price afterward -- see Booking's docstring.
+    if service.is_plan and service.capacity is not None:
+        available = economy_services.available_plan_slots(service)
+        if available is not None and quantity > available:
+            raise DomainError("There are not enough available slots for this plan.")
+
+    unit_price, gross, fee_rate, fee, planner_amount = economy_services.snapshot_financials(plan=service, quantity=quantity)
+    from uuid import uuid4
+    key = idempotency_key or f"booking:{uuid4()}"
     booking = Booking.objects.create(
         service=service,
         customer=customer,
         provider=service.provider,
         status=BookingStatus.PENDING,
-        agreed_price=service.price,
+        agreed_price=unit_price,
+        quantity=quantity,
+        unit_price=unit_price,
+        gross_amount=gross,
+        platform_fee_rate=fee_rate if service.is_plan else None,
+        platform_fee_amount=fee if service.is_plan else None,
+        planner_amount=planner_amount if service.is_plan else None,
+        scheduled_for=scheduled_for or service.scheduled_at,
+        purchase_idempotency_key=key,
         note_from_customer=note_from_customer,
-        scheduled_for=scheduled_for,
     )
+    if service.is_plan:
+        economy_services.create_order_for_booking(booking=booking, quantity=quantity, idempotency_key=key)
     _record_event(booking, actor=customer, from_status="", to_status=BookingStatus.PENDING)
     return booking
 
@@ -146,7 +172,16 @@ def fund_booking(customer, booking_id) -> Booking:
     if current != BookingStatus.ACCEPTED:
         raise InvalidStateTransitionError(f"Cannot fund a booking from {current}.")
 
-    wallet_services.hold_escrow(customer, booking=booking, idempotency_key=f"escrow-hold:{booking.id}")
+    if booking.service.is_plan:
+        wallet_services.hold_escrow_for_plan(
+            customer, booking=booking, plan=booking.service,
+            idempotency_key=f"escrow-hold:{booking.id}",
+        )
+        order = booking.transaction_order
+        order.status = "HELD"
+        order.save(update_fields=["status", "updated_at"])
+    else:
+        wallet_services.hold_escrow(customer, booking=booking, idempotency_key=f"escrow-hold:{booking.id}")
 
     booking.status = BookingStatus.FUNDED
     booking.save(update_fields=["status", "updated_at"])
@@ -166,7 +201,10 @@ def release_booking_funds(customer, booking_id) -> Booking:
     if current != BookingStatus.COMPLETED:
         raise InvalidStateTransitionError(f"Cannot release funds for a booking in {current}.")
 
-    wallet_services.release_escrow(booking)
+    if booking.service.is_plan:
+        economy_services.settle_booking(booking.id)
+    else:
+        wallet_services.release_escrow(booking)
 
     booking.status = BookingStatus.RELEASED
     booking.save(update_fields=["status", "updated_at"])
@@ -187,7 +225,10 @@ def refund_cancelled_booking(customer, booking_id) -> Booking:
     if current != BookingStatus.FUNDED:
         raise InvalidStateTransitionError(f"Cannot cancel-with-refund a booking in {current}.")
 
-    wallet_services.refund_escrow(booking)
+    if booking.service.is_plan:
+        economy_services.refund_booking(booking.id, reason="Booking cancelled and refunded.")
+    else:
+        wallet_services.refund_escrow(booking)
 
     booking.status = BookingStatus.CANCELLED
     booking.save(update_fields=["status", "updated_at"])
@@ -211,10 +252,16 @@ def resolve_dispute(staff_user, booking_id, *, resolution: str, reason: str = ""
         raise InvalidStateTransitionError(f"Cannot resolve a dispute for a booking in {current}.")
 
     if resolution == "RELEASE":
-        wallet_services.release_escrow(booking)
+        if booking.service.is_plan:
+            economy_services.settle_booking(booking.id)
+        else:
+            wallet_services.release_escrow(booking)
         target = BookingStatus.RELEASED
     else:
-        wallet_services.refund_escrow(booking)
+        if booking.service.is_plan:
+            economy_services.refund_booking(booking.id, reason=reason or "Dispute refund")
+        else:
+            wallet_services.refund_escrow(booking)
         target = BookingStatus.REFUNDED
 
     booking.status = target
@@ -257,3 +304,61 @@ def list_bookings_for_user(user, *, role_filter: str | None, status_filter: str 
 
     qs = qs.order_by("-created_at")
     return qs, clamp_page_size(page_size)
+
+
+# --- Timeouts: money must never sit in escrow forever -----------------------------------------
+# Run `manage.py settle_stale_bookings` daily. Both paths re-check state under the same row lock as the
+# manual endpoints, so a customer acting at the same moment cannot cause a double payout/refund.
+
+@transaction.atomic
+def auto_release_booking(booking_id) -> bool:
+    """COMPLETED -> RELEASED for a customer who never confirmed or disputed. Returns True if released."""
+    booking = Booking.objects.select_for_update().get(id=booking_id)
+    if booking.status != BookingStatus.COMPLETED:
+        return False
+    if booking.service.is_plan:
+        economy_services.settle_booking(booking.id)
+    else:
+        wallet_services.release_escrow(booking)
+    booking.status = BookingStatus.RELEASED
+    booking.save(update_fields=["status", "updated_at"])
+    _record_event(booking, actor=None, from_status=BookingStatus.COMPLETED, to_status=BookingStatus.RELEASED,
+                  note="Auto-released: customer did not confirm or dispute in time.")
+    return True
+
+
+@transaction.atomic
+def auto_refund_booking(booking_id) -> bool:
+    """FUNDED / IN_PROGRESS -> CANCELLED with a refund, for a provider who never completed the work."""
+    booking = Booking.objects.select_for_update().get(id=booking_id)
+    if booking.status not in (BookingStatus.FUNDED, BookingStatus.IN_PROGRESS):
+        return False
+    current = booking.status
+    if booking.service.is_plan:
+        economy_services.refund_booking(booking.id, reason="Auto-refund: provider did not complete in time.")
+    else:
+        wallet_services.refund_escrow(booking)
+    booking.status = BookingStatus.CANCELLED
+    booking.save(update_fields=["status", "updated_at"])
+    _record_event(booking, actor=None, from_status=current, to_status=BookingStatus.CANCELLED,
+                  note="Auto-refunded: provider did not complete in time.")
+    return True
+
+
+def settle_stale_bookings(*, release_after_days: int = 7, refund_after_days: int = 14) -> dict:
+    now = timezone.now()
+    out = {"released": 0, "refunded": 0, "errors": 0}
+    stale_done = Booking.objects.filter(
+        status=BookingStatus.COMPLETED, completed_at__lt=now - timedelta(days=release_after_days)
+    ).values_list("id", flat=True)
+    stale_open = Booking.objects.filter(
+        status__in=[BookingStatus.FUNDED, BookingStatus.IN_PROGRESS],
+        updated_at__lt=now - timedelta(days=refund_after_days),
+    ).values_list("id", flat=True)
+    for key, ids, fn in (("released", stale_done, auto_release_booking), ("refunded", stale_open, auto_refund_booking)):
+        for bid in list(ids):
+            try:
+                out[key] += int(fn(bid))
+            except DomainError:
+                out["errors"] += 1  # e.g. escrow mismatch: leave for a human, keep going
+    return out

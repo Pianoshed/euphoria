@@ -129,7 +129,7 @@ def test_removed_member_loses_access(client):
 def test_group_cap_enforced(client):
     others = _people(1)
     login(client)
-    ids = [others[0].id] + [User.objects.create_user(email=f"x{i}@e.com", username=f"x{i}", password="a-strong-password-1", role="PROVIDER").id for i in range(20)]
+    ids = [others[0].id] + [User.objects.create_user(email=f"x{i}@e.com", username=f"extra{i}", password="a-strong-password-1", role="PROVIDER").id for i in range(20)]
     assert _create(client, ids).status_code == 400
 
 

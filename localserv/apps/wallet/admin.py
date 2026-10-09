@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Escrow, LedgerEntry, PaymentIntent, PaymentWebhookEvent, PayoutAccount, Wallet, WithdrawalRequest
+from .models import Escrow, LedgerEntry, PaymentIntent, PaymentWebhookEvent, PayoutAccount, PromotionalCredit, Wallet, WithdrawalRequest
 
 
 class ReadOnlyAdminMixin:
@@ -13,7 +13,7 @@ class ReadOnlyAdminMixin:
 
 @admin.register(Wallet)
 class WalletAdmin(ReadOnlyAdminMixin, admin.ModelAdmin):
-    list_display = ["user", "balance", "updated_at"]
+    list_display = ["user", "balance", "promotional_balance", "updated_at"]
     search_fields = ["user__username", "user__email"]
     readonly_fields = [f.name for f in Wallet._meta.fields]
 
@@ -63,7 +63,7 @@ class WithdrawalRequestAdmin(admin.ModelAdmin):
     about the request itself (amount, user, idempotency_key) is
     immutable."""
 
-    list_display = ["id", "user", "amount", "status", "provider", "completed_at"]
+    list_display = ["id", "user", "amount", "source", "status", "provider", "completed_at"]
     list_filter = ["status", "provider"]
     search_fields = ["user__username", "provider_reference", "idempotency_key"]
     readonly_fields = [
@@ -75,4 +75,15 @@ class WithdrawalRequestAdmin(admin.ModelAdmin):
         return False
 
     def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PromotionalCredit)
+class PromotionalCreditAdmin(admin.ModelAdmin):
+    list_display = ["user", "original_amount", "remaining_amount", "expires_at", "source", "created_at"]
+    list_filter = ["source", "expires_at"]
+    search_fields = ["user__username", "reference"]
+    readonly_fields = ["user", "original_amount", "remaining_amount", "expires_at", "plan", "category", "source", "reference", "metadata", "created_at", "updated_at"]
+
+    def has_add_permission(self, request):
         return False

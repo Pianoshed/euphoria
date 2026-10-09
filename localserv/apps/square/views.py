@@ -2,7 +2,7 @@ import json
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ObjectDoesNotExist, ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -25,7 +25,13 @@ MAX_TREE_MEMBERS = 30
 
 
 def _who(u):
-    return {"id": str(u.id), "name": getattr(u, "display_name", "") or u.username}
+    """Public label for a person. The display name lives on Profile (never on User), so read it from
+    there; fall back to the username when no profile or no display name exists."""
+    try:
+        name = (u.profile.display_name or "").strip()
+    except ObjectDoesNotExist:
+        name = ""
+    return {"id": str(u.id), "name": name or u.username}
 
 
 def _seen_ids(request, statuses):
@@ -96,7 +102,7 @@ class _Base(APIView):
 class StatusListCreateView(_Base):
     def get(self, request):
         qs = list(_visible_statuses(request.user)
-                  .select_related("user").prefetch_related("reactions").order_by("-created_at")[:100])
+                  .select_related("user__profile").prefetch_related("reactions").order_by("-created_at")[:100])
         seen = _seen_ids(request, qs)
         return Response([_status(request, s, seen) for s in qs])
 
@@ -122,7 +128,7 @@ class StatusListCreateView(_Base):
         s.save()
         if content:
             s.file.save(name, content, save=True)
-        s = Status.objects.select_related("user").prefetch_related("reactions").get(pk=s.pk)
+        s = Status.objects.select_related("user__profile").prefetch_related("reactions").get(pk=s.pk)
         return Response(_status(request, s), status=http.HTTP_201_CREATED)
 
 
@@ -132,7 +138,7 @@ class StatusReactView(_Base):
         if s is None:  # same answer for "gone" and "not someone in your trees"
             raise NotFound("Status not found.")
         _toggle(StatusReaction, "status", s, request.user, request.data.get("emoji"))
-        s = Status.objects.select_related("user").prefetch_related("reactions").get(pk=s.pk)
+        s = Status.objects.select_related("user__profile").prefetch_related("reactions").get(pk=s.pk)
         return Response(_status(request, s))
 
 
@@ -150,7 +156,7 @@ class StatusSeenView(_Base):
 
 class ThoughtListCreateView(_Base):
     def get(self, request):
-        qs = Thought.objects.select_related("user").prefetch_related("reactions").order_by("-created_at")[:50]
+        qs = Thought.objects.select_related("user__profile").prefetch_related("reactions").order_by("-created_at")[:50]
         return Response([_thought(request, t) for t in qs])
 
     def post(self, request):
@@ -163,7 +169,7 @@ class ThoughtListCreateView(_Base):
         if Thought.objects.filter(user=request.user, created_at__gte=since).count() >= MAX_THOUGHTS_PER_DAY:
             raise ValidationError({"detail": "You've reached today's limit."})
         t = Thought.objects.create(user=request.user, text=text)
-        t = Thought.objects.select_related("user").prefetch_related("reactions").get(pk=t.pk)
+        t = Thought.objects.select_related("user__profile").prefetch_related("reactions").get(pk=t.pk)
         return Response(_thought(request, t), status=http.HTTP_201_CREATED)
 
 
@@ -173,7 +179,7 @@ class ThoughtReactView(_Base):
         if t is None:
             raise NotFound("Thought not found.")
         _toggle(ThoughtReaction, "thought", t, request.user, request.data.get("emoji"))
-        t = Thought.objects.select_related("user").prefetch_related("reactions").get(pk=t.pk)
+        t = Thought.objects.select_related("user__profile").prefetch_related("reactions").get(pk=t.pk)
         return Response(_thought(request, t))
 
 
@@ -183,9 +189,9 @@ class TrendingView(_Base):
         since = now - timedelta(hours=24)
         seen = _visible_statuses(request.user)
         top_s = (seen.annotate(n=Count("reactions")).filter(n__gt=0)
-                 .select_related("user").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
+                 .select_related("user__profile").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
         top_t = (Thought.objects.filter(created_at__gte=since).annotate(n=Count("reactions")).filter(n__gt=0)
-                 .select_related("user").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
+                 .select_related("user__profile").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
         tally = {}
         for model, scope in ((StatusReaction, {"status__in": seen}), (ThoughtReaction, {})):
             for row in model.objects.filter(created_at__gte=since, **scope).values("emoji").annotate(c=Count("id")):
@@ -202,7 +208,7 @@ class TrendingView(_Base):
 
 def _visible(user):
     return (FriendTree.objects.filter(Q(owner=user) | Q(members__user=user)).distinct()
-            .select_related("owner").prefetch_related("members__user"))
+            .select_related("owner__profile").prefetch_related("members__user__profile"))
 
 
 def _tree(request, t):

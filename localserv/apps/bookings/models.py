@@ -32,7 +32,18 @@ class Booking(BaseModel):
     )
 
     status = models.CharField(max_length=20, choices=BookingStatus.choices, default=BookingStatus.PENDING)
+    # `agreed_price` remains the legacy unit price field. The fields below are
+    # immutable financial snapshots used by the Euphoria transaction layer.
     agreed_price = models.DecimalField(max_digits=10, decimal_places=2)
+    quantity = models.PositiveIntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    gross_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    platform_fee_rate = models.DecimalField(max_digits=7, decimal_places=4, null=True, blank=True)
+    platform_fee_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    planner_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    currency = models.CharField(max_length=3, default="NGN")
+    payment_source = models.CharField(max_length=30, default="WALLET")
+    purchase_idempotency_key = models.CharField(max_length=100, null=True, blank=True, unique=True)
     note_from_customer = models.CharField(max_length=500, blank=True)
 
     scheduled_for = models.DateTimeField(null=True, blank=True)
