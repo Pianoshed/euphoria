@@ -15,45 +15,13 @@ function getCookie(name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-// Shown instead of "Failed to fetch" / "Request failed (500)" so people don't panic on a bad network.
-export const CALM_NETWORK_MESSAGE = 'Your connection seems slow. Give it a moment and try again.';
-
-/** Thrown for any non-2xx response (status 0 = the network itself failed). Carries the parsed body (if any)
+/** Thrown for any non-2xx response. Carries the parsed body (if any)
  * so callers can read field-level validation errors DRF returns. */
 export class ApiError extends Error {
   constructor(status, body) {
-    const transient = !status || status >= 500;
-    super(transient ? CALM_NETWORK_MESSAGE : typeof body?.detail === 'string' ? body.detail : `Request failed (${status})`);
+    super(typeof body?.detail === 'string' ? body.detail : `Request failed (${status})`);
     this.status = status;
     this.body = body;
-    this.transient = transient;
-  }
-}
-
-/** True for "the network or server hiccuped" errors (offline, timeouts, 5xx), as opposed to a real answer like 400/403/404. */
-export const isTransientError = (error) =>
-  !!error && (error.transient === true || error.status === 0 || error.status >= 500 || error instanceof TypeError);
-
-// Reads are safe to repeat, so a flaky connection or a 5xx quietly retries (the page keeps showing its loader).
-// Writes are never repeated automatically: that could double-submit a payment.
-const RETRY_DELAYS_MS = [800, 2000, 4500];
-const RETRY_STATUS = new Set([500, 502, 503, 504]);
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function fetchResilient(url, init, canRetry) {
-  for (let attempt = 0; ; attempt += 1) {
-    const lastTry = !canRetry || attempt >= RETRY_DELAYS_MS.length;
-    try {
-      const resp = await fetch(url, init);
-      if (canRetry && RETRY_STATUS.has(resp.status) && !lastTry) {
-        await sleep(RETRY_DELAYS_MS[attempt]);
-        continue;
-      }
-      return resp;
-    } catch (networkErr) {
-      if (lastTry) throw new ApiError(0, null);
-      await sleep(RETRY_DELAYS_MS[attempt]);
-    }
   }
 }
 
@@ -128,12 +96,12 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
     if (token) headers['X-CSRFToken'] = token;
   }
 
-  const resp = await fetchResilient(url, {
+  const resp = await fetch(url, {
     method,
     headers,
     credentials: 'include', // send the session + csrftoken cookies
     body: body === undefined ? undefined : isFormData ? body : JSON.stringify(body),
-  }, method === 'GET');
+  });
 
   if (resp.status === 204) return null;
 
@@ -188,12 +156,7 @@ export async function apiBlob(path, { method = 'POST' } = {}) {
     const token = csrfToken || getCookie('csrftoken');
     if (token) headers['X-CSRFToken'] = token;
   }
-  let resp;
-  try {
-    resp = await fetch(`${API_BASE}${path}`, { method, headers, credentials: 'include' });
-  } catch {
-    throw new ApiError(0, null);
-  }
+  const resp = await fetch(`${API_BASE}${path}`, { method, headers, credentials: 'include' });
   if (!resp.ok) {
     const contentType = resp.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await resp.json().catch(() => null) : null;

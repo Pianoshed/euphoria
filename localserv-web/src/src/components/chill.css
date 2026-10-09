@@ -10,7 +10,3 @@
 @keyframes chill-bounce { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-3px); } }
 @keyframes chill-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .chill__line, .chill__dots span, .chill__bar { animation: none; } }
-
-/* Calm note for slow networks / server hiccups (replaces the red error box) */
-.soft-notice { margin: 8px 0; padding: 10px 14px; border-radius: 12px; font-size: 0.9rem; font-style: italic; color: var(--ink-soft, #6b6890); background: rgba(120, 110, 180, 0.08); border: 1px solid rgba(120, 110, 180, 0.14); animation: chill-in 0.5s ease both; }
-@media (prefers-reduced-motion: reduce) { .soft-notice { animation: none; } }

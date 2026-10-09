@@ -1,6 +1,5 @@
 import './chill.css';
 import { useEffect, useState } from 'react';
-import { CALM_NETWORK_MESSAGE, isTransientError } from '../api/client';
 export function Spinner() {
   return <span className="spinner" role="status" aria-label="Loading" />;
 }
@@ -10,15 +9,6 @@ export function Spinner() {
  * string rather than dumping the raw object. */
 export function ErrorAlert({ error }) {
   if (!error) return null;
-  // Bad network or a server hiccup: a faint, calm note instead of a red error, so nobody panics.
-  if (isTransientError(error)) {
-    return (
-      <div className="soft-notice" role="status" aria-live="polite">
-        <span>{CALM_NETWORK_MESSAGE}</span>
-        <span className="chill__dots" aria-hidden="true"><span>.</span><span>.</span><span>.</span></span>
-      </div>
-    );
-  }
   return <div className="alert alert--error" role="alert">{formatError(error)}</div>;
 }
 
@@ -29,7 +19,6 @@ const humanizeField = (field) => {
 };
 
 export function formatError(error) {
-  if (isTransientError(error)) return CALM_NETWORK_MESSAGE;
   const body = error?.body;
   if (!body) return error?.message || 'Something went wrong.';
   if (typeof body.detail === 'string') return body.detail;

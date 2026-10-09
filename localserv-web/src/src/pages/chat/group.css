@@ -1,0 +1,335 @@
+/* Group chat: people picker modal, member panel, sender labels, failed-send row. */
+
+.gp-overlay {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: rgba(20, 18, 40, 0.55);
+}
+.gp-box {
+  width: min(460px, 100%); max-height: min(640px, 92dvh);
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 16px; border-radius: 18px; background: #fffdfa; color: #1f1d3d;
+  box-shadow: 0 20px 60px -20px rgba(20, 18, 40, 0.6);
+}
+.gp-head { display: flex; align-items: center; justify-content: space-between; }
+.gp-head h2 { margin: 0; font-size: 1.15rem; }
+.gp-x { border: 0; background: none; font-size: 1.6rem; line-height: 1; cursor: pointer; color: inherit; }
+.gp-input {
+  width: 100%; box-sizing: border-box; padding: 10px 12px; font: inherit; color: inherit;
+  border: 1.5px solid rgba(31, 29, 61, 0.15); border-radius: 12px; background: #fff;
+}
+.gp-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.gp-chip {
+  padding: 4px 10px; border: 0; border-radius: 999px; cursor: pointer; font: inherit; font-size: 0.85rem;
+  background: #ece7ff; color: #3d3b94;
+}
+.gp-list { flex: 1; min-height: 120px; overflow-y: auto; margin: 0; padding: 0; list-style: none; }
+.gp-note { padding: 14px 6px; color: #6b6985; text-align: center; font-size: 0.9rem; }
+.gp-row { display: flex; align-items: center; gap: 10px; padding: 8px 6px; border-radius: 12px; cursor: pointer; }
+.gp-row:hover, .gp-row.is-on { background: rgba(61, 59, 148, 0.08); }
+.gp-row input { width: 18px; height: 18px; accent-color: #3d3b94; }
+.gp-avatar {
+  flex: none; display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; border-radius: 50%; overflow: hidden;
+  background: #ece7ff; color: #3d3b94; font-weight: 700;
+}
+.gp-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.gp-who { display: flex; flex-direction: column; min-width: 0; }
+.gp-who strong, .gp-who small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gp-who small { color: #6b6985; }
+.gp-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.gp-count { font-size: 0.85rem; color: #6b6985; }
+
+/* Member panel (desktop side column + mobile sheet) */
+.gpanel { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 18px; background: #fffdfa; border: 1px solid rgba(31, 29, 61, 0.12); }
+.gpanel__top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gpanel__title { margin: 0; font-size: 1.15rem; }
+.gpanel__rename { display: flex; gap: 6px; width: 100%; }
+.gpanel__count { margin: 0; color: #6b6985; font-size: 0.85rem; }
+.gpanel__list { margin: 0; padding: 0; list-style: none; max-height: 320px; overflow-y: auto; }
+.gpanel__row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+.gpanel__name { flex: 1; min-width: 0; }
+.gpanel__badge { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 999px; background: #ece7ff; color: #3d3b94; }
+.gpanel__link { border: 0; background: none; padding: 2px 4px; font: inherit; font-size: 0.82rem; font-weight: 600; text-decoration: underline; cursor: pointer; color: #3d3b94; }
+.gpanel__link--danger { color: #e2394a; }
+.gpanel__actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+
+.cv-head__avatar--group { display: inline-flex !important; align-items: center; justify-content: center; width: 40px; height: 40px; border-radius: 50%; background: #ece7ff; font-size: 1.2rem; }
+.cv-members-toggle { display: none; }
+.cv-members-sheet, .cv-members-backdrop { display: none; }
+
+/* Who said it, in groups */
+.cv-sender { margin: 0 0 2px 6px; font-size: 0.75rem; font-weight: 700; }
+
+/* Messages still sending, or that failed (with Resend) */
+.cv-bubble--pending { opacity: 0.7; }
+.cv-bubble--failed { opacity: 1; background: #fff1f2 !important; color: #8a1f2b !important; border: 1px dashed #e2394a !important; }
+.cv-outbox { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin: 3px 0 0; font-size: 0.78rem; color: #6b6985; }
+.cv-outbox--failed { color: #b0202f; font-weight: 600; }
+.cv-outbox button { border: 0; background: none; padding: 0; font: inherit; font-weight: 700; text-decoration: underline; cursor: pointer; color: inherit; }
+
+@media (max-width: 860px) {
+  .gp-overlay { align-items: flex-end; padding: 0; }
+  .gp-box { width: 100%; border-radius: 18px 18px 0 0; max-height: 88dvh; }
+}
+
+
+/* ---- Group extras: pinned messages + mood colours ----------------------- */
+:root {
+  --gx-happy: #f2b705;
+  --gx-calm: #2fb67c;
+  --gx-meh: #9a9aa8;
+  --gx-low: #4f7bd9;
+  --gx-upset: #e2394a;
+}
+.gx-dot--happy { background: var(--gx-happy); }
+.gx-dot--calm { background: var(--gx-calm); }
+.gx-dot--meh { background: var(--gx-meh); }
+.gx-dot--low { background: var(--gx-low); }
+.gx-dot--upset { background: var(--gx-upset); }
+
+.gx-dot {
+  display: inline-block; width: 8px; height: 8px; margin-left: 6px; border-radius: 50%;
+  vertical-align: middle; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
+}
+.gx-dot--lg { width: 14px; height: 14px; margin: 0; }
+.gx-dot--none { background: transparent; border: 2px dashed rgba(31, 29, 61, 0.35); box-shadow: none; }
+
+/* avatar ring in the member list + a small text tag (colour is never the only signal) */
+.gx-ring { box-shadow: 0 0 0 3px #fffdfa, 0 0 0 5px var(--ring, transparent); }
+.gx-ring--happy { --ring: var(--gx-happy); }
+.gx-ring--calm { --ring: var(--gx-calm); }
+.gx-ring--meh { --ring: var(--gx-meh); }
+.gx-ring--low { --ring: var(--gx-low); }
+.gx-ring--upset { --ring: var(--gx-upset); }
+.gx-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; color: #1f1d3d; }
+.gx-tag--happy { background: rgba(242, 183, 5, 0.28); }
+.gx-tag--calm { background: rgba(47, 182, 124, 0.25); }
+.gx-tag--meh { background: rgba(154, 154, 168, 0.3); }
+.gx-tag--low { background: rgba(79, 123, 217, 0.22); }
+.gx-tag--upset { background: rgba(226, 57, 74, 0.2); }
+
+/* strip above the chat: group vibe + my mood */
+.gx-top {
+  display: flex; align-items: center; gap: 12px; padding: 8px 16px;
+  border-bottom: 1px solid rgba(31, 29, 61, 0.08);
+}
+.gx-vibe { display: flex; flex: 1; min-width: 0; height: 8px; margin: 0; overflow: hidden; border-radius: 999px; background: rgba(31, 29, 61, 0.08); }
+.gx-vibe--empty { height: auto; background: none; font-size: 0.8rem; color: #6b6985; }
+.gx-vibe__seg { display: block; min-width: 6px; transition: flex-grow 0.4s ease; }
+
+.gx-mood { position: relative; flex: none; }
+.gx-mood__btn {
+  display: inline-flex; align-items: center; gap: 8px; padding: 5px 12px; font: inherit; font-size: 0.85rem;
+  color: inherit; cursor: pointer; border: 1px solid rgba(31, 29, 61, 0.14); border-radius: 999px; background: #fff;
+}
+.gx-mood__btn:hover, .gx-mood__btn[aria-expanded="true"] { background: rgba(61, 59, 148, 0.07); }
+.gx-mood__pop {
+  position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; width: 230px; padding: 12px;
+  display: flex; flex-direction: column; gap: 8px; border-radius: 14px; background: #fffdfa; color: #1f1d3d;
+  border: 1px solid rgba(31, 29, 61, 0.12); box-shadow: 0 14px 40px -16px rgba(20, 18, 40, 0.5);
+}
+.gx-mood__swatches { display: flex; justify-content: space-between; }
+.gx-swatch {
+  width: 34px; height: 34px; padding: 0; cursor: pointer; border: 3px solid #fff; border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(31, 29, 61, 0.18);
+}
+.gx-swatch:hover { transform: scale(1.08); }
+.gx-swatch.is-on { box-shadow: 0 0 0 3px #3d3b94; }
+.gx-mood__clear { align-self: flex-start; padding: 0; border: 0; background: none; font: inherit; font-size: 0.82rem; color: #3d3b94; text-decoration: underline; cursor: pointer; }
+.gx-mood__note { margin: 0; font-size: 0.76rem; color: #6b6985; }
+
+/* pinned messages bar */
+.gx-pins {
+  display: flex; align-items: flex-start; gap: 10px; padding: 8px 16px;
+  background: rgba(242, 183, 5, 0.12); border-bottom: 1px solid rgba(31, 29, 61, 0.08);
+}
+.gx-pins__icon { padding-top: 2px; }
+.gx-pins__list { flex: 1; min-width: 0; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 2px; }
+.gx-pin {
+  display: flex; gap: 8px; width: 100%; padding: 3px 4px; font: inherit; font-size: 0.86rem; text-align: left;
+  color: inherit; cursor: pointer; border: 0; border-radius: 8px; background: none;
+}
+.gx-pin:hover, .gx-pin:focus-visible { background: rgba(31, 29, 61, 0.07); }
+.gx-pin strong { flex: none; }
+.gx-pin span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a4868; }
+
+
+.cv-flash .cv-bubble { animation: gx-flash 1.4s ease; }
+@keyframes gx-flash { 0%, 60% { box-shadow: 0 0 0 3px rgba(242, 183, 5, 0.7); } 100% { box-shadow: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .cv-flash .cv-bubble { animation: none; box-shadow: 0 0 0 3px rgba(242, 183, 5, 0.7); }
+  .gx-vibe__seg { transition: none; }
+}
+
+
+/* ======================================================================
+   Fixes: mobile layout, voice notes, mood rings, names, join requests
+   ====================================================================== */
+
+/* ---- Mood ring: it used to be clipped by the scrolling list and touch the next row ---- */
+.gpanel__list { padding: 6px 4px; }
+.gpanel__row { gap: 12px; padding: 8px 4px; min-width: 0; }
+.gpanel__avatar-slot { flex: none; display: inline-flex; padding: 5px; }   /* room for the 3px gap + 2px ring */
+.gx-ring { box-shadow: 0 0 0 2px #fffdfa, 0 0 0 4px var(--ring, transparent); }
+.gpanel__name { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
+.gpanel__name-text { min-width: 0; overflow-wrap: anywhere; }
+.gpanel__name .gx-tag { margin-left: 0; }
+.gpanel__row-actions { display: inline-flex; flex: none; align-items: center; gap: 6px; }
+.gpanel__close { margin-left: auto; border: 0; background: none; font-size: 1.7rem; line-height: 1; cursor: pointer; color: inherit; }
+
+/* ---- Panel extras: invite link + join requests ---- */
+.gpanel__section { display: flex; flex-direction: column; gap: 8px; padding: 10px 0 2px; border-top: 1px solid rgba(31, 29, 61, 0.08); }
+.gpanel__section--requests { border: 1px solid rgba(242, 183, 5, 0.5); border-radius: 14px; padding: 10px 12px; background: rgba(242, 183, 5, 0.1); }
+.gpanel__h { margin: 0; font-size: 0.9rem; }
+.gpanel__hint { margin: 0; font-size: 0.78rem; color: #6b6985; }
+.gpanel__link-input { font-size: 0.82rem; text-overflow: ellipsis; }
+.gpanel__reqs { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.gpanel__req { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; }
+.gpanel__req-name { flex: 1 1 120px; min-width: 0; font-weight: 600; }
+.gpanel__req-name small { font-weight: 400; color: #6b6985; }
+.gpanel__req-btns { display: inline-flex; gap: 6px; }
+
+/* ---- Voice notes: never wider than the bubble, so they can't hang over the edge ---- */
+.cv-msg .cv-voice { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.cv-msg .cv-voice__bar { flex: 1 1 0; width: 0; min-width: 0; }
+.cv-bubble--voice { flex: 0 1 280px; width: 280px; max-width: 100%; min-width: 0; box-sizing: border-box; }
+.cv-bubble .cv-once { max-width: 100%; box-sizing: border-box; white-space: normal; text-align: left; }
+.cv-msg__row { min-width: 0; }
+.cv-sender { max-width: 100%; overflow: hidden; display: flex; align-items: center; gap: 4px; }
+.cv-sender__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cv-sender .gx-dot { flex: none; margin-left: 2px; }
+
+/* ---- Phones ---- */
+@media (max-width: 860px) {
+  /* Members: a sheet over the chat (it used to push the whole chat down the page) */
+  .cv-members-backdrop { display: block; position: fixed; inset: 0; z-index: 70; background: rgba(20, 18, 40, 0.5); }
+  .cv-members-sheet {
+    display: block; position: fixed; left: 0; right: 0; bottom: 0; z-index: 71; margin: 0;
+    max-height: 85dvh; overflow-y: auto; overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    border-radius: 18px 18px 0 0; background: #fffdfa; box-shadow: 0 -12px 40px -16px rgba(20, 18, 40, 0.5);
+  }
+  .cv-members-sheet .gpanel { border: 0; border-radius: 18px 18px 0 0; }
+  .cv-members-sheet .gpanel__list { max-height: none; overflow: visible; }
+
+  /* Mood strip and pins: tidy, one line each, no sideways scroll */
+  .gx-top { gap: 8px; padding: 6px 12px; }
+  .gx-mood__btn { padding: 5px 10px; }
+  .gx-mood__pop { width: min(230px, calc(100vw - 24px)); }
+  .gx-pins { padding: 6px 12px; }
+
+  /* The chat area makes room for the strip + pins instead of overflowing the screen */
+  .cv-log.cv-log--group { height: clamp(300px, calc(100dvh - 19rem), 640px); }
+
+  /* Message rows: smaller action buttons so the bubble keeps its width */
+  .cv-msg__row { max-width: 100%; gap: 2px; }
+  .cv-bubble--voice { flex-basis: 240px; width: 240px; }
+  .cv-msg { max-width: 100%; }
+
+  .gpanel__req-btns { width: 100%; }
+}
+
+.gx-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; margin-left: 6px; padding: 0 5px; border-radius: 999px; background: #e2394a; color: #fff; font-size: 0.7rem; font-weight: 700; }
+.join-card { max-width: 440px; margin: 40px auto; padding: 24px 20px; text-align: center; display: flex; flex-direction: column; gap: 12px; border-radius: 18px; background: #fffdfa; border: 1px solid rgba(31, 29, 61, 0.12); }
+.join-card h1 { margin: 0; font-size: 1.3rem; overflow-wrap: anywhere; }
+.join-card p { margin: 0; color: #6b6985; }
+
+
+/* ======================================================================
+   Message actions: hidden until you tap a message (replaces the buttons that
+   used to sit beside every bubble)
+   ====================================================================== */
+.cv-bubble { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.cv-bubble--deleted { cursor: default; }
+.cv-bubble[aria-expanded="true"] { box-shadow: 0 0 0 2px rgba(61, 59, 148, 0.35); }
+.cv-bubble:focus-visible { outline: 2px solid #3d3b94; outline-offset: 2px; }
+
+.cv-actions {
+  position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 2px;
+  max-width: 100%; margin: 4px 0 0; padding: 3px;
+  background: #fff; border: 1px solid rgba(31, 29, 61, 0.12); border-radius: 999px;
+  box-shadow: 0 8px 22px -12px rgba(31, 29, 61, 0.45);
+  animation: cv-actions-in 120ms ease-out;
+}
+@keyframes cv-actions-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.cv-actions .cv-react { position: static; }   /* so the emoji popover anchors to the whole bar, not one button */
+.cv-actions__btn {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 12px;
+  border: 0; border-radius: 999px; background: transparent; color: #1f1d3d;
+  font: inherit; font-size: 0.82rem; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.cv-actions__btn:hover, .cv-actions__btn:focus-visible, .cv-actions__btn[aria-expanded="true"] { background: rgba(61, 59, 148, 0.09); }
+.cv-actions__btn.is-on { background: rgba(242, 183, 5, 0.22); }
+.cv-actions__btn--danger { color: #b0202f; }
+.cv-actions__btn--danger:hover, .cv-actions__btn--danger:focus-visible { background: rgba(226, 57, 74, 0.12); }
+
+/* the emoji popover opens above the bar, kept inside the screen */
+.cv-actions .cv-react__pop { bottom: calc(100% + 6px); left: 0; max-width: calc(100vw - 24px); }
+.cv-msg--mine .cv-actions .cv-react__pop { left: auto; right: 0; }
+.cv-actions .cv-quick { flex-wrap: wrap; justify-content: center; }
+.cv-actions .cv-react__pop .cv-palette { width: min(300px, calc(100vw - 24px)); }
+
+@media (max-width: 860px) {
+  .cv-actions__btn { padding: 0 10px; font-size: 0.78rem; }
+}
+@media (prefers-reduced-motion: reduce) { .cv-actions { animation: none; } }
+
+
+/* ======================================================================
+   Group chat on phones: calmer header, one compact strip, one-line pins
+   ====================================================================== */
+
+/* Members button: a proper pill (👥 + count), shown only where the side panel is hidden */
+.cv-members-btn { display: none; }
+
+@media (max-width: 860px) {
+  .cv-head--group { gap: 10px; padding: 10px 12px; }
+  .cv-head--group .cv-head__avatar--group { width: 38px; height: 38px; font-size: 1.1rem; }
+  .cv-head--group .cv-head__actions { gap: 6px; }
+  .cv-head--group .cv-call-btn__text { display: none; }   /* Data saver: icon only, the Members pill leads */
+
+  .cv-members-btn {
+    position: relative; display: inline-flex; align-items: center; gap: 6px;
+    height: 36px; padding: 0 12px; flex: none;
+    font: inherit; font-size: 0.85rem; font-weight: 700; color: #3d3b94;
+    background: #ece7ff; border: 0; border-radius: 999px; cursor: pointer;
+  }
+  .cv-members-btn[aria-expanded="true"] { background: #3d3b94; color: #fff; }
+  .cv-members-btn__icon { font-size: 1rem; line-height: 1; }
+  .cv-members-btn__dot {
+    position: absolute; top: -2px; right: -2px; width: 11px; height: 11px;
+    border-radius: 50%; background: #e2394a; border: 2px solid #fffdfa;
+  }
+
+  /* Mood strip + pins: soft chips with breathing room instead of ruled-off bars */
+  .gx-top {
+    margin: 8px 12px 0; padding: 6px 6px 6px 12px; gap: 10px;
+    border: 0; border-radius: 999px; background: rgba(31, 29, 61, 0.05);
+  }
+  .gx-vibe--empty { font-size: 0.78rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gx-mood__btn { padding: 4px 10px; font-size: 0.8rem; }
+
+  .gx-pins {
+    align-items: center; gap: 8px; margin: 8px 12px 0; padding: 6px 8px 6px 10px;
+    border: 0; border-radius: 14px;
+  }
+  .gx-pins__icon { padding-top: 0; }
+  .gx-pin { padding: 2px 2px; font-size: 0.82rem; }
+  .gx-pins:not(.is-open) .gx-pins__list > li:nth-child(n+2) { display: none; }   /* phones: latest pin only, '+N' shows the rest */
+  .gx-pins__more {
+    flex: none; padding: 3px 10px; font: inherit; font-size: 0.78rem; font-weight: 700; cursor: pointer;
+    color: #3d3b94; background: #fff; border: 1px solid rgba(31, 29, 61, 0.14); border-radius: 999px;
+  }
+
+  /* Data saver notice: one slim line */
+  .cv-chat .cv-saver-note { margin: 8px 12px 0; padding: 6px 10px; font-size: 0.78rem; }
+
+  /* Messages: more air, and sender names clear of the bubble above */
+  .cv-log.cv-log--group { height: clamp(320px, calc(100dvh - 17rem), 640px); padding: 12px 12px 6px; }
+  .cv-log--group .cv-msg { margin-top: 14px; }
+  .cv-log--group .cv-msg--joined { margin-top: 3px; }
+  .cv-sender { margin: 0 0 3px 8px; }
+}
+
+@media (min-width: 861px) { .gx-pins__more { display: none; } }

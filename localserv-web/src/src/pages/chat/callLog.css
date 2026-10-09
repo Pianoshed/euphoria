@@ -1,0 +1,107 @@
+/* Call log page. Uses the shared card / pill / tabs styles. */
+
+.calllog__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.calllog__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--space-3);
+  margin-bottom: var(--space-4);
+}
+.calllog__stats .card { display: flex; flex-direction: column; gap: 2px; }
+.calllog__stats strong { font-size: 1.4rem; }
+.calllog__stats span { font-size: 0.85rem; opacity: 0.75; }
+
+.calllog__empty { text-align: center; }
+.calllog__empty p { margin-left: auto; margin-right: auto; }
+
+.calllog__scroll { overflow-x: auto; }
+.calllog__table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+.calllog__table th,
+.calllog__table td {
+  padding: var(--space-3) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-line);
+  vertical-align: middle;
+}
+.calllog__table th { font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; opacity: 0.7; white-space: nowrap; }
+.calllog__table td { overflow-wrap: anywhere; }
+.calllog__num { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.calllog__dir { display: inline-block; width: 1.2em; font-weight: 700; }
+.calllog__more { margin: var(--space-4) auto 0; display: block; }
+
+/* Phones: each call becomes a small card instead of a squeezed table row. */
+@media (max-width: 640px) {
+  .calllog__table thead { display: none; }
+  .calllog__table,
+  .calllog__table tbody,
+  .calllog__table tr,
+  .calllog__table td { display: block; width: 100%; }
+  .calllog__table tr {
+    margin-bottom: var(--space-3);
+    padding: var(--space-2) var(--space-3);
+    border: 1px solid var(--color-line);
+    border-radius: 14px;
+    background: var(--color-surface, #fff);
+  }
+  .calllog__table td {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 0;
+    text-align: right;
+  }
+  .calllog__table td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.65;
+    text-align: left;
+  }
+  .calllog__num { text-align: right !important; }
+}
+
+/* ---------- tools: search + filter chips ---------- */
+.calllog__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: var(--space-3); }
+.calllog__search { flex: 1 1 200px; min-width: 0; box-sizing: border-box; min-height: 40px; padding: 8px 16px; border: 1.5px solid var(--color-line-strong, rgba(31,29,61,.2)); border-radius: 999px; background: var(--color-surface, #fff); font: inherit; font-size: 16px; color: inherit; }
+.calllog__search:focus { outline: 3px solid rgba(61, 59, 148, .35); outline-offset: 1px; }
+.calllog__chips { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+.calllog__chips::-webkit-scrollbar { display: none; }
+.calllog__chips button { flex: none; display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 5px 14px; border: 1.5px solid rgba(31,29,61,.14); border-radius: 999px; background: transparent; color: inherit; font: inherit; font-size: .8rem; font-weight: 700; cursor: pointer; }
+.calllog__chips button.is-on { background: #1f1d3d; border-color: #1f1d3d; color: #fff; }
+.calllog__chips b { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 999px; background: var(--color-danger, #d6334a); color: #fff; font-size: .68rem; }
+.calllog__stat--missed strong { color: var(--color-danger, #d6334a); }
+
+/* ---------- phone list: grouped by day, tinted cards (same look as Find people / plans) ---------- */
+.calllog__m { display: none; }
+@media (max-width: 640px) {
+  .calllog__scroll { display: none; }
+  .calllog__m { display: block; }
+  .calllog__stats { grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 8px; }
+  .calllog__stats .card { padding: 10px 12px; }
+  .calllog__stats strong { font-size: 1.1rem; }
+  .calllog__day { margin-bottom: 14px; }
+  .calllog__day h2 { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 0 8px; padding: 6px 2px; background: var(--color-bg, #f6f4ff); font-size: .7rem; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--color-ink-soft, #5f5d7a); }
+  .calllog__day h2 small { padding: 0 7px; border-radius: 999px; background: rgba(31,29,61,.08); font-size: .65rem; letter-spacing: 0; }
+  .calllog__card { position: relative; display: flex; align-items: center; gap: 12px; margin-bottom: 8px; padding: 12px; border-radius: 22px 22px 22px 8px; background: var(--t, #ece7ff); box-shadow: 0 10px 20px -16px rgba(31,29,61,.55); }
+  .calllog__card:nth-child(even) { border-radius: 22px 8px 22px 22px; }
+  .calllog__card.is-missed { box-shadow: inset 4px 0 0 var(--color-danger, #d6334a), 0 10px 20px -16px rgba(31,29,61,.55); }
+  .calllog__av { position: relative; flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 58% 42% 63% 37% / 45% 55% 45% 55%; background: rgba(255,255,255,.78); font-weight: 800; font-size: 1.05rem; }
+  .calllog__av i { position: absolute; right: -4px; bottom: -4px; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: #fff; font-style: normal; font-size: .65rem; box-shadow: 0 1px 4px rgba(20,12,50,.25); }
+  .calllog__info { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; align-items: flex-start; }
+  .calllog__info strong { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .95rem; }
+  .calllog__info strong em { margin-left: 6px; font-style: normal; font-size: .75rem; font-weight: 800; color: var(--color-danger, #d6334a); }
+  .calllog__info small { font-size: .74rem; color: var(--color-ink-soft, #5f5d7a); }
+  .calllog__acts { display: flex; flex-direction: column; gap: 6px; }
+  .calllog__act { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; background: rgba(255,255,255,.8); font-size: .95rem; text-decoration: none; cursor: pointer; }
+  .calllog__act:active { transform: scale(.92); }
+}
