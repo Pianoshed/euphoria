@@ -426,3 +426,39 @@
 /* someone else in a tree I was tagged in: a fruit / gift in their place, not tappable */
 .sq-bub--fruit{cursor:default;pointer-events:none}
 .sq-bub--fruit i{background:color-mix(in srgb,var(--c,var(--color-violet)) 14%,var(--color-surface))!important;border:2px dashed color-mix(in srgb,var(--c,var(--color-violet)) 55%,transparent);font-size:1.15em;line-height:1}
+
+/* ===== desktop: the open tree gets a roomy, centred modal instead of a phone-width card ===== */
+@media (min-width:900px){
+  .sq-viewer--sheet{padding:28px}
+  .sq-sheet--tall{width:min(1040px,92vw);max-height:min(88dvh,860px);padding:28px 32px 26px;gap:16px;border-radius:28px}
+  .sq-sheet--tall::before{border-radius:28px 28px 0 0}
+  .sq-sheet--tall .sq-sheet__head{gap:12px;padding-bottom:12px;border-bottom:1px solid var(--color-line)}
+  .sq-sheet--tall .sq-sheet__head h2{font-size:1.35rem}
+  .sq-sheet--tall .sq-sheet__head small{font-size:var(--t-body)}
+  .sq-sheet--tall .sq-edit{min-height:38px;padding:6px 16px}
+  .sq-sheet--tall .sq-x{width:38px;height:38px}
+  .sq-sheet--tall .sq-hint{max-width:62ch}
+
+  /* the tree itself: owner on top, tiers spread across the width on a soft canopy */
+  .sq-sheet--tall .sq-tree{padding:8px 0 4px}
+  .sq-sheet--tall .sq-bub--big{width:96px}
+  .sq-sheet--tall .sq-bub--big i{width:68px;height:68px;font-size:1.35rem}
+  .sq-sheet--tall .sq-bub--mid{width:84px}
+  .sq-sheet--tall .sq-bub--mid i{width:52px;height:52px;font-size:1.05rem}
+  .sq-sheet--tall .sq-bub small{font-size:var(--t-sub)}
+  .sq-sheet--tall .sq-trunk{height:22px}
+  .sq-sheet--tall .sq-branches{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px;padding:18px;
+    border-radius:24px;background:linear-gradient(165deg,color-mix(in srgb,var(--color-primary) 6%,var(--color-surface)),color-mix(in srgb,var(--color-violet) 7%,var(--color-surface)))}
+  .sq-sheet--tall .sq-branches::before,.sq-sheet--tall .sq-branch::before{display:none}
+  .sq-sheet--tall .sq-branch{padding:14px 12px 12px}
+  .sq-sheet--tall .sq-branch h4{justify-content:flex-start;margin-bottom:12px;padding:0 4px;font-size:var(--t-body)}
+  .sq-sheet--tall .sq-bubs{justify-content:flex-start;gap:14px 6px}
+  .sq-sheet--tall .sq-bub{width:76px}
+  .sq-sheet--tall .sq-bub i{width:calc(var(--bs,34px)*1.3);height:calc(var(--bs,34px)*1.3);font-size:.95rem}
+
+  .sq-sheet--tall .sq-acts{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding-top:6px}
+  .sq-sheet--tall .sq-ghost{min-height:44px}
+  .sq-sheet--tall .sq-ghost:hover{background:var(--color-neutral-soft)}
+  .sq-sheet--tall .sq-row{flex-direction:row}
+  .sq-sheet--tall .sq-center{text-align:left}
+}

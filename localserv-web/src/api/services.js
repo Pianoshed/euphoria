@@ -1,6 +1,8 @@
 import { apiFetch } from './client';
 
-export const listCategories = () => apiFetch('/api/services/categories/');
+// Accepts both a plain list and a paginated { results: [...] } reply, so categories show up either way.
+export const listCategories = () => apiFetch('/api/services/categories/')
+  .then((data) => (Array.isArray(data) ? data : (data?.results ?? [])));
 
 export const listServices = (params) => apiFetch('/api/services/', { query: params });
 
