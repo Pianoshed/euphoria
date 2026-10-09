@@ -27,6 +27,24 @@ if PAYMENT_PROVIDER == "monnify":
 elif PAYMENT_PROVIDER != "monnify":
     raise ImproperlyConfigured(f"Unknown PAYMENT_PROVIDER {PAYMENT_PROVIDER!r} for production.")
 
+# Chat messages and 2FA secrets are encrypted at rest. A key derived from SECRET_KEY would make that data
+# unreadable if SECRET_KEY ever changed, so production must have its own, valid key.
+from .base import FIELD_ENCRYPTION_KEYS  # noqa: E402
+
+_field_keys = [k.strip() for k in FIELD_ENCRYPTION_KEYS.split(",") if k.strip()]
+if not _field_keys:
+    raise ImproperlyConfigured(
+        "FIELD_ENCRYPTION_KEYS is not set. Generate one with: "
+        "python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\""
+    )
+from cryptography.fernet import Fernet  # noqa: E402
+
+for _key in _field_keys:
+    try:
+        Fernet(_key.encode())
+    except (ValueError, TypeError) as exc:
+        raise ImproperlyConfigured("FIELD_ENCRYPTION_KEYS contains an invalid Fernet key.") from exc
+
 CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 # Only meaningful because deploy/nginx/app.conf is the one setting

@@ -235,6 +235,14 @@ MONNIFY_SOURCE_ACCOUNT_NUMBER = env("MONNIFY_SOURCE_ACCOUNT_NUMBER", default="")
 PAYOUT_ENCRYPTION_KEYS = env("PAYOUT_ENCRYPTION_KEYS", default="")
 PAYOUT_FINGERPRINT_KEY = env("PAYOUT_FINGERPRINT_KEY", default="")  # falls back to SECRET_KEY if empty
 
+# Encrypts chat message text and two-factor secrets at rest (apps.common.fields.EncryptedTextField).
+# Comma-separated Fernet keys; the FIRST encrypts, all decrypt (for rotation: prepend a new key, run
+# `python manage.py rotate_field_encryption`, then drop the old one). Generate one with:
+#   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+# If empty, a key is derived from SECRET_KEY (fine for dev/tests; prod.py refuses to start without a real key).
+# KEEP A BACKUP OF THIS KEY: without it, stored messages cannot be read.
+FIELD_ENCRYPTION_KEYS = env("FIELD_ENCRYPTION_KEYS", default="")
+
 # Business limits (all optional)
 PAYOUT_ACCOUNT_COOLDOWN_HOURS = env.int("PAYOUT_ACCOUNT_COOLDOWN_HOURS", default=24)
 MAX_DAILY_WITHDRAWAL = env("MAX_DAILY_WITHDRAWAL", default="500000.00")

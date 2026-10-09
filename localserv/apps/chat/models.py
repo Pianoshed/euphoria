@@ -5,6 +5,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
+from apps.common.fields import EncryptedTextField
 from apps.common.models import BaseModel
 
 
@@ -181,7 +182,7 @@ class Message(BaseModel):
 
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
-    body = models.CharField(max_length=4000, blank=True)
+    body = EncryptedTextField(blank=True)  # encrypted at rest; length (4000) is enforced by the serializers
     has_attachment = models.BooleanField(default=False)
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)

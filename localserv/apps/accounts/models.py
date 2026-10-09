@@ -14,6 +14,7 @@ from apps.common.constants import (
     VerificationStatus,
     age_range_for_age,
 )
+from apps.common.fields import EncryptedTextField
 from apps.common.validators import validate_username
 
 from .managers import UserManager
@@ -76,10 +77,8 @@ class User(AbstractBaseUser, PermissionsMixin):
     # Base32 TOTP secret. Only meaningful once two_factor_enabled=True;
     # a secret may exist here mid-setup (enabled=False) without being
     # usable, since login only checks the secret when enabled=True.
-    # NOTE: in production this column should use field-level encryption
-    # (e.g. via a KMS-backed encrypted field) -- flagged for the
-    # security-hardening phase, not solved here.
-    two_factor_secret = models.CharField(max_length=64, blank=True)
+    # Stored encrypted at rest (see apps.common.fields); reads return the plain base32 secret.
+    two_factor_secret = EncryptedTextField(blank=True)
 
     # Django auth plumbing -- distinct from `status` above.
     is_active = models.BooleanField(default=True)
