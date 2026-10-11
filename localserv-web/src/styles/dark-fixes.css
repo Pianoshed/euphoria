@@ -1,0 +1,96 @@
+/* ============================================================
+   Dark-mode fixes (loaded LAST from styles/index.css).
+   Root causes:
+   1. chat-mobile.css gave the message box (.cv-composer__field), the recording bar and the
+      "back to newest" button a hard-coded white background. In dark mode the typed text turns
+      light, so it became light-on-white = invisible. The dark rules only targeted .cv-composer,
+      which is now a transparent wrapper.
+   2. Chat header menu (.hx*) and the data-saver banner (.cv-saver-note) use literal dark ink /
+      light-green fills that never got dark values.
+   3. Profile banner (.mp-hero) and the preview card were pastel with "dark ink" patches that were
+      fragile. The banner is now a real dark gradient with light text.
+   4. The home greeting banner falls back to --color-night (#1A1033), which is almost the same as
+      the dark page background (#120C24), so it vanishes when its artwork does not load.
+   ============================================================ */
+
+/* ---------- Chat: message box, words, buttons ---------- */
+:root[data-theme='dark'] .cv-composer__field {
+  background: #2C2150; border-color: rgba(245, 239, 251, 0.2); color: #F5EFFB;
+}
+:root[data-theme='dark'] .cv-composer__field:focus-within {
+  border-color: #B7A8FF; box-shadow: 0 0 0 4px rgba(183, 168, 255, 0.22);
+}
+:root[data-theme='dark'] .cv-composer__field :is(textarea, input, .cv-composer__input) {
+  background: transparent; color: #F5EFFB; caret-color: #FF8C9D;
+}
+:root[data-theme='dark'] .cv-composer__field :is(textarea, input)::placeholder { color: #B9AFCF; opacity: 1; }
+:root[data-theme='dark'] .cv-composer__field .cv-icon-btn { color: #CBBBFF; }
+:root[data-theme='dark'] .cv-composer__field .cv-icon-btn:hover { background: rgba(245, 239, 251, 0.1); }
+:root[data-theme='dark'] .page.cv .cv-composer--rec { background: #2C2150; border-color: rgba(245, 239, 251, 0.2); color: #F5EFFB; }
+:root[data-theme='dark'] .cv-downbtn { background: #2C2150; color: #F5EFFB; border-color: rgba(245, 239, 251, 0.2); box-shadow: 0 8px 20px -8px rgba(0, 0, 0, 0.8); }
+:root[data-theme='dark'] .cv-action--mic { background: #6A4FE0; }
+:root[data-theme='dark'] .page.cv .cv-composer-wrap { background: #231A3F; }
+
+/* chat text that sat on the page colour */
+:root[data-theme='dark'] .page.cv :is(.cv-sender, .cv-time, .cv-empty, .cv-empty p) { color: #B9AFCF; }
+:root[data-theme='dark'] .page.cv .cv-empty :is(h2, h3, strong) { color: #F5EFFB; }
+:root[data-theme='dark'] .page.cv .cv-avatar { background: #3A2E66; color: #E4DCFF; }
+
+/* data-saver banner inside the chat */
+:root[data-theme='dark'] .cv-saver-note { background: rgba(74, 222, 159, 0.14); color: #BDF3D9; border: 1px solid rgba(74, 222, 159, 0.3); }
+
+/* chat header "Call" / "More" buttons and their menus (colours were literal dark ink) */
+:root[data-theme='dark'] :is(.hx, .hx-pop, .hx-sheet, .hx-sheet .hx-list) {
+  --hx-ink: #F5EFFB; --hx-muted: #B9AFCF; --hx-line: rgba(245, 239, 251, 0.14);
+  --hx-indigo: #B7A8FF; --hx-green: #4ADE9F; --hx-red: #FF8C9D;
+}
+:root[data-theme='dark'] .hx-btn--icon { background: rgba(245, 239, 251, 0.1); color: #F5EFFB; }
+:root[data-theme='dark'] .hx-btn--icon:hover, :root[data-theme='dark'] .hx-btn--icon.is-open { background: rgba(245, 239, 251, 0.18); }
+:root[data-theme='dark'] .hx-btn--primary { background: #B7A8FF; color: #1F1D3D; }
+:root[data-theme='dark'] .hx-btn--primary:hover, :root[data-theme='dark'] .hx-btn--primary.is-open { background: #CBBBFF; }
+:root[data-theme='dark'] .hx-sheet { background: #231A3F; }
+:root[data-theme='dark'] .hx-sheet__grip { background: rgba(245, 239, 251, 0.3); }
+:root[data-theme='dark'] .hx-sheet__title { color: #B9AFCF; }
+:root[data-theme='dark'] .hx-item__txt small, :root[data-theme='dark'] .hx-note { color: #B9AFCF; }
+:root[data-theme='dark'] .hx-item__ico--voice { background: rgba(74, 222, 159, 0.18); color: #7BEBBC; }
+:root[data-theme='dark'] .hx-item__ico--video { background: rgba(183, 168, 255, 0.2); color: #CBBBFF; }
+:root[data-theme='dark'] .hx-item__ico--members { background: rgba(255, 140, 157, 0.2); color: #FF9AA6; }
+:root[data-theme='dark'] .hx-item__ico--saver { background: rgba(245, 239, 251, 0.1); color: #F5EFFB; }
+:root[data-theme='dark'] .hx-dot { border-color: #231A3F; }
+
+/* ---------- My profile banner ---------- */
+:root[data-theme='dark'] .mp-hero {
+  --mp-ink: #F5EFFB; --mp-muted: #D2C9E8; --mp-line: rgba(245, 239, 251, 0.18);
+  --mp-accent: #FF8C9D; --mp-indigo: #CBBBFF; --mp-green: #4ADE9F; --mp-amber: #F2B53C;
+  background: linear-gradient(135deg, #34235C 0%, #4B2757 55%, #26285E 100%);
+  border: 1px solid rgba(245, 239, 251, 0.16);
+  box-shadow: 0 22px 40px -28px rgba(0, 0, 0, 0.9);
+  color: #F5EFFB;
+}
+:root[data-theme='dark'] .mp-hero :is(h1, h2, h3, .mp-hero__name) { color: #F5EFFB; }
+:root[data-theme='dark'] .mp-hero .mp-hero__handle { color: #D2C9E8; }
+:root[data-theme='dark'] .mp-hero .mp-hero__view { color: #CBBBFF; }
+:root[data-theme='dark'] .mp-hero .mp-hero__upload { background: rgba(0, 0, 0, 0.6); color: #fff; }
+:root[data-theme='dark'] .mp-hero .mp-chip--info { color: #E4DCFF; background: rgba(203, 187, 255, 0.2); }
+:root[data-theme='dark'] .mp-hero .mp-meter { background: rgba(0, 0, 0, 0.28); color: #F5EFFB; }
+:root[data-theme='dark'] .mp-hero .mp-meter__bar { background: rgba(245, 239, 251, 0.18); }
+:root[data-theme='dark'] .mp-hero .mp-meter__hint { color: #D2C9E8; }
+:root[data-theme='dark'] .mp-hero .mp-menu-btn { background: rgba(245, 239, 251, 0.12); border-color: rgba(245, 239, 251, 0.25); color: #F5EFFB; }
+/* the gold "how you look online" card keeps its pastel fill, so keep its text dark */
+:root[data-theme='dark'] .mp-preview__card { --mp-ink: #1f1d3d; --mp-muted: #5f5d7a; color: #1f1d3d; }
+:root[data-theme='dark'] .mp-preview__card :is(strong, .soft) { color: inherit; }
+:root[data-theme='dark'] .mp-preview__card .soft { color: #5f5d7a; }
+:root[data-theme='dark'] .mp-callout { border: 1px solid rgba(255, 140, 157, 0.25); border-left-width: 6px; }
+:root[data-theme='dark'] .mp-checkup__item { border-color: rgba(245, 239, 251, 0.16); }
+
+/* ---------- Other banners ---------- */
+/* Home greeting banner: lift it off the page and give it a visible fill if the artwork is missing */
+:root[data-theme='dark'] .e-feed-banner {
+  background-color: #35216B;
+  border: 1px solid rgba(245, 239, 251, 0.2);
+  box-shadow: 0 18px 40px -26px rgba(214, 52, 113, 0.55);
+}
+:root[data-theme='dark'] .e-feed-banner::before { background: linear-gradient(180deg, rgba(26, 16, 51, 0.15) 0%, rgba(26, 16, 51, 0.8) 100%); }
+:root[data-theme='dark'] .offline-banner { background: #3A2D12; color: #FFD98A; }
+:root[data-theme='dark'] .alert { border-width: 1px; border-style: solid; }
+:root[data-theme='dark'] .alert--info { background: rgba(183, 168, 255, 0.14); color: #E4DCFF; border-color: rgba(183, 168, 255, 0.4); }

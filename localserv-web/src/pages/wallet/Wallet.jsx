@@ -7,6 +7,7 @@ import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
 import Modal from '../../components/Modal';
 import { formatNaira } from '../../utils/money';
 import { goToCheckout } from '../../utils/safeRedirect';
+import { ledgerLabel } from '../../utils/ledger';
 
 // Flip both to false once wallet logic is finalized.
 const SHOW_IN_PROGRESS_NOTICE = true;
@@ -19,23 +20,6 @@ const MIN_DEPOSIT = 100;
 const MIN_WITHDRAWAL = 500;
 const COOLDOWN_HOURS = 24;
 
-const LEDGER_LABELS = {
-  TOKEN_DEPOSIT: 'Top-up',
-  ESCROW_HOLD: 'Locked in for a plan',
-  ESCROW_RELEASE: 'Plan payment received',
-  ESCROW_REFUND: 'Plan refund',
-  PLAN_PAYMENT: 'Plan payment',
-  PLAN_REFUND: 'Plan refund',
-  WITHDRAWAL: 'Withdrawal',
-  WITHDRAWAL_REFUND: 'Withdrawal returned',
-  WITHDRAWAL_REVERSAL: 'Withdrawal returned',
-  PROMOTIONAL_CREDIT: 'Platform credit',
-  PROMOTIONAL_DEBIT: 'Platform credit used',
-  GIFT_CREDIT: 'Gift received',
-  GIFT_DEBIT: 'Gift sent',
-  ADMIN_ADJUSTMENT: 'Adjustment by support',
-};
-const ledgerLabel = (type) => LEDGER_LABELS[type] || type.replaceAll('_', ' ').toLowerCase();
 
 const hoursLeft = (createdAt) => {
   const ms = new Date(createdAt).getTime() + COOLDOWN_HOURS * 3600 * 1000 - Date.now();
@@ -110,6 +94,7 @@ export default function Wallet() {
 
   useEffect(() => {
     loadAll();
+    if (returnedFromCheckout) window.dispatchEvent(new Event('euphoria-wallet-changed'));
     if (!returnedFromCheckout) return undefined;
     let tries = 0;
     const timer = setInterval(() => {
@@ -180,6 +165,7 @@ export default function Wallet() {
       setPromoDone(res);
       setPromoCode('');
       loadAll();
+      window.dispatchEvent(new Event('euphoria-wallet-changed')); // pops the receipt
     } catch (err) {
       setPromoError(err);
     } finally {
