@@ -69,10 +69,11 @@ body[data-backdrop='scene']::before {
   border: 1.5px solid color-mix(in srgb, var(--hf-ink) 30%, transparent); border-radius: 999px; font-size: .86rem; font-weight: 800; cursor: pointer;
   background: transparent; color: var(--hf-ink); transition: background .15s, border-color .15s, transform .15s;
 }
-.hf a.hf-btn:hover { background: color-mix(in srgb, var(--color-primary) 12%, transparent); border-color: var(--color-primary); }
+.hf .hf-btn:hover:not(:disabled) { background: color-mix(in srgb, var(--color-primary) 12%, transparent); border-color: var(--color-primary); }
 .hf-btn:active { transform: scale(.97); }
-.hf a.hf-btn--solid { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
-.hf a.hf-btn--solid:hover { background: var(--color-primary-deep); border-color: var(--color-primary-deep); }
+.hf-btn:disabled { opacity: .55; cursor: not-allowed; }
+.hf .hf-btn--solid { background: var(--color-primary); border-color: var(--color-primary); color: #fff; }
+.hf .hf-btn--solid:hover:not(:disabled) { background: var(--color-primary-deep); border-color: var(--color-primary-deep); }
 
 .hf-card {
   padding: 14px 14px 12px; border-radius: 20px; border: 1px solid var(--hf-line); box-sizing: border-box; min-width: 0;
@@ -254,3 +255,13 @@ body[data-backdrop='scene']::before {
   .hf-plan, .hf-btn, .hf-row, .hf-service { transition: none; }
 }
 .hf a:focus-visible, .hf button:focus-visible, .hf-drawer a:focus-visible, .hf-drawer button:focus-visible { outline: 3px solid var(--color-primary); outline-offset: 2px; }
+
+/* ---------- promo code popup ---------- */
+.hf-ico--lg { width: 52px; height: 52px; }
+.hf-promo { display: grid; justify-items: center; gap: 12px; padding: 4px 0 6px; text-align: center; }
+.hf-promo__input { width: 100%; box-sizing: border-box; text-align: center; font-size: 1.1rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.hf-promo__note { display: flex; align-items: center; gap: 6px; margin: 0; font-size: .82rem; color: var(--color-ink-soft); }
+.hf-promo .hf-btn { width: 100%; }
+.hf-promo--done strong { font-family: var(--font-display); font-size: 1.4rem; font-weight: 800; }
+.hf-promo--done p { margin: 0; font-size: .9rem; color: var(--color-ink-soft); }
+.hf-row--flat > svg:last-child { flex: none; color: var(--hf-muted); }

@@ -18,6 +18,8 @@ import { usePageBackdrop } from '../hooks/usePageBackdrop';
 import { Icon } from '../components/icons';
 import Modal from '../components/Modal';
 import { ReceiptSheet } from '../components/ReceiptNotifier';
+import { ErrorAlert } from '../components/ui';
+import { WALLET_LOCKED } from '../utils/walletFlags';
 
 const initial = (s) => (s || '?').trim().charAt(0).toUpperCase();
 const stamp = (iso) => { const t = new Date(iso).getTime(); return Number.isNaN(t) ? 0 : t; };
@@ -70,6 +72,11 @@ const SERVICES = [
 const seenKey = (uid) => `hf-updates-seen-v2:${uid}`;
 const readSeen = (uid) => { try { return Number(localStorage.getItem(seenKey(uid))) || Date.now() - DAY; } catch { return Date.now() - DAY; } };
 const writeSeen = (uid, t) => { try { localStorage.setItem(seenKey(uid), String(t)); } catch { /* private mode */ } };
+
+// Statuses already watched on the Square page (same storage key it writes), merged with the server's own flag.
+const sqSeenKey = (uid) => `sq-seen-v1:${uid}`;
+const readSqSeen = (uid) => { try { return JSON.parse(localStorage.getItem(sqSeenKey(uid)) || '{}') || {}; } catch { return {}; } };
+const statusLabel = (s) => s.text || (s.kind === 'video' ? 'Shared a video' : s.kind === 'image' ? 'Shared a photo' : 'Shared a status');
 
 const daysLeft = (iso) => Math.ceil((stamp(iso) - Date.now()) / DAY);
 const expiryText = (iso) => {
@@ -124,6 +131,57 @@ function Drawer({ title, icon, onClose, children }) {
   );
 }
 
+/** Promo code popup: type a code, get platform credit. Credit is spent first on plans and cannot be withdrawn. */
+function PromoModal({ onClose, onDone }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+  const [done, setDone] = useState(null);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    const clean = code.trim();
+    if (WALLET_LOCKED || busy || !clean) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await walletApi.redeemPromoCode(clean);
+      setDone(res);
+      setCode('');
+      window.dispatchEvent(new Event('euphoria-wallet-changed')); // refreshes the balance and pops the receipt
+      onDone?.();
+    } catch (err) {
+      setError(err);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal title="Promo code" subtitle="Enter it exactly as you got it" onClose={onClose}>
+      {(close) => (done ? (
+        <div className="hf-promo hf-promo--done" role="status">
+          <span className="hf-ico hf-ico--lg" data-tint="mint" aria-hidden="true"><Icon name="check" size={24} /></span>
+          <strong>{formatNaira(done.amount)} added</strong>
+          <p>{done.name ? `${done.name}: ` : ''}it&rsquo;s in your bonus credit now. It is spent first on plans and can&rsquo;t be withdrawn.</p>
+          <button type="button" className="hf-btn hf-btn--solid" onClick={close}>Done</button>
+        </div>
+      ) : (
+        <form className="hf-promo" onSubmit={submit}>
+          <span className="hf-ico hf-ico--lg" data-tint="gold" aria-hidden="true"><Icon name="gift" size={24} /></span>
+          <input
+            className="input hf-promo__input" placeholder="PROMO CODE" aria-label="Promo code" autoComplete="off" autoCapitalize="characters" spellCheck="false"
+            maxLength={60} value={code} disabled={WALLET_LOCKED || busy} onChange={(e) => setCode(e.target.value)}
+          />
+          <ErrorAlert error={error} />
+          {WALLET_LOCKED && <p className="hf-promo__note"><Icon name="alert" size={15} />Redeeming is switched off while the wallet is being finished.</p>}
+          <button type="submit" className="hf-btn hf-btn--solid" disabled={WALLET_LOCKED || busy || !code.trim()}>{busy ? 'Checking…' : 'Redeem'}</button>
+        </form>
+      ))}
+    </Modal>
+  );
+}
+
 /** One line: icon, words, time. Opens a receipt, or goes to the right page. */
 function UpdateRow({ item, onReceipt }) {
   const body = (
@@ -165,23 +223,21 @@ export default function HomeFeed() {
   const [seenAt, setSeenAt] = useState(() => readSeen(uid));
   const [drawer, setDrawer] = useState(null);         // 'updates' | 'explore' | null
   const [receipt, setReceipt] = useState(null);
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [sqSeen, setSqSeen] = useState(() => readSqSeen(uid));
   const [avatarFailed, setAvatarFailed] = useState(false);
 
-  // content that does not need to feel live (only used inside the Explore drawer)
+  // plans do not need to feel live
   useEffect(() => {
     let off = false;
-    const set = (fn) => (v) => { if (!off) fn(v); };
-    squareApi.listStatuses().then(set(setStatuses)).catch(set(() => setStatuses([])));
-    squareApi.listThoughts().then(set(setThoughts)).catch(set(() => setThoughts([])));
-    squareApi.listTrees().then(set(setTrees)).catch(set(() => setTrees([])));
-    servicesApi.listServices({}).then((d) => set(setPlans)(rows(d))).catch(set(() => setPlans([])));
+    servicesApi.listServices({}).then((d) => { if (!off) setPlans(rows(d)); }).catch(() => { if (!off) setPlans([]); });
     return () => { off = true; };
   }, []);
 
   // what is happening: chats, plans, wallet. Refreshed on focus, every 45s, when counts change, and when the wallet changes.
   const loadPulse = useCallback(async () => {
     const safe = (p) => p.catch(() => null);
-    const [conv, own, host, led, bal, pb, pc] = await Promise.all([
+    const [conv, own, host, led, bal, pb, pc, st, th, tr] = await Promise.all([
       safe(chatApi.listConversations()),
       safe(bookingsApi.listBookings({ role: 'customer' })),
       safe(bookingsApi.listBookings({ role: 'provider' })),
@@ -189,7 +245,14 @@ export default function HomeFeed() {
       safe(walletApi.getBalance()),
       safe(walletApi.getPromotionalBalance()),
       safe(walletApi.listPromotionalCredits()),
+      safe(squareApi.listStatuses()),
+      safe(squareApi.listThoughts()),
+      safe(squareApi.listTrees()),
     ]);
+    if (st) setStatuses(rows(st));
+    if (th) setThoughts(rows(th));
+    if (tr) setTrees(rows(tr));
+    setSqSeen(readSqSeen(uid));
     if (own) setMine(rows(own).filter((b) => ACTIVE_BOOKING.has(b.status)));
     if (host) setHosting(rows(host).filter((b) => b.status === 'PENDING'));
     if (led) setLedger(rows(led).filter(isCredit).sort((a, b) => stamp(b.created_at) - stamp(a.created_at)));
@@ -205,7 +268,7 @@ export default function HomeFeed() {
     } else {
       setChats((c) => c ?? []);
     }
-  }, []);
+  }, [uid]);
 
   useEffect(() => {
     loadPulse();
@@ -238,10 +301,27 @@ export default function HomeFeed() {
   const expiring = useMemo(() => promoCredits.filter((c) => num(c.remaining_amount) > 0 && c.expires_at && daysLeft(c.expires_at) <= 7), [promoCredits]);
   const bonus = promo ? num(promo.promotional_balance) : null;
   const nextPlan = mine[0] || null;
-  const unseenStatuses = useMemo(() => {
-    const seen = new Set();
-    return (statuses || []).filter((s) => s.user.id !== uid && !s.seen && (seen.has(s.user.id) ? false : seen.add(s.user.id))).length;
-  }, [statuses, uid]);
+  // Square: only people inside one of my friend trees (tree owners and tagged members), exactly like the Square page.
+  const friends = useMemo(() => {
+    const map = new Map(); // id -> title of the tree that connects us
+    (trees || []).forEach((t) => {
+      [t.owner, ...(t.members || [])].forEach((p) => { if (p && String(p.id) !== String(uid) && !map.has(String(p.id))) map.set(String(p.id), t.title || 'a tree'); });
+    });
+    return map;
+  }, [trees, uid]);
+  const friendStatuses = useMemo(
+    () => (statuses || []).filter((x) => friends.has(String(x.user.id)))
+      .sort((a, b) => stamp(b.created_at) - stamp(a.created_at)),
+    [statuses, friends],
+  );
+  const isSeen = (x) => Boolean(x.seen || sqSeen[x.id]);
+  const unseenFriendStatuses = friendStatuses.filter((x) => !isSeen(x));
+  const unseenFriendPeople = [...new Map(unseenFriendStatuses.map((x) => [String(x.user.id), x.user.name])).values()];
+  const friendThoughts = useMemo(
+    () => (thoughts || []).filter((t) => t.user && friends.has(String(t.user.id)) && Date.now() - stamp(t.created_at) < DAY)
+      .sort((a, b) => stamp(b.created_at) - stamp(a.created_at)).slice(0, 2),
+    [thoughts, friends],
+  );
 
   // every notification, in one list: money first, then people who need an answer, then the rest
   const updates = useMemo(() => {
@@ -285,14 +365,30 @@ export default function HomeFeed() {
     if (alerts.missedCalls > 0) {
       items.push({ key: 'calls', rank: 4, icon: 'phone', tone: 'coral', hot: true, to: '/calls', at: 0, title: plural(alerts.missedCalls, 'missed call', 'missed calls'), text: 'Since you last looked', time: null });
     }
-    if (unseenStatuses > 0) {
-      items.push({ key: 'status', rank: 6, icon: 'tree', tone: 'sky', hot: false, to: '/square', at: 0, title: `${plural(unseenStatuses, 'person', 'people')} posted a status`, text: 'See what your people are up to', time: null });
+    if (unseenFriendPeople.length > 0) {
+      const names3 = unseenFriendPeople.slice(0, 2).join(' & ');
+      const more = unseenFriendPeople.length - 2;
+      items.push({
+        key: 'sq-group', rank: 3, icon: 'tree', tone: 'sky', hot: true, to: '/square', at: stamp(unseenFriendStatuses[0]?.created_at),
+        title: `${plural(unseenFriendPeople.length, 'friend', 'friends')} posted a status`,
+        text: `${names3}${more > 0 ? ` and ${more} more` : ''} on your trees`, time: unseenFriendStatuses[0]?.created_at,
+      });
     }
+    // the full Square feed lives in the drawer: one row per friend status, then friends' thoughts
+    friendStatuses.slice(0, 6).forEach((x) => items.push({
+      key: `sq-s${x.id}`, rank: 7, drawerOnly: true, icon: x.kind === 'video' ? 'film' : x.kind === 'image' ? 'image' : 'tree', tone: 'sky',
+      hot: !isSeen(x), to: '/square', at: stamp(x.created_at),
+      title: `${x.user.name} posted a status`, text: `${statusLabel(x)} · ${friends.get(String(x.user.id))}`, time: x.created_at,
+    }));
+    friendThoughts.forEach((t) => items.push({
+      key: `sq-t${t.id}`, rank: 8, drawerOnly: true, icon: 'thought', tone: 'lilac', hot: false, to: '/square', at: stamp(t.created_at),
+      title: `${t.user.name} shared a thought`, text: t.text, time: t.created_at,
+    }));
     return items.sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank || b.at - a.at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentCredits, expiring, hosting, mine, alerts.messages, alerts.missedCalls, unreadChats.length, names, unseenStatuses, seenAt]);
+  }, [recentCredits, expiring, hosting, mine, alerts.messages, alerts.missedCalls, unreadChats.length, names, friendStatuses, friendThoughts, friends, unseenFriendPeople.length, sqSeen, seenAt]);
 
-  const needsYou = updates.filter((u) => u.hot);
+  const needsYou = updates.filter((u) => u.hot && !u.drawerOnly);
   const topNeeds = needsYou.slice(0, 3);
   const hotCount = needsYou.length;
 
@@ -312,13 +408,14 @@ export default function HomeFeed() {
 
   const rings = useMemo(() => {
     const seen = new Set();
-    return (statuses || []).filter((s) => (seen.has(s.user.id) ? false : seen.add(s.user.id)))
-      .sort((a, b) => Number(Boolean(a.seen)) - Number(Boolean(b.seen))).slice(0, 12);
-  }, [statuses]);
-  const myStatus = (statuses || []).some((s) => s.user.id === uid);
+    return friendStatuses.filter((x) => (seen.has(x.user.id) ? false : seen.add(x.user.id)))
+      .sort((a, b) => Number(isSeen(a)) - Number(isSeen(b))).slice(0, 12);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [friendStatuses, sqSeen]);
+  const myStatus = (statuses || []).some((x) => x.user.id === uid);
   const ownTrees = (trees || []).filter((t) => t.mine).length;
   const taggedTrees = (trees || []).length - ownTrees;
-  const topThoughts = [...(thoughts || [])].sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 3);
+  const topThoughts = [...(thoughts || [])].filter((t) => t.user && (String(t.user.id) === String(uid) || friends.has(String(t.user.id)))).sort((a, b) => (b.total || 0) - (a.total || 0)).slice(0, 3);
 
   return (
     <div className="page hf">
@@ -360,7 +457,7 @@ export default function HomeFeed() {
               )}
               <div className="hf-wallet__acts">
                 <Link to="/wallet" className="hf-btn hf-btn--solid"><Icon name="plus" size={16} />Add money</Link>
-                <Link to="/services" className="hf-btn"><Icon name="ticket" size={16} />Find a plan</Link>
+                <button type="button" className="hf-btn" onClick={() => setPromoOpen(true)}><Icon name="gift" size={16} />Promo code</button>
               </div>
             </section>
 
@@ -437,6 +534,11 @@ export default function HomeFeed() {
             <div><dt>Wallet balance</dt><dd>{balance == null ? '–' : formatNaira(balance)}</dd></div>
             <div><dt>Bonus credit</dt><dd>{bonus == null ? '–' : formatNaira(bonus)}</dd></div>
           </dl>
+          <button type="button" className="hf-row hf-row--flat" onClick={() => setPromoOpen(true)}>
+            <span className="hf-ico" data-tint="gold" aria-hidden="true"><Icon name="gift" size={17} /></span>
+            <span className="hf-row__text"><strong>Have a promo code?</strong><small>Redeem it for bonus credit</small></span>
+            <Icon name="chevron" size={16} />
+          </button>
           {promoCredits.length > 0 && (
             <ul className="hf-credits">
               {promoCredits.slice(0, 5).map((c) => (
@@ -474,9 +576,9 @@ export default function HomeFeed() {
               <small>{myStatus ? 'Your status' : 'Add status'}</small>
             </Link>
             {rings.map((s) => (
-              <Link key={s.user.id} to="/square" className={`hf-ring${s.seen ? ' is-seen' : ''}`}>
+              <Link key={s.user.id} to="/square" className={`hf-ring${isSeen(s) ? ' is-seen' : ''}`}>
                 <span className="hf-ring__o"><span className="hf-ring__i">{initial(s.user.name)}</span></span>
-                <small>{s.user.id === uid ? 'You' : s.user.name}</small>
+                <small>{s.user.name}</small>
               </Link>
             ))}
           </div>
@@ -505,6 +607,8 @@ export default function HomeFeed() {
           )}
         </Drawer>
       )}
+
+      {promoOpen && <PromoModal onClose={() => setPromoOpen(false)} onDone={loadPulse} />}
 
       {receipt && (
         <Modal title="Receipt" subtitle={receiptNumber(receipt)} onClose={() => setReceipt(null)}>

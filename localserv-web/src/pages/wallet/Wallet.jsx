@@ -8,12 +8,12 @@ import Modal from '../../components/Modal';
 import { formatNaira } from '../../utils/money';
 import { goToCheckout } from '../../utils/safeRedirect';
 import { ledgerLabel } from '../../utils/ledger';
+import { WALLET_LOCKED } from '../../utils/walletFlags';
 
 // Flip both to false once wallet logic is finalized.
 const SHOW_IN_PROGRESS_NOTICE = true;
 // While true the page is visible but fully inert: nothing can be clicked, typed into, focused or submitted,
 // and none of the dialogs can open. (Every rule below mirrors the backend: apps/wallet/payment_services.py.)
-const WALLET_LOCKED = true;
 
 // Mirrors MIN_DEPOSIT, MIN_WITHDRAWAL and PAYOUT_ACCOUNT_COOLDOWN_HOURS on the server. The server stays the judge.
 const MIN_DEPOSIT = 100;
