@@ -21,8 +21,10 @@ export function shrinkImage(file, maxSide = 1080, quality = 0.72) {
 }
 
 // Plays the clip and re-records at most 15s at a low bitrate (needs captureStream + MediaRecorder).
-// Browsers without them (older Safari) can only send clips already under 15s and 6 MB.
-export async function shrinkVideo(file) {
+// `start` and `seconds` pick which part of the clip to keep (the length is still capped at 15s).
+// Browsers without captureStream/MediaRecorder (older Safari) can only send a whole clip that is
+// already under 15s and 6 MB, so they cannot use a custom start or length.
+export async function shrinkVideo(file, { start = 0, seconds: wanted } = {}) {
   const url = URL.createObjectURL(file);
   const v = document.createElement('video');
   v.src = url;
@@ -35,10 +37,15 @@ export async function shrinkVideo(file) {
   const capture = v.captureStream || v.mozCaptureStream;
   if (!capture || typeof MediaRecorder === 'undefined') {
     URL.revokeObjectURL(url);
-    if (length <= MAX_VIDEO_SECONDS && file.size <= MAX_VIDEO_BYTES) return { blob: file, duration: Math.ceil(length) };
+    const whole = start <= 0 && (!wanted || wanted >= length - 0.5);
+    if (whole && length <= MAX_VIDEO_SECONDS && file.size <= MAX_VIDEO_BYTES) return { blob: file, duration: Math.ceil(length) };
     throw new Error('This browser cannot trim videos. Pick a clip under 15 seconds and 6 MB.');
   }
-  const seconds = Math.min(length, MAX_VIDEO_SECONDS);
+  const from = Math.min(Math.max(0, start), Math.max(0, length - 1));
+  const seconds = Math.min(wanted || MAX_VIDEO_SECONDS, length - from, MAX_VIDEO_SECONDS);
+  if (from > 0) {
+    await new Promise((ok) => { v.onseeked = ok; v.currentTime = from; });
+  }
   const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4']
     .find((t) => MediaRecorder.isTypeSupported(t));
   const rec = new MediaRecorder(capture.call(v), { mimeType, videoBitsPerSecond: 800000, audioBitsPerSecond: 64000 });

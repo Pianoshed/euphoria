@@ -21,17 +21,18 @@ export const ledgerLabel = (type = '') => LEDGER_LABELS[type] || String(type).re
 // Money coming IN to the person (credit / bonus / refund / top-up / payout received).
 export const isCredit = (entry) => Number(entry?.amount) > 0;
 
+// [icon name from components/icons.jsx, headline]. Icons, never emoji.
 const HEADLINES = {
-  PROMOTIONAL_CREDIT: ['🎁', 'Bonus received'],
-  GIFT_CREDIT: ['💝', 'Gift received'],
-  TOKEN_DEPOSIT: ['💰', 'Top-up successful'],
-  ESCROW_RELEASE: ['✅', 'Payment received'],
-  ESCROW_REFUND: ['↩️', 'Refund received'],
-  PLAN_REFUND: ['↩️', 'Refund received'],
-  WITHDRAWAL_REFUND: ['↩️', 'Withdrawal returned'],
-  WITHDRAWAL_REVERSAL: ['↩️', 'Withdrawal returned'],
-  ADMIN_ADJUSTMENT: ['🧾', 'Wallet credited'],
+  PROMOTIONAL_CREDIT: ['gift', 'Bonus received'],
+  GIFT_CREDIT: ['heart', 'Gift received'],
+  TOKEN_DEPOSIT: ['coins', 'Top-up successful'],
+  ESCROW_RELEASE: ['check', 'Payment received'],
+  ESCROW_REFUND: ['undo', 'Refund received'],
+  PLAN_REFUND: ['undo', 'Refund received'],
+  WITHDRAWAL_REFUND: ['undo', 'Withdrawal returned'],
+  WITHDRAWAL_REVERSAL: ['undo', 'Withdrawal returned'],
+  ADMIN_ADJUSTMENT: ['receipt', 'Wallet credited'],
 };
-export const creditHeadline = (type) => HEADLINES[type] || ['💳', 'Wallet credited'];
+export const creditHeadline = (type) => HEADLINES[type] || ['card', 'Wallet credited'];
 
 export const receiptNumber = (entry) => `EUP-${String(entry?.id ?? '').replace(/[^a-zA-Z0-9]/g, '').slice(-8).toUpperCase().padStart(8, '0')}`;

@@ -481,6 +481,33 @@ function Composer({ onClose, onPosted }) {
   const isImg = file?.type.startsWith('image/');
   const isVid = file?.type.startsWith('video/');
 
+  // Which part of a video to post: where it starts and how long it runs (never more than 15s).
+  const [vidLen, setVidLen] = useState(0);
+  const [trimStart, setTrimStart] = useState(0);
+  const [trimLen, setTrimLen] = useState(MAX_VIDEO_SECONDS);
+  const vidRef = useRef(null);
+  const pickFile = (f) => { setFile(f); setVidLen(0); setTrimStart(0); setTrimLen(MAX_VIDEO_SECONDS); };
+  const maxLenFor = (start, total) => Math.max(1, Math.min(MAX_VIDEO_SECONDS, Math.floor(total - start)));
+  const onVidMeta = (e) => {
+    const total = e.currentTarget.duration;
+    if (!Number.isFinite(total)) return;
+    setVidLen(total);
+    setTrimStart(0);
+    setTrimLen(maxLenFor(0, total));
+  };
+  const changeStart = (value) => {
+    const start = Number(value);
+    setTrimStart(start);
+    setTrimLen((len) => Math.min(len, maxLenFor(start, vidLen)));
+    if (vidRef.current) vidRef.current.currentTime = start;
+  };
+  // Loop the preview inside the chosen window so you see exactly what will be posted.
+  const onPreviewTime = (e) => {
+    const el = e.currentTarget;
+    if (el.currentTime >= trimStart + trimLen || el.currentTime < trimStart - 0.3) el.currentTime = trimStart;
+  };
+  const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
+
   const submit = async (close) => {
     setErr('');
     if (!file && !text.trim()) return setErr('Add a photo, a video or some text.');
@@ -491,8 +518,8 @@ function Composer({ onClose, onPosted }) {
         setBusy('Shrinking photo…');
         fd.append('file', await shrinkImage(file), 'status.jpg');
       } else if (isVid) {
-        setBusy(`Trimming video (up to ${MAX_VIDEO_SECONDS}s)…`);
-        const { blob, duration } = await shrinkVideo(file);
+        setBusy(`Trimming video (${trimLen}s)…`);
+        const { blob, duration } = await shrinkVideo(file, { start: trimStart, seconds: trimLen });
         fd.append('file', blob, 'status.webm');
         fd.append('duration', String(duration));
       } else if (file) return setErr('Choose a photo or a video.');
@@ -518,19 +545,41 @@ function Composer({ onClose, onPosted }) {
           {preview ? (
             <div className="sq-preview">
               {isImg && <img src={preview} alt="Selected" />}
-              {isVid && <video src={preview} muted playsInline />}
+              {isVid && <video ref={vidRef} src={preview} muted playsInline autoPlay loop controls
+                onLoadedMetadata={onVidMeta} onTimeUpdate={onPreviewTime} />}
               {!isImg && !isVid && <p className="sq-hint">Unsupported file</p>}
-              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => setFile(null)}><Icon name="x" size={16} /></button>
+              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => pickFile(null)}><Icon name="x" size={16} /></button>
             </div>
           ) : (
             <label className="sq-drop">
               <span className="sq-drop__ico" aria-hidden="true"><Icon name="camera" size={22} /></span>
               <b>Add a photo or video</b>
               <small>Tap to choose from your phone</small>
-              <input type="file" accept="image/*,video/*" onChange={(e) => setFile(e.target.files[0] || null)} />
+              <input type="file" accept="image/*,video/*" onChange={(e) => pickFile(e.target.files[0] || null)} />
             </label>
           )}
-          <p className="sq-hint">Only people in your friend trees will see it. Photos are shrunk, videos cut to {MAX_VIDEO_SECONDS}s, and it disappears after 24 hours.</p>
+          {isVid && vidLen >= 1 && (
+            <div className="sq-trim">
+              <p className="sq-trim__read">
+                Playing {fmt(trimStart)} – {fmt(trimStart + trimLen)} <b>({trimLen}s)</b>
+                <span> of {fmt(vidLen)}</span>
+              </p>
+              {vidLen > 1 && (
+                <label>
+                  <span>Start at</span>
+                  <input type="range" min={0} max={Math.max(0, Math.floor(vidLen) - 1)} step={1} value={trimStart}
+                    onChange={(e) => changeStart(e.target.value)} aria-label="Start time in seconds" />
+                </label>
+              )}
+              <label>
+                <span>Length</span>
+                <input type="range" min={1} max={maxLenFor(trimStart, vidLen)} step={1} value={trimLen}
+                  onChange={(e) => setTrimLen(Number(e.target.value))} aria-label="Length in seconds" />
+              </label>
+              <small className="sq-hint">Pick any part of the video. The longest clip is {MAX_VIDEO_SECONDS}s.</small>
+            </div>
+          )}
+          <p className="sq-hint">Only people in your friend trees will see it. Photos are shrunk, videos up to {MAX_VIDEO_SECONDS}s (you choose which part), and it disappears after 24 hours.</p>
           {err && <p className="sq-err" role="alert">{err}</p>}
           <div className="sq-row">
             <button type="button" className="sq-ghost" disabled={!!busy} onClick={close}>Cancel</button>
@@ -825,7 +874,7 @@ export default function Square() {
               return (
                 <button key={s.id} type="button" className={`sq-ring${seen[s.id] ? ' sq-ring--seen' : ''}`} onClick={() => open(s)}>
                   <i>
-                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <Icon name="film" size={22} /> : initial(s.user.name)}
+                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <video src={`${s.file}#t=0.5`} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /> : initial(s.user.name)}
                     {c && <em className="sq-badge" aria-hidden="true" style={{ '--c': c.color }}><Icon name={c.icon} size={11} strokeWidth={2.2} /></em>}
                   </i>
                   <small className="sq-ring__name">{s.user.id === user?.id ? 'You' : s.user.name}</small>

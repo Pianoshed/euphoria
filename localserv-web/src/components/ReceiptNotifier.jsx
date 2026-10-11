@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as walletApi from '../api/wallet';
 import Modal from './Modal';
+import { Icon } from './icons';
 import { formatNaira } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 
@@ -48,10 +49,10 @@ export function ReceiptSheet({ entry, who }) {
   return (
     <div className="receipt-sheet">
       <div className="receipt-sheet__top">
-        <span className="receipt-sheet__badge" aria-hidden="true">{icon}</span>
+        <span className="receipt-sheet__badge" aria-hidden="true"><Icon name={icon} size={26} /></span>
         <strong>{title}</strong>
         <span className="receipt-sheet__amt">+{formatNaira(entry.amount)}</span>
-        <span className="receipt-sheet__status">✓ Successful</span>
+        <span className="receipt-sheet__status"><Icon name="check" size={14} /> Successful</span>
       </div>
       <dl className="receipt-sheet__rows">
         <div><dt>Receipt no.</dt><dd>{receiptNumber(entry)}</dd></div>
@@ -63,7 +64,7 @@ export function ReceiptSheet({ entry, who }) {
       <p className="receipt-sheet__foot">Keep this receipt for your records. It is also listed in your wallet history.</p>
       <div className="receipt-sheet__acts">
         <button type="button" className="rcpt-btn rcpt-btn--solid" onClick={print}>Print / Save PDF</button>
-        <button type="button" className="rcpt-btn" onClick={copy}>{copied ? 'Copied ✓' : 'Copy'}</button>
+        <button type="button" className="rcpt-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
         {typeof navigator !== 'undefined' && navigator.share && <button type="button" className="rcpt-btn" onClick={share}>Share</button>}
       </div>
     </div>
@@ -145,9 +146,9 @@ export default function ReceiptNotifier() {
           const [icon, title] = creditHeadline(e.entry_type);
           return (
             <div key={e.id} className="rcpt-toast" role="status">
-              <span className="rcpt-toast__icon" aria-hidden="true">{icon}</span>
+              <span className="rcpt-toast__icon" aria-hidden="true"><Icon name={icon} size={20} /></span>
               <p className="rcpt-toast__title">{title} <span className="rcpt-toast__amt">+{formatNaira(e.amount)}</span></p>
-              <button type="button" className="rcpt-x" onClick={() => dismiss(e.id)} aria-label="Dismiss">✕</button>
+              <button type="button" className="rcpt-x" onClick={() => dismiss(e.id)} aria-label="Dismiss"><Icon name="x" size={14} /></button>
               <p className="rcpt-toast__note">{e.note || ledgerLabel(e.entry_type)}</p>
               <div className="rcpt-toast__row">
                 <button type="button" className="rcpt-btn rcpt-btn--solid" onClick={() => { setOpen(e); dismiss(e.id); }}>View receipt</button>

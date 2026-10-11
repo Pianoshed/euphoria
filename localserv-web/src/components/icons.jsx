@@ -153,6 +153,14 @@ const PATHS = {
   play: <path d="M8 5.5v13l11-6.5z" />,
   film: <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" /></>,
   alert: <><path d="M12 3.5L2.8 19.5h18.4z" /><path d="M12 10v4M12 17h.01" /></>,
+  /* ---- home / wallet: replace the emoji that used to sit in notifications and receipts ---- */
+  grid: <><rect x="4" y="4" width="6.5" height="6.5" rx="1.6" /><rect x="13.5" y="4" width="6.5" height="6.5" rx="1.6" /><rect x="4" y="13.5" width="6.5" height="6.5" rx="1.6" /><rect x="13.5" y="13.5" width="6.5" height="6.5" rx="1.6" /></>,
+  gift: <><rect x="3" y="8" width="18" height="4" rx="1" /><path d="M5 12v8h14v-8M12 8v12" /><path d="M12 8c-2.5 0-4.5-1-4.5-2.8S9 3 10.4 3.4C11.6 3.8 12 6 12 8zM12 8c2.5 0 4.5-1 4.5-2.8S15 3 13.6 3.4C12.4 3.8 12 6 12 8z" /></>,
+  undo: <><path d="M9 14L4 9l5-5" /><path d="M4 9h10a6 6 0 010 12h-3" /></>,
+  receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></>,
+  card: <><rect x="3" y="5" width="18" height="14" rx="2" /><path d="M3 10h18M7 15h3" /></>,
+  coins: <><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
   trending: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
 };
 

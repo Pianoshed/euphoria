@@ -1,5 +1,6 @@
 import './modal.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Icon } from './icons';
 
 /**
  * Small accessible dialog: Escape and backdrop close it, page scroll is locked while it is open,
@@ -42,7 +43,7 @@ export default function Modal({ title, subtitle, onClose, children, wide = false
             <h2>{title}</h2>
             {subtitle && <p>{subtitle}</p>}
           </div>
-          <button type="button" className="modal__x" onClick={close} aria-label="Close">✕</button>
+          <button type="button" className="modal__x" onClick={close} aria-label="Close"><Icon name="x" size={16} /></button>
         </header>
         <div className="modal__body">{typeof children === 'function' ? children(close) : children}</div>
       </div>

@@ -66,7 +66,7 @@
 .sq-ring i{position:relative;display:grid;place-items:center;width:52px;height:52px;margin:3px auto 6px;border-radius:50%;font-style:normal;font-size:1.05rem;font-weight:700;
   background:var(--color-chip-b-bg);color:var(--color-chip-b-ink);
   box-shadow:0 0 0 2px #2a1768,0 0 0 4px var(--color-accent),0 6px 14px rgba(0,0,0,.3);transition:box-shadow .3s}
-.sq-ring i img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.sq-ring i img,.sq-ring i video{width:100%;height:100%;object-fit:cover;border-radius:50%;pointer-events:none}
 .sq-ring--seen i{box-shadow:0 0 0 2px #2a1768,0 0 0 4px rgba(255,255,255,.32),0 4px 10px rgba(0,0,0,.2)}
 .sq-ring--add i{background:rgba(255,255,255,.14);color:#fff;box-shadow:0 0 0 2px #2a1768,0 0 0 4px rgba(255,255,255,.5)}
 .sq-ring__name{display:block;font-size:var(--t-cap);line-height:1.25;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -462,3 +462,10 @@
   .sq-sheet--tall .sq-row{flex-direction:row}
   .sq-sheet--tall .sq-center{text-align:left}
 }
+
+/* video trim controls in the new-status sheet */
+.sq-trim{display:grid;gap:8px;margin:10px 0}
+.sq-trim__read{margin:0;font-size:var(--t-sub);color:var(--color-ink)}
+.sq-trim__read span{color:var(--color-ink-soft)}
+.sq-trim label{display:grid;grid-template-columns:5.5rem 1fr;align-items:center;gap:10px;font-size:var(--t-sub);color:var(--color-ink-soft)}
+.sq-trim input[type=range]{width:100%;accent-color:var(--color-primary)}
