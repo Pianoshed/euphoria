@@ -77,9 +77,10 @@
 :root[data-theme='dark'] .mp-hero .mp-meter__hint { color: #D2C9E8; }
 :root[data-theme='dark'] .mp-hero .mp-menu-btn { background: rgba(245, 239, 251, 0.12); border-color: rgba(245, 239, 251, 0.25); color: #F5EFFB; }
 /* the gold "how you look online" card keeps its pastel fill, so keep its text dark */
-:root[data-theme='dark'] .mp-preview__card { --mp-ink: #1f1d3d; --mp-muted: #5f5d7a; color: #1f1d3d; }
-:root[data-theme='dark'] .mp-preview__card :is(strong, .soft) { color: inherit; }
-:root[data-theme='dark'] .mp-preview__card .soft { color: #5f5d7a; }
+:root[data-theme='dark'] .mp-preview__card { --mp-ink: #14112f; --mp-muted: #3a3456; color: #14112f; }
+:root[data-theme='dark'] .mp-preview__card :is(strong, span) { color: #14112f; }
+:root[data-theme='dark'] .mp-preview__card :is(.soft, .bio) { color: #3a3456; }
+:root[data-theme='dark'] .mp-preview__card .live { color: #0b4a30; }
 :root[data-theme='dark'] .mp-callout { border: 1px solid rgba(255, 140, 157, 0.25); border-left-width: 6px; }
 :root[data-theme='dark'] .mp-checkup__item { border-color: rgba(245, 239, 251, 0.16); }
 
@@ -94,3 +95,10 @@
 :root[data-theme='dark'] .offline-banner { background: #3A2D12; color: #FFD98A; }
 :root[data-theme='dark'] .alert { border-width: 1px; border-style: solid; }
 :root[data-theme='dark'] .alert--info { background: rgba(183, 168, 255, 0.14); color: #E4DCFF; border-color: rgba(183, 168, 255, 0.4); }
+
+/* ---------- Find people: search box ----------
+   On phones the box keeps a near-white fill, but --dp-ink turns light in dark mode,
+   so what you typed (and the placeholder) was light-on-white and unreadable. */
+:root[data-theme='dark'] .page.dp .dp-search { color: #1f1d3d; caret-color: #1f1d3d; }
+:root[data-theme='dark'] .page.dp .dp-search::placeholder { color: #5f5d7a; opacity: 1; }
+:root[data-theme='dark'] .page.dp .dp-search:focus-visible { outline: 2px solid #CBBBFF; outline-offset: 2px; }
