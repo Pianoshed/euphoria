@@ -188,7 +188,6 @@ function Bubble({ person, color, big, mid, live, edit, you, onClick }) {
 
 // Collapsed: only the tree's name, how many people are in it and who planted it.
 // Tap to expand a small paged list of the people; "Open tree" shows the full tree in a sheet.
-const PEOPLE_PER_PAGE = 6;
 const BRANCH_PER_PAGE = 12;
 
 function Pager({ page, pages, onPage, label = 'People pages' }) {
@@ -203,40 +202,65 @@ function Pager({ page, pages, onPage, label = 'People pages' }) {
 }
 
 function TreeCard({ tree, onOpen }) {
+  const { user } = useAuth();
   const [open, setOpen] = useState(false);
-  const [page, setPage] = useState(0);
-  const people = tree.members;
-  const pages = Math.max(1, Math.ceil(people.length / PEOPLE_PER_PAGE));
-  const safe = Math.min(page, pages - 1);
-  const shown = people.slice(safe * PEOPLE_PER_PAGE, (safe + 1) * PEOPLE_PER_PAGE);
   const labelled = hasLabels(tree);
   const bodyId = `tree-${tree.id}`;
+
+  // "You and 3 others": everyone connected to this tree (owner + tagged people) except me
+  const others = useMemo(() => {
+    const ids = new Set([tree.owner, ...tree.members].map((p) => String(p.id)));
+    if (user) ids.delete(String(user.id));
+    return ids.size;
+  }, [tree, user]);
+  // how the owner knows them, in friendly words (only when the labels are known: my own trees)
+  const circles = useMemo(() => {
+    if (!tree.mine || !labelled) return [];
+    const count = {};
+    tree.members.filter((m) => !m.hidden).forEach((m) => { const k = labelFor(tree, m); count[k] = (count[k] || 0) + 1; });
+    return CIRCLES.filter((c) => count[c.key]).map((c) => ({ ...c, n: count[c.key] }));
+  }, [tree, labelled]);
+  // Tagged in someone else's tree: my icon is how the owner knows me (Besties, Family, Partner...), when the labels are known.
+  const myCircle = useMemo(() => {
+    if (tree.mine || !user || !labelled) return null;
+    const me = tree.members.find((m) => String(m.id) === String(user.id));
+    return me && !me.hidden ? circleMeta(labelFor(tree, me)) : null;
+  }, [tree, user, labelled]);
+  const headline = others === 0 ? 'Just you so far' : `You and ${plural(others, 'other', 'others')}`;
+
   return (
     <div className={`sq-card sq-tcard${open ? ' is-open' : ''}`}>
       <button type="button" className="sq-tcard__head" aria-expanded={open} aria-controls={bodyId} onClick={() => setOpen((v) => !v)}>
         <span className="sq-tcard__leaf" aria-hidden="true"><Icon name="tree" size={18} /></span>
         <span className="sq-tcard__info">
           <b>{tree.title}</b>
-          <small>{plural(people.length, 'person', 'people')} · by {tree.mine ? 'you' : tree.owner.name}</small>
+          <small>{headline} · by {tree.mine ? 'you' : tree.owner.name}</small>
         </span>
         <span className="sq-chev" aria-hidden="true"><Icon name="chevron" size={18} /></span>
       </button>
       {open && (
         <div className="sq-tcard__body" id={bodyId}>
-          {people.length === 0 && <p className="sq-hint">Nobody tagged yet.</p>}
-          <ul className="sq-plist">
-            {shown.map((m) => {
-              const circle = labelled && !m.hidden ? circleMeta(labelFor(tree, m)) : null;
-              return (
-                <li key={m.id} style={{ '--c': circle ? circle.color : 'var(--color-violet)' }}>
-                  <i aria-hidden="true">{m.hidden ? fruitFor(m.id) : initial(m.name)}</i>
-                  <span>{m.hidden ? 'Someone else' : m.name}</span>
-                  {circle && <em>{circle.label}</em>}
-                </li>
-              );
-            })}
-          </ul>
-          <Pager page={safe} pages={pages} onPage={setPage} />
+          <div className="sq-tsum">
+            <span className="sq-tsum__you" aria-hidden="true" style={myCircle ? { '--you': myCircle.color } : undefined}>
+              <Icon name={tree.mine ? 'heart' : myCircle ? myCircle.icon : 'users'} size={18} />
+            </span>
+            <span className="sq-tsum__text">
+              <b>{headline}</b>
+              <small>{others === 0 ? 'Nobody tagged yet.' : `${plural(others, 'contact', 'contacts')} in this tree`}</small>
+            </span>
+          </div>
+          {myCircle && (
+            <ul className="sq-tsum__chips" aria-label={`How ${tree.owner.name} knows you`}>
+              <li style={{ '--c': myCircle.color }}><Icon name={myCircle.icon} size={13} />{myCircle.label} to {tree.owner.name}</li>
+            </ul>
+          )}
+          {circles.length > 0 && (
+            <ul className="sq-tsum__chips" aria-label="How you know them">
+              {circles.map((c) => (
+                <li key={c.key} style={{ '--c': c.color }}><Icon name={c.icon} size={13} />{c.label}<b>{c.n}</b></li>
+              ))}
+            </ul>
+          )}
           <button type="button" className="sq-cta sq-cta--sm sq-tcard__open" onClick={() => onOpen(tree)}><Icon name="tree" size={15} />Open tree</button>
         </div>
       )}
@@ -334,7 +358,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
                     onChange={(e) => setName(e.target.value)} onBlur={saveName}
                     onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }} />
                 : <h2>{tree.title}</h2>}
-              <small>{plural(tree.members.length, 'person', 'people')}</small>
+              <small>{(() => { const n = new Set([tree.owner, ...tree.members].map((p) => String(p.id))); if (meId != null) n.delete(String(meId)); else n.delete(String(tree.owner.id)); return n.size === 0 ? 'Just you so far' : `You and ${plural(n.size, 'other', 'others')}`; })()}</small>
             </div>
             {owner && (
               <button type="button" className={`sq-edit${edit ? ' is-on' : ''}`} aria-pressed={edit}
@@ -874,7 +898,7 @@ export default function Square() {
               return (
                 <button key={s.id} type="button" className={`sq-ring${seen[s.id] ? ' sq-ring--seen' : ''}`} onClick={() => open(s)}>
                   <i>
-                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <video src={`${s.file}#t=0.5`} muted playsInline preload="metadata" aria-hidden="true" tabIndex={-1} /> : initial(s.user.name)}
+                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <><video src={`${s.file}#t=0.5`} muted playsInline preload="metadata" controls={false} disablePictureInPicture aria-hidden="true" tabIndex={-1} /><span className="sq-ring__play" aria-hidden="true"><Icon name="play" size={12} /></span></> : initial(s.user.name)}
                     {c && <em className="sq-badge" aria-hidden="true" style={{ '--c': c.color }}><Icon name={c.icon} size={11} strokeWidth={2.2} /></em>}
                   </i>
                   <small className="sq-ring__name">{s.user.id === user?.id ? 'You' : s.user.name}</small>

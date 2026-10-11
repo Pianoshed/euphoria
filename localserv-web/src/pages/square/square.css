@@ -66,7 +66,13 @@
 .sq-ring i{position:relative;display:grid;place-items:center;width:52px;height:52px;margin:3px auto 6px;border-radius:50%;font-style:normal;font-size:1.05rem;font-weight:700;
   background:var(--color-chip-b-bg);color:var(--color-chip-b-ink);
   box-shadow:0 0 0 2px #2a1768,0 0 0 4px var(--color-accent),0 6px 14px rgba(0,0,0,.3);transition:box-shadow .3s}
-.sq-ring i img,.sq-ring i video{width:100%;height:100%;object-fit:cover;border-radius:50%;pointer-events:none}
+.sq-ring i{overflow:hidden;isolation:isolate;line-height:0}
+.sq-ring i img,.sq-ring i video{position:absolute;inset:0;display:block;width:100%;height:100%;max-width:100%;object-fit:cover;border-radius:50%;pointer-events:none}
+/* the browser's own play button / controls on a video thumbnail must never draw outside (or inside) the circle */
+.sq-ring i video::-webkit-media-controls,.sq-ring i video::-webkit-media-controls-enclosure,.sq-ring i video::-webkit-media-controls-panel,.sq-ring i video::-webkit-media-controls-start-playback-button{display:none!important;-webkit-appearance:none}
+/* video marker: a small play badge tucked inside the circle */
+.sq-ring__play{position:absolute;z-index:1;left:50%;top:50%;transform:translate(-50%,-50%);display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:rgba(0,0,0,.5);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);color:#fff;line-height:0;overflow:hidden}
+.sq-ring__play svg{display:block;max-width:60%;max-height:60%}
 .sq-ring--seen i{box-shadow:0 0 0 2px #2a1768,0 0 0 4px rgba(255,255,255,.32),0 4px 10px rgba(0,0,0,.2)}
 .sq-ring--add i{background:rgba(255,255,255,.14);color:#fff;box-shadow:0 0 0 2px #2a1768,0 0 0 4px rgba(255,255,255,.5)}
 .sq-ring__name{display:block;font-size:var(--t-cap);line-height:1.25;font-weight:600;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -469,3 +475,13 @@
 .sq-trim__read span{color:var(--color-ink-soft)}
 .sq-trim label{display:grid;grid-template-columns:5.5rem 1fr;align-items:center;gap:10px;font-size:var(--t-sub);color:var(--color-ink-soft)}
 .sq-trim input[type=range]{width:100%;accent-color:var(--color-primary)}
+
+/* tree card summary: "You and 3 others" instead of a list of names */
+.sq-tsum{display:flex;align-items:center;gap:12px;margin-top:10px;padding:10px 12px;border-radius:14px;border:1px solid color-mix(in srgb,var(--color-violet) 22%,transparent);background:color-mix(in srgb,var(--color-violet) 8%,transparent)}
+.sq-tsum__you{display:grid;place-items:center;flex:none;width:40px;height:40px;border-radius:50%;background:var(--sq-gloss),var(--you,var(--color-primary));color:#fff;overflow:hidden;line-height:0}
+.sq-tsum__text{display:flex;flex-direction:column;min-width:0}
+.sq-tsum__text b{font-size:var(--t-body);font-weight:800}
+.sq-tsum__text small{font-size:var(--t-cap);color:var(--color-ink-soft)}
+.sq-tsum__chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.sq-tsum__chips li{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 30%,transparent);background:color-mix(in srgb,var(--c) 10%,transparent);color:var(--c);font-size:var(--t-cap);font-weight:700}
+.sq-tsum__chips b{padding-left:2px;font-weight:800}

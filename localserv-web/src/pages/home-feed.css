@@ -268,3 +268,45 @@ body[data-backdrop='scene']::before {
 .hf-promo--done strong { font-family: var(--font-display); font-size: 1.4rem; font-weight: 800; }
 .hf-promo--done p { margin: 0; font-size: .9rem; color: var(--color-ink-soft); }
 .hf-row--flat > svg:last-child { flex: none; color: var(--hf-muted); }
+
+/* ---------- drawer glass: more see-through, still easy to read in light and dark ----------
+   The blur is what keeps words legible: it melts the picture behind into soft colour, and a tint
+   tuned per theme sets the contrast. Text uses full-strength ink; secondary text stays dark/light enough. */
+.hf-drawer__panel {
+  --dw-tint: rgba(255, 255, 255, .46);
+  --dw-edge: rgba(255, 255, 255, .7);
+  --dw-card: rgba(255, 255, 255, .42);
+  --dw-card-line: rgba(31, 29, 61, .16);
+  --hf-muted: color-mix(in srgb, var(--hf-ink) 78%, #fff);
+  background: var(--dw-tint);
+  -webkit-backdrop-filter: blur(34px) saturate(1.6) brightness(1.06); backdrop-filter: blur(34px) saturate(1.6) brightness(1.06);
+  border-left: 1px solid var(--dw-edge);
+  box-shadow: -24px 0 56px -26px rgba(0, 0, 0, .45), inset 1px 0 0 rgba(255, 255, 255, .35);
+}
+:root[data-theme='dark'] .hf-drawer__panel {
+  --dw-tint: rgba(24, 16, 48, .5);
+  --dw-edge: rgba(255, 255, 255, .16);
+  --dw-card: rgba(255, 255, 255, .08);
+  --dw-card-line: rgba(255, 255, 255, .18);
+  --hf-muted: color-mix(in srgb, var(--hf-ink) 80%, #000);
+  -webkit-backdrop-filter: blur(34px) saturate(1.5) brightness(.8); backdrop-filter: blur(34px) saturate(1.5) brightness(.8);
+}
+.hf-drawer { background: rgba(16, 12, 30, .2); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+:root[data-theme='dark'] .hf-drawer { background: rgba(0, 0, 0, .34); }
+
+/* text: full ink, slightly heavier secondary lines so nothing washes out on the glass */
+.hf-drawer__head h2, .hf-drawer .hf-row__text strong, .hf-drawer .hf-service, .hf-drawer .hf-money dd, .hf-drawer .hf-thought p, .hf-drawer .hf-credits b { color: var(--hf-ink); }
+.hf-drawer .hf-row__text small, .hf-drawer .hf-row__meta, .hf-drawer .hf-money dt, .hf-drawer .hf-thought small, .hf-drawer .hf-ring small { color: var(--hf-muted); font-weight: 600; }
+.hf-drawer__sub { color: var(--hf-muted); }
+.hf-drawer .hf-row:hover, .hf-drawer .hf-row:focus-visible { background: color-mix(in srgb, var(--hf-ink) 10%, transparent); }
+
+/* boxed things inside the drawer get their own faint glass so edges and words stay crisp */
+.hf-drawer .hf-money div, .hf-drawer .hf-service, .hf-drawer .hf-thought, .hf-drawer .hf-row--flat { background: var(--dw-card); border-color: var(--dw-card-line); }
+.hf-drawer .hf-iconbtn { color: var(--hf-ink); }
+.hf-drawer .hf-ico { background: color-mix(in srgb, var(--acc) 24%, transparent); color: color-mix(in srgb, var(--acc) 70%, var(--hf-ink)); }
+.hf-drawer .hf-ring__i { border-color: transparent; }
+
+/* browsers without backdrop blur get a more solid panel instead of unreadable see-through text */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .hf-drawer__panel { background: color-mix(in srgb, var(--hf-panel) 94%, transparent); }
+}
