@@ -2,12 +2,13 @@ import './receipts.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as walletApi from '../api/wallet';
+import { useInboxEvent, useInboxSync } from '../hooks/useInboxSync';
 import Modal from './Modal';
 import { Icon } from './icons';
 import { formatNaira } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 
-const POLL_MS = 60_000;
+const POLL_MS = 60_000; // only used while the live socket is down
 const MAX_SHOWN = 3;
 const AUTO_HIDE_MS = 12_000;
 const seenKey = (uid) => `receipts-seen-v1:${uid}`;
@@ -114,22 +115,15 @@ export default function ReceiptNotifier() {
   useEffect(() => {
     if (!uid) { setToasts([]); setOpen(null); seenRef.current = null; return undefined; }
     seenRef.current = null;
-    check();
-    const tick = () => { if (document.visibilityState === 'visible') check(); };
-    const timer = setInterval(tick, POLL_MS);
-    document.addEventListener('visibilitychange', tick);
-    window.addEventListener('focus', tick);
-    window.addEventListener('online', tick);
     const now = () => { check(); setTimeout(check, 3000); }; // webhooks can land a moment after the redirect
     window.addEventListener('euphoria-wallet-changed', now);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
-      window.removeEventListener('focus', tick);
-      window.removeEventListener('online', tick);
-      window.removeEventListener('euphoria-wallet-changed', now);
-    };
+    return () => window.removeEventListener('euphoria-wallet-changed', now);
   }, [uid, check]);
+
+  // The server says "wallet" the moment a credit lands; otherwise this is a slow safety refresh.
+  // (Declared after the effect above so the seen-list is reset before the first check.)
+  useInboxSync(check, { key: uid, fallbackMs: POLL_MS });
+  useInboxEvent((e) => { if (e.type === 'wallet') check(); });
 
   // auto-hide each toast after a while
   useEffect(() => {

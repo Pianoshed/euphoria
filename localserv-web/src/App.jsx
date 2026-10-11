@@ -11,6 +11,7 @@ import ReceiptNotifier from './components/ReceiptNotifier';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
 import { AlertsProvider } from './context/AlertsContext';
+import { InboxSocketProvider } from './context/InboxSocketContext';
 import { CallProvider } from './context/CallContext';
 
 import Register from './pages/auth/Register';
@@ -106,18 +107,20 @@ export default function App() {
     <GoogleOAuthProvider clientId={import.meta.env.VITE_GOOGLE_CLIENT_ID}>
       <Router>
         <AuthProvider>
-          <CallProvider>
-            <AlertsProvider>
-              <OfflineBanner />
-              <NavBar />
-              <SideNav />
-              <BottomNav />
-              <MessageNotifier />
-              <ReceiptNotifier />
-              <IncomingCallNotifier />
-              <AppRoutes />
-            </AlertsProvider>
-          </CallProvider>
+          <InboxSocketProvider>
+            <CallProvider>
+              <AlertsProvider>
+                <OfflineBanner />
+                <NavBar />
+                <SideNav />
+                <BottomNav />
+                <MessageNotifier />
+                <ReceiptNotifier />
+                <IncomingCallNotifier />
+                <AppRoutes />
+              </AlertsProvider>
+            </CallProvider>
+          </InboxSocketProvider>
         </AuthProvider>
       </Router>
     </GoogleOAuthProvider>

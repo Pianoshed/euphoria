@@ -689,12 +689,12 @@ export default function ConversationView() {
   }, [typers]);
 
   // Safety net under the socket: poll while the page is visible (every 4s if the socket is
-  // down, every 20s if it's up) and refresh the moment the tab regains focus or the network
+  // down, every 60s if it's up) and refresh the moment the tab regains focus or the network
   // returns. If websockets are blocked or flaky on someone's network, chats still arrive.
   useEffect(() => {
     if (!id) return undefined;
     const run = () => { if (document.visibilityState === 'visible') refreshMessages(); };
-    const timer = setInterval(run, connected ? (saver.active ? 60000 : 20000) : (saver.active ? 12000 : 4000));
+    const timer = setInterval(run, connected ? 60000 : (saver.active ? 12000 : 4000));
     document.addEventListener('visibilitychange', run);
     window.addEventListener('focus', run);
     window.addEventListener('online', run);

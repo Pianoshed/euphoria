@@ -10,6 +10,7 @@ import { ChillLoader, ErrorAlert } from '../../components/ui';
 import PeoplePicker from '../../components/PeoplePicker';
 import { useDataSaver } from '../../hooks/useDataSaver';
 import { useAuth } from '../../context/AuthContext';
+import { useInboxEvent, useInboxSync } from '../../hooks/useInboxSync';
 import './group.css';
 import './chat-dark.css';
 import Chopper from '../../components/Chopper';
@@ -58,22 +59,20 @@ export default function ConversationList() {
     setProfiles(profilesRef.current);
   }, [user?.id]);
 
-  // Keep the inbox live without a refresh: poll while visible, and refresh the moment
-  // the tab regains focus or the network comes back.
-  useEffect(() => {
-    load().catch(setError);
-    const tick = () => { if (document.visibilityState === 'visible') load().catch(() => {}); };
-    const timer = setInterval(tick, 30000);
-    document.addEventListener('visibilitychange', tick);
-    window.addEventListener('focus', tick);
-    window.addEventListener('online', tick);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
-      window.removeEventListener('focus', tick);
-      window.removeEventListener('online', tick);
-    };
-  }, [load]);
+  useEffect(() => { load().catch(setError); }, [load]);
+
+  // Keep the inbox live without a refresh. The server says when a message arrives or a chat is read
+  // elsewhere (reload shortly after, so a burst of messages costs one request); otherwise this is a
+  // slow safety refresh, faster (30s) only while the live socket is down.
+  const reloadTimer = useRef(null);
+  const quietLoad = useCallback(() => load().catch(() => {}), [load]);
+  useInboxSync(quietLoad, { key: user?.id, fallbackMs: 30000, immediate: false });
+  useInboxEvent((e) => {
+    if (e.type !== 'message' && e.type !== 'read') return;
+    clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(quietLoad, 800);
+  });
+  useEffect(() => () => clearTimeout(reloadTimer.current), []);
 
   useEffect(() => {
     if (!undo) return undefined;

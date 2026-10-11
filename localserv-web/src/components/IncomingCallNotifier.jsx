@@ -3,6 +3,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { WS_BASE } from '../api/client';
+import { useInbox } from '../context/InboxSocketContext';
+import { useInboxEvent } from '../hooks/useInboxSync';
 import * as chatApi from '../api/chat';
 import * as accountsApi from '../api/accounts';
 import { armSound, startRingtone, stopRingtone } from '../utils/notifySound';
@@ -10,10 +12,7 @@ import { isInCall } from '../utils/callActivity';
 import { useCall } from '../context/CallContext';
 
 const RING_MS = 45_000; // keep in step with RING_TIMEOUT_MS in useVideoCall and RING_TIMEOUT_SECONDS on the server
-const POLL_MS = 6_000;
-const MIN_DELAY_MS = 1000;
-const MAX_DELAY_MS = 15000;
-const NO_RETRY = new Set([4401, 4403]);
+const POLL_MS = 6_000; // HTTP fallback, only while the live socket is down
 
 // Say one thing (reject / busy) on a conversation's call socket, then hang up the socket.
 // Declining from the site-wide ring has no call page open, so this borrows the same signaling path.
@@ -45,7 +44,9 @@ export default function IncomingCallNotifier() {
   const ringRef = useRef(null);
   const pathRef = useRef(pathname);
   const timerRef = useRef(null);
-  const socketOpenRef = useRef(false);
+  const { connected } = useInbox(); // the shared site-wide socket lives in InboxSocketContext
+  const connectedRef = useRef(connected);
+  connectedRef.current = connected;
 
   const clear = useCallback((conversationId) => {
     if (conversationId && ringRef.current && ringRef.current.conversationId !== conversationId) return;
@@ -90,66 +91,29 @@ export default function IncomingCallNotifier() {
     if (viewing && ringRef.current?.conversationId === viewing) clear();
   }, [pathname, clear]);
 
-  // The site-wide socket: reconnects on its own, and again when the tab wakes or the network returns.
+  // Ring / stop ringing when the shared site-wide socket says so. (On every (re)connect the server also
+  // replays any call that is ringing right now.)
+  useInboxEvent((data) => {
+    if (data.type === 'incoming') onIncoming(data);
+    else if (data.type === 'ended') clear(String(data.conversation_id));
+  });
+
   useEffect(() => {
     if (!user) { clear(); return undefined; }
     const disarm = armSound();
-    let closed = false;
-    let attempt = 0;
-    let retry;
-    let socket = null;
-
-    const open = () => {
-      clearTimeout(retry);
-      if (closed || (socket && socket.readyState <= WebSocket.OPEN)) return;
-      const ws = new WebSocket(`${WS_BASE}/ws/calls/inbox/`);
-      socket = ws;
-      ws.onopen = () => { attempt = 0; socketOpenRef.current = true; };
-      ws.onmessage = (e) => {
-        try {
-          const data = JSON.parse(e.data);
-          if (data.type === 'incoming') onIncoming(data);
-          else if (data.type === 'ended') clear(String(data.conversation_id));
-        } catch { /* ignore malformed frames */ }
-      };
-      ws.onclose = (e) => {
-        if (socket === ws) socket = null;
-        socketOpenRef.current = false;
-        if (closed || NO_RETRY.has(e.code)) return;
-        retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random()));
-        attempt += 1;
-      };
-    };
-
-    const wake = () => {
-      if (document.visibilityState !== 'visible') return;
-      if (!socket || socket.readyState > WebSocket.OPEN) { attempt = 0; open(); }
-    };
 
     // Safety net: while the socket is down (blocked websockets, flaky network), ask over HTTP.
     const poll = setInterval(async () => {
-      if (socketOpenRef.current || document.visibilityState !== 'visible') return;
+      if (connectedRef.current || document.visibilityState !== 'visible') return;
       try {
         const calls = await chatApi.listIncomingCalls();
         (Array.isArray(calls) ? calls : []).forEach(onIncoming);
       } catch { /* offline or signed out */ }
     }, POLL_MS);
 
-    document.addEventListener('visibilitychange', wake);
-    window.addEventListener('online', wake);
-    window.addEventListener('focus', wake);
-    open();
-
     return () => {
-      closed = true;
       disarm();
-      clearTimeout(retry);
       clearInterval(poll);
-      document.removeEventListener('visibilitychange', wake);
-      window.removeEventListener('online', wake);
-      window.removeEventListener('focus', wake);
-      socketOpenRef.current = false;
-      socket?.close();
     };
   }, [user, onIncoming, clear]);
 

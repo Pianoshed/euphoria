@@ -250,9 +250,10 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
 
 class CallInboxConsumer(AsyncJsonWebsocketConsumer):
     """
-    One socket per open tab, on every page of the site. It carries no signaling: it only says
-    "someone is calling you in conversation X" (so the site can ring) and "that call is over"
-    (so it stops). Accepting takes the person to the conversation, whose own call socket does
+    One socket per open tab, on every page of the site. It carries no signaling: it says
+    "someone is calling you in conversation X" (so the site can ring), "that call is over"
+    (so it stops), and content-free hints that something changed (new message, conversation
+    read elsewhere, wallet credit, missed call) so the browser does not have to poll for them. Accepting takes the person to the conversation, whose own call socket does
     the actual WebRTC signaling. Receive-only: anything a client sends here is ignored.
     """
 
@@ -270,6 +271,9 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = inbox_group(user.id)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
+        # Tells the browser this server pushes inbox events (message / read / wallet / missed_call), so it
+        # can stop polling. A browser talking to an older server never sees this and keeps polling.
+        await self.send_json({"type": "ready", "push": True})
         # Catch up: a call may have started while this socket was (re)connecting.
         try:
             for call in await database_sync_to_async(call_logs.ringing_for)(user.id):
@@ -303,3 +307,7 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
 
     async def call_ended(self, event):
         await self.send_json({"type": "ended", "conversation_id": event["conversation_id"]})
+
+    async def inbox_event(self, event):
+        """Content-free hints from apps.chat.notify: {"type": "message" | "read" | "wallet" | "missed_call", ...}."""
+        await self.send_json(event["payload"])

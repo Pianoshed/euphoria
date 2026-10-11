@@ -2,10 +2,11 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
 import * as chatApi from '../api/chat';
+import { useInboxEvent, useInboxSync } from '../hooks/useInboxSync';
 
 /**
  * One place that knows what needs the person's attention, so the header, the menu and the tab title agree:
- *   messages     - unread messages across every conversation (fed by MessageNotifier, which already polls the inbox)
+ *   messages     - unread messages across every conversation (fed by MessageNotifier, which is told about new mail over the live socket)
  *   missedCalls  - calls you were not there to answer, since you last opened the Call log
  * "Missed" is read from the same call records the Call log page shows: you were the one called and the
  * call ended as no answer, busy or cancelled by the caller.
@@ -14,7 +15,7 @@ const AlertsContext = createContext({ messages: 0, missedCalls: 0, setMessages: 
 export const useAlerts = () => useContext(AlertsContext);
 
 const MISSED = new Set(['no_answer', 'busy', 'cancelled']);
-const POLL_MS = 60_000;
+const POLL_MS = 60_000; // only used while the live socket is down
 const seenKey = (uid) => `calls-seen-v1:${uid}`;
 const readSeen = (uid) => { try { return Number(localStorage.getItem(seenKey(uid))) || 0; } catch { return 0; } };
 const writeSeen = (uid, t) => { try { localStorage.setItem(seenKey(uid), String(t)); } catch { /* private mode: in-memory only */ } };
@@ -43,21 +44,13 @@ export function AlertsProvider({ children }) {
   }, [uid]);
 
   useEffect(() => {
-    if (!uid) { setMessages(0); setMissedCalls(0); seenRef.current = 0; return undefined; }
+    if (!uid) { setMessages(0); setMissedCalls(0); seenRef.current = 0; return; }
     seenRef.current = readSeen(uid);
-    refreshCalls();
-    const tick = () => { if (document.visibilityState === 'visible') refreshCalls(); };
-    const timer = setInterval(tick, POLL_MS);
-    document.addEventListener('visibilitychange', tick);
-    window.addEventListener('focus', tick);
-    window.addEventListener('online', tick);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener('visibilitychange', tick);
-      window.removeEventListener('focus', tick);
-      window.removeEventListener('online', tick);
-    };
-  }, [uid, refreshCalls]);
+  }, [uid]);
+
+  // The server says "missed_call" the moment it happens; otherwise this is a slow safety refresh.
+  useInboxSync(refreshCalls, { key: uid, fallbackMs: POLL_MS });
+  useInboxEvent((e) => { if (e.type === 'missed_call') refreshCalls(); });
 
   // Opening the Call log counts as seeing them.
   useEffect(() => {

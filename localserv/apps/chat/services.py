@@ -666,6 +666,9 @@ def mark_read(conversation: Conversation, user: User) -> None:
     ConversationParticipantState.objects.update_or_create(
         conversation=conversation, user=user, defaults={"last_read_at": timezone.now()},
     )
+    from . import notify  # late import: notify -> call_consumers -> services
+
+    notify.notify_read(conversation, user)
 
 
 def unread_count(conversation: Conversation, user: User) -> int:

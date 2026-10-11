@@ -23,6 +23,7 @@ async def test_offer_rings_callee_inbox_without_a_call_socket():
 
     inbox, ok = await open_socket(callee, "/ws/calls/inbox/")
     assert ok
+    assert await inbox.receive_json_from() == {"type": "ready", "push": True}  # sent first, on every connect
     call, ok = await open_socket(caller, f"/ws/call/{conversation.id}/")
     assert ok
 
