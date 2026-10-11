@@ -50,9 +50,15 @@ class ConversationListCreateView(APIView):
         paginator = ChatPagination()
         paginator.page_size = page_size
         page = paginator.paginate_queryset(qs, request)
-        return paginator.get_paginated_response(
-            ConversationSerializer(page, many=True, context={"request": request}).data
-        )
+        ids = [c.id for c in page]
+        # Three queries for the whole page instead of ~6 per conversation.
+        context = {
+            "request": request,
+            "unread_map": services.unread_counts_for(request.user, ids),
+            "last_map": services.last_messages_for(ids),
+            "members_map": services.members_for([c.id for c in page if c.is_group]),
+        }
+        return paginator.get_paginated_response(ConversationSerializer(page, many=True, context=context).data)
 
     def post(self, request):
         serializer = StartConversationSerializer(data=request.data)
@@ -66,6 +72,18 @@ class ConversationListCreateView(APIView):
             ConversationSerializer(conversation, context={"request": request}).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class UnreadSummaryView(APIView):
+    """GET /api/chat/unread/ -> {"total": 3, "by_conversation": {"<id>": 2, ...}}
+
+    What the site-wide message notifier polls. It used to download the whole conversation list
+    (the heaviest endpoint) every few seconds per signed-in user just to read the unread counts."""
+
+    permission_classes = [IsAuthenticated, IsActiveAccount]
+
+    def get(self, request):
+        return Response(services.unread_summary(request.user))
 
 
 class ConversationDetailView(APIView):

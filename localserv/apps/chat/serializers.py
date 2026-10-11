@@ -135,11 +135,17 @@ class ConversationSerializer(serializers.ModelSerializer):
             return None
         return obj.other_participant_id(request.user)
 
+    def _members(self, obj):
+        preloaded = self.context.get("members_map")
+        if preloaded is not None and obj.id in preloaded:
+            return preloaded[obj.id]
+        return obj.members.select_related("user").order_by("created_at")
+
     def get_members(self, obj):
         if not obj.is_group:
             return []
         out = []
-        for m in obj.members.select_related("user").order_by("created_at"):
+        for m in self._members(obj):
             mood = services.member_mood(m)  # None once it has faded
             out.append({
                 "user_id": str(m.user_id), "role": m.role,
@@ -158,16 +164,24 @@ class ConversationSerializer(serializers.ModelSerializer):
 
     def get_my_role(self, obj):
         request = self.context.get("request")
-        return services.member_role(obj, request.user) if request else None
+        if not request:
+            return None
+        if self.context.get("members_map") is not None and obj.is_group:
+            return next((m.role for m in self._members(obj) if m.user_id == request.user.id), None)
+        return services.member_role(obj, request.user)
 
     def get_unread_count(self, obj):
         request = self.context.get("request")
         if not request:
             return 0
+        unread = self.context.get("unread_map")
+        if unread is not None:
+            return unread.get(obj.id, 0)
         return services.unread_count(obj, request.user)
 
     def get_last_message(self, obj):
-        last = obj.messages.order_by("-created_at").first()
+        last_map = self.context.get("last_map")
+        last = last_map.get(obj.id) if last_map is not None else obj.messages.order_by("-created_at").first()
         if last is None:
             return None
         attachment = None if last.is_deleted else services.get_message_attachment(last)

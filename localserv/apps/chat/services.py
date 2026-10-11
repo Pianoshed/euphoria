@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.core.cache import cache
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Count, F, OuterRef, Q, Subquery
 from django.utils import timezone
 
 from apps.accounts.models import ProfilePrivacy, User
@@ -390,6 +390,61 @@ def list_conversations(user, *, page_size=None):
     return qs, clamp_page_size(page_size)
 
 
+def unread_counts_for(user, conversation_ids) -> dict:
+    """{conversation_id: unread_count} for many conversations in ONE query (only those with unread > 0).
+    Same meaning as unread_count(): other people's, not-deleted messages newer than my last-read time."""
+    ids = list(conversation_ids)
+    if not ids:
+        return {}
+    last_read = Subquery(
+        ConversationParticipantState.objects.filter(conversation_id=OuterRef("conversation_id"), user=user)
+        .values("last_read_at")[:1]
+    )
+    rows = (
+        Message.objects.filter(conversation_id__in=ids, is_deleted=False).exclude(sender=user)
+        .annotate(_last_read=last_read)
+        .filter(Q(_last_read__isnull=True) | Q(created_at__gt=F("_last_read")))
+        .order_by().values("conversation_id").annotate(n=Count("id"))
+    )
+    return {r["conversation_id"]: r["n"] for r in rows}
+
+
+def last_messages_for(conversation_ids) -> dict:
+    """{conversation_id: newest Message (attachment preloaded)} in TWO queries, however many conversations."""
+    ids = list(conversation_ids)
+    if not ids:
+        return {}
+    newest = Subquery(Message.objects.filter(conversation=OuterRef("pk")).order_by("-created_at").values("id")[:1])
+    last_ids = [i for i in Conversation.objects.filter(id__in=ids).annotate(_last=newest).values_list("_last", flat=True) if i]
+    return {m.conversation_id: m for m in Message.objects.filter(id__in=last_ids).select_related("attachment")}
+
+
+def members_for(conversation_ids) -> dict:
+    """{conversation_id: [ConversationMember, ...]} (oldest first, user + profile preloaded) in ONE query."""
+    ids = list(conversation_ids)
+    out = {i: [] for i in ids}
+    if not ids:
+        return out
+    for m in (ConversationMember.objects.filter(conversation_id__in=ids)
+              .select_related("user__profile").order_by("created_at")):
+        out[m.conversation_id].append(m)
+    return out
+
+
+def unread_summary(user) -> dict:
+    """Cheap inbox badge data for the site-wide notifier: total unread + per-conversation counts.
+    Cached for a few seconds per user so several open tabs cost the database one query between them."""
+    key = f"chat:unread:{user.id}"
+    hit = cache.get(key)
+    if hit is not None:
+        return hit
+    qs, _ = list_conversations(user)
+    counts = unread_counts_for(user, list(qs.values_list("id", flat=True)))
+    data = {"total": sum(counts.values()), "by_conversation": {str(k): v for k, v in counts.items()}}
+    cache.set(key, data, timeout=5)
+    return data
+
+
 def get_conversation_for_user(conversation_id, user) -> Conversation | None:
     """Returns None for both "doesn't exist" and "exists but you're
     not a participant" -- callers surface both as 404, never 403, so
@@ -514,6 +569,44 @@ def _purge_attachment(message: Message) -> None:
         except OSError:
             pass  # file already gone (e.g. wiped by a redeploy); still drop the row
     attachment.delete()
+
+
+def _expire_attachment(attachment: MessageAttachment) -> None:
+    """Delete one attachment's file and row. The message text (if any) stays; a message that was ONLY
+    the media is soft-deleted, because the DB requires every live message to have a body or an attachment."""
+    message = attachment.message
+    now = timezone.now()
+    if attachment.file:
+        try:
+            attachment.file.delete(save=False)
+        except OSError:
+            pass  # already gone (e.g. wiped by a redeploy); still drop the row
+    with transaction.atomic():
+        attachment.delete()
+        message.has_attachment = False
+        fields = ["has_attachment", "updated_at"]  # updated_at makes polling clients pick the change up
+        if not message.body:
+            message.is_deleted, message.deleted_at = True, now
+            message.pinned_at = message.pinned_by = None
+            fields += ["is_deleted", "deleted_at", "pinned_at", "pinned_by"]
+        message.save(update_fields=fields)
+
+
+def purge_old_chat_media(*, days: int = 14, kinds=("video",), batch_size: int = 200) -> int:
+    """Delete chat media of the given kinds older than `days`. Returns how many were removed.
+    Batched and safe to re-run (run it from cron, see `manage.py purge_expired_media`)."""
+    cutoff = timezone.now() - timedelta(days=days)
+    total = 0
+    while True:
+        batch = list(
+            MessageAttachment.objects.filter(kind__in=list(kinds), created_at__lte=cutoff)
+            .select_related("message")[:batch_size]
+        )
+        if not batch:
+            return total
+        for attachment in batch:
+            _expire_attachment(attachment)
+        total += len(batch)
 
 
 def consume_view_once(message_id, user):

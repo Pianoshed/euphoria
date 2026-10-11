@@ -6,6 +6,7 @@ from .turn_views import IceServersView
 app_name = "chat"
 
 urlpatterns = [
+    path("unread/", views.UnreadSummaryView.as_view(), name="unread-summary"),
     path("conversations/", views.ConversationListCreateView.as_view(), name="conversation-list"),
     path("conversations/<uuid:conversation_id>/", views.ConversationDetailView.as_view(), name="conversation-detail"),
     path("conversations/<uuid:conversation_id>/members/", views.ConversationMembersView.as_view(), name="conversation-members"),

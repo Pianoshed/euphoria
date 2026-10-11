@@ -243,6 +243,7 @@ class MessageAttachment(BaseModel):
 
     class Meta(BaseModel.Meta):
         db_table = "chat_message_attachment"
+        indexes = [models.Index(fields=["kind", "created_at"], name="chat_att_kind_created_idx")]
 
     def __str__(self):
         return f"Attachment for message {self.message_id}"

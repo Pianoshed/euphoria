@@ -572,7 +572,20 @@ def upload_avatar(user: User, uploaded_file) -> Profile:
     return profile
 
 
+PRESENCE_WRITE_INTERVAL = 60  # seconds; must stay well under ONLINE_WINDOW (5 min)
+
+
 def touch_presence(user: User) -> None:
+    """Every open tab pings this. Writing the DB on every ping is the single most frequent write in the
+    app, so only write once per PRESENCE_WRITE_INTERVAL per user (the cache decides). If the cache is
+    unreachable, fall back to writing: presence must never break because Redis blinked."""
+    from django.core.cache import cache
+
+    try:
+        if not cache.add(f"presence:{user.pk}", 1, timeout=PRESENCE_WRITE_INTERVAL):
+            return
+    except Exception:
+        pass
     Profile.objects.filter(user=user).update(last_seen_at=timezone.now())
 
 

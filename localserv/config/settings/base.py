@@ -80,9 +80,35 @@ DATABASES = {
 }
 # Keep False: a withdrawal must commit its wallet debit BEFORE the bank transfer is sent.
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
-DATABASES["default"].setdefault("CONN_MAX_AGE", 60)
+
+# --- DB connection hygiene ----------------------------------------------------------------
+# DB_USE_PGBOUNCER=1 when DATABASE_URL points at PgBouncer (transaction pooling): the pooler then
+# owns connection reuse, so Django must not hold connections open itself (CONN_MAX_AGE=0) and must
+# not use server-side cursors (they do not survive transaction pooling).
+_USE_PGBOUNCER = env.bool("DB_USE_PGBOUNCER", default=False)
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=0 if _USE_PGBOUNCER else 60)
 # Drop dead connections (e.g. after a Render Postgres restart) instead of reusing them. Django 4.1+.
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
+if "postgresql" in DATABASES["default"].get("ENGINE", ""):
+    _db_opts = DATABASES["default"].setdefault("OPTIONS", {})
+    _db_opts.update({
+        "connect_timeout": 10,
+        # TCP keepalives: Render's network layer silently drops idle TCP flows. Without keepalives the
+        # next query on a pooled connection fails with "server closed the connection unexpectedly".
+        "keepalives": 1,
+        "keepalives_idle": 30,
+        "keepalives_interval": 10,
+        "keepalives_count": 5,
+    })
+    if _USE_PGBOUNCER:
+        DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+        # Startup `options` are rejected by PgBouncer transaction mode. Set the same timeouts per role instead:
+        #   ALTER ROLE <app_user> SET statement_timeout='30s';
+        #   ALTER ROLE <app_user> SET idle_in_transaction_session_timeout='30s';
+    else:
+        # A stuck query / a transaction left open (e.g. waiting on a slow bank API) is killed by Postgres
+        # instead of pinning a connection and its row locks forever.
+        _db_opts["options"] = "-c statement_timeout=30000 -c idle_in_transaction_session_timeout=30000"
 
 CACHES = {
     "default": {
@@ -202,6 +228,7 @@ CORS_ALLOW_CREDENTIALS = True
 GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID", default="")
 
 # --- Video calls (TURN) ---
+GROUP_CALL_MAX_PARTICIPANTS = env.int("GROUP_CALL_MAX_PARTICIPANTS", default=4)
 STUN_URL = env("STUN_URL", default="stun:stun.l.google.com:19302")
 TURN_URLS = env.list("TURN_URLS", default=[])
 TURN_SECRET = env("TURN_SECRET", default="")
@@ -259,6 +286,14 @@ PAYOUT_ACCOUNT_COOLDOWN_HOURS = env.int("PAYOUT_ACCOUNT_COOLDOWN_HOURS", default
 MAX_DAILY_WITHDRAWAL = env("MAX_DAILY_WITHDRAWAL", default="500000.00")
 MAX_PAYOUT_ACCOUNTS = env.int("MAX_PAYOUT_ACCOUNTS", default=5)
 GIFT_EXPIRY_DAYS = env.int("GIFT_EXPIRY_DAYS", default=7)
+
+# --- Data retention (enforced by `manage.py purge_expired_media`, run every 15 min) ---
+# Status posts (apps.square) live 24h. Rows AND files are deleted once they pass this age.
+STATUS_RETENTION_HOURS = env.int("STATUS_RETENTION_HOURS", default=24)
+# Chat media of these kinds is deleted this many days after it was sent. Chat has no "video" kind yet
+# (only "image" and "audio"); add "image" / "audio" here (comma-separated) to expire those as well.
+CHAT_MEDIA_RETENTION_DAYS = env.int("CHAT_MEDIA_RETENTION_DAYS", default=14)
+CHAT_MEDIA_PURGE_KINDS = env.list("CHAT_MEDIA_PURGE_KINDS", default=["video"])
 
 
 # --- Email ---

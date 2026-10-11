@@ -9,6 +9,7 @@ leaves. A call nobody closed (everyone's phone died) is closed by reap_stale().
 import logging
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -16,9 +17,9 @@ from .models import GroupCall, GroupCallParticipant
 
 logger = logging.getLogger("apps")
 
-# A mesh sends every person's video to every other person, so the cost grows fast. Eight is
-# comfortable on a phone; raise it only together with an SFU.
-MAX_PARTICIPANTS = 8
+# A mesh sends every person's video to every other person, so each phone uploads (n-1) streams.
+# Four is comfortable on a phone and mobile data; raise it (GROUP_CALL_MAX_PARTICIPANTS) only with an SFU.
+MAX_PARTICIPANTS = getattr(settings, "GROUP_CALL_MAX_PARTICIPANTS", 4)
 RING_SECONDS = 45
 MAX_GROUP_CALL_SECONDS = 6 * 3600
 
