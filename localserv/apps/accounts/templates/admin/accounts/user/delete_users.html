@@ -1,0 +1,19 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Delete users</h1>
+{% if deletable %}
+<p><strong>These {{ deletable|length }} account(s) will be permanently deleted</strong>, along with their promo credits, wallet records and chat messages. This cannot be undone:</p>
+<ul>{% for u in deletable %}<li>{{ u.username }} ({{ u.email }})</li>{% endfor %}</ul>
+{% endif %}
+{% if blocked %}
+<p>These will <strong>not</strong> be deleted:</p>
+<ul>{% for u, reasons in blocked %}<li>{{ u.username }} &mdash; {{ reasons|join:", " }}</li>{% endfor %}</ul>
+<p>Accounts with money or booking history are kept for the records. Set them to inactive instead.</p>
+{% endif %}
+<form method="post">{% csrf_token %}
+  {% for u in users %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ u.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  {% if deletable %}<input type="hidden" name="apply" value="1"><input type="submit" class="default" value="Yes, delete">{% endif %}
+  <a href="{% url 'admin:accounts_user_changelist' %}" class="button">Cancel</a>
+</form>
+{% endblock %}

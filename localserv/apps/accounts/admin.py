@@ -1,12 +1,19 @@
 import logging
+import uuid
 import time
 from datetime import timedelta
 
+from decimal import Decimal
+
+from django import forms
 from django.contrib import admin, messages
 from django.contrib.admin.utils import unquote
 from django.contrib.auth.admin import UserAdmin as DjangoUserAdmin
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
+from django.db.models import F as models_F, ProtectedError
 from django.http import Http404, HttpResponseNotAllowed, HttpResponseRedirect
+from django.template.response import TemplateResponse
 from django.urls import path, reverse
 from django.utils import timezone
 
@@ -24,12 +31,79 @@ VERIFY_DELAY_SECONDS = 0.5
 VERIFY_MIN_GAP = timedelta(minutes=10)
 
 
+class BulkPromoCreditForm(forms.Form):
+    """Asked once, then applied to every selected user."""
+    amount = forms.DecimalField(label="Amount per user (₦)", min_value=Decimal("0.01"), max_digits=12, decimal_places=2)
+    source = forms.CharField(
+        label="Reason / name", max_length=80, initial="Promotion",
+        help_text="Shown to each person, e.g. 'Welcome gift' or 'Apology credit'.",
+    )
+    expires_in_days = forms.IntegerField(
+        required=False, min_value=1, max_value=3650, label="Expires after (days)",
+        help_text="Leave empty for no expiry.",
+    )
+
+
+def _money_blockers(user):
+    """Reasons this account must not be hard-deleted (it has real-money or booking history)."""
+    from apps.bookings.models import Booking
+    from apps.economy.models import GiftTransaction, PlannerEarning, TransactionOrder
+    from apps.wallet.models import LedgerEntry, PaymentIntent, Wallet, WithdrawalRequest
+    from apps.common.constants import LedgerEntryType
+
+    reasons = []
+    if user.is_staff or user.is_superuser:
+        reasons.append("staff/superuser account")
+    if PaymentIntent.objects.filter(user=user).exists():
+        reasons.append("has payments")
+    if WithdrawalRequest.objects.filter(user=user).exists():
+        reasons.append("has withdrawals")
+    if Booking.objects.filter(customer=user).exists() or Booking.objects.filter(provider=user).exists():
+        reasons.append("has bookings")
+    if TransactionOrder.objects.filter(buyer=user).exists() or TransactionOrder.objects.filter(planner=user).exists():
+        reasons.append("has orders")
+    if PlannerEarning.objects.filter(planner=user).exists():
+        reasons.append("has earnings")
+    if GiftTransaction.objects.filter(sender=user).exists() or GiftTransaction.objects.filter(recipient=user).exists():
+        reasons.append("has gifts")
+    wallet = Wallet.objects.filter(user=user).first()
+    if wallet is not None:
+        if wallet.balance:
+            reasons.append("wallet has a balance")
+        promo_types = [LedgerEntryType.PROMOTIONAL_CREDIT, LedgerEntryType.PROMOTIONAL_DEBIT]
+        if LedgerEntry.objects.filter(wallet=wallet).exclude(entry_type__in=promo_types).exists():
+            reasons.append("has wallet transactions")
+    return reasons
+
+
+def _purge_and_delete_user(user):
+    """Remove the user's promo-only records and chat rows that PROTECT the user row, then the user."""
+    from apps.chat.models import CallLog, GroupCall, Message
+    from apps.wallet.models import LedgerEntry, PromoCode, PromoRedemption, PromotionalCredit, Wallet
+
+    with transaction.atomic():
+        for red in PromoRedemption.objects.filter(user=user).select_related("promo_code"):
+            PromoCode.objects.filter(pk=red.promo_code_id, redeemed_count__gt=0).update(
+                redeemed_count=models_F("redeemed_count") - 1
+            )
+        PromoRedemption.objects.filter(user=user).delete()
+        wallet = Wallet.objects.filter(user=user).first()
+        if wallet is not None:
+            LedgerEntry.objects.filter(wallet=wallet).delete()  # promo-only, checked by _money_blockers
+        PromotionalCredit.objects.filter(user=user).delete()
+        Message.objects.filter(sender=user).delete()
+        CallLog.objects.filter(caller=user).delete()
+        CallLog.objects.filter(callee=user).delete()
+        GroupCall.objects.filter(started_by=user).delete()
+        user.delete()
+
+
 @admin.register(User)
 class UserAdmin(DjangoUserAdmin):
     ordering = ["-created_at"]
     list_display = ["username", "email", "email_verified", "role", "status", "is_staff", "created_at"]
     list_filter = ["role", "status", "is_staff", "email_verified"]
-    actions = ["send_verification_email_action"]
+    actions = ["send_verification_email_action", "give_promo_credit_action", "delete_users_action"]
     search_fields = ["username", "email"]
     readonly_fields = ["id", "created_at", "updated_at", "last_login", "last_login_ip"]
 
@@ -152,6 +226,94 @@ class UserAdmin(DjangoUserAdmin):
             self.message_user(request, f"{failed} email(s) failed to send. Check the server log.", messages.ERROR)
         if not (sent or too_recent or already_verified or left_for_next_run or failed):
             self.message_user(request, "No unverified users in the selection.", messages.INFO)
+
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        # Django's stock bulk delete just errors out on these accounts (their history is protected);
+        # "delete_users_action" below replaces it.
+        actions.pop("delete_selected", None)
+        return actions
+
+    @admin.action(description="Give promotional credit to selected users", permissions=["change"])
+    def give_promo_credit_action(self, request, queryset):
+        from apps.wallet import services as wallet_services
+
+        form = BulkPromoCreditForm(request.POST if "apply" in request.POST else None)
+        if "apply" in request.POST and form.is_valid():
+            days = form.cleaned_data["expires_in_days"]
+            expires_at = timezone.now() + timedelta(days=days) if days else None
+            batch_id = str(uuid.uuid4())
+            ok = failed = 0
+            for user in queryset.filter(is_active=True):
+                try:
+                    wallet_services.grant_promotional_credit(
+                        user, amount=form.cleaned_data["amount"], expires_at=expires_at,
+                        source=form.cleaned_data["source"][:80],
+                        metadata={"granted_by": str(request.user.id), "via": "admin-bulk", "batch": batch_id},
+                    )
+                    ok += 1
+                except Exception:
+                    failed += 1
+                    logger.error("Bulk promo credit failed for user %s", user.pk, exc_info=True)
+            skipped = queryset.count() - ok - failed
+            if ok:
+                self.message_user(
+                    request, f"₦{form.cleaned_data['amount']} promotional credit given to {ok} user(s).", messages.SUCCESS
+                )
+            if skipped:
+                self.message_user(request, f"{skipped} inactive user(s) skipped.", messages.INFO)
+            if failed:
+                self.message_user(request, f"{failed} grant(s) failed. Check the server log.", messages.ERROR)
+            return None  # back to the list
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Give promotional credit",
+            "form": form,
+            "users": queryset,
+            "action_name": "give_promo_credit_action",
+            "opts": self.model._meta,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        }
+        return TemplateResponse(request, "admin/accounts/user/give_credit.html", context)
+
+    @admin.action(description="Delete selected users (accounts with no payments/bookings only)", permissions=["delete"])
+    def delete_users_action(self, request, queryset):
+        users = list(queryset)
+        deletable, blocked = [], []
+        for user in users:
+            reasons = _money_blockers(user)
+            if user.pk == request.user.pk:
+                reasons.insert(0, "this is you")
+            (blocked if reasons else deletable).append((user, reasons))
+
+        if "apply" in request.POST:
+            deleted = 0
+            for user, _ in deletable:
+                try:
+                    _purge_and_delete_user(user)
+                    deleted += 1
+                except ProtectedError:
+                    blocked.append((user, ["still referenced by protected records"]))
+                    logger.error("Admin delete blocked for user %s", user.pk, exc_info=True)
+            if deleted:
+                self.message_user(request, f"Deleted {deleted} user(s).", messages.SUCCESS)
+            for user, reasons in blocked:
+                self.message_user(request, f"Not deleted: {user.username} ({', '.join(reasons)}).", messages.WARNING)
+            return None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Delete users",
+            "deletable": [u for u, _ in deletable],
+            "blocked": blocked,
+            "users": queryset,
+            "action_name": "delete_users_action",
+            "opts": self.model._meta,
+            "action_checkbox_name": admin.helpers.ACTION_CHECKBOX_NAME,
+        }
+        return TemplateResponse(request, "admin/accounts/user/delete_users.html", context)
 
 
 class ReadOnlyAdminMixin:

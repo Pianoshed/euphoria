@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<h1>Give promotional credit to {{ users|length }} user{{ users|length|pluralize }}</h1>
+<p>Credit can only be spent on plans and is never withdrawable.</p>
+<form method="post">{% csrf_token %}
+  {% for u in users %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ u.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="{{ action_name }}">
+  <input type="hidden" name="apply" value="1">
+  {{ form.as_p }}
+  <p><strong>Users:</strong> {% for u in users %}{{ u.username }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+  <input type="submit" class="default" value="Give credit">
+  <a href="{% url 'admin:accounts_user_changelist' %}" class="button">Cancel</a>
+</form>
+{% endblock %}
