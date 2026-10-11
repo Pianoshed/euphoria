@@ -7,7 +7,7 @@ import { Icon } from './icons';
 import { formatNaira } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 
-const POLL_MS = 30_000;
+const POLL_MS = 60_000;
 const MAX_SHOWN = 3;
 const AUTO_HIDE_MS = 12_000;
 const seenKey = (uid) => `receipts-seen-v1:${uid}`;

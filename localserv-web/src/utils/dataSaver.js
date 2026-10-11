@@ -31,31 +31,53 @@ export function isDataSaverOn() {
   if (setting === 'off') return false;
   const c = typeof navigator !== 'undefined' ? (navigator.connection || navigator.mozConnection) : null;
   if (!c) return false;
-  return Boolean(c.saveData) || c.type === 'cellular' || /(^|-)2g$|3g/.test(c.effectiveType || '');
+  return Boolean(c.saveData) || c.type === 'cellular' || /(^|-)2g$|3g/.test(c.effectiveType || '')
+    || (typeof c.downlink === 'number' && c.downlink > 0 && c.downlink < 1.5) || (typeof c.rtt === 'number' && c.rtt > 450);
 }
 
-/** Camera/mic limits for a call. Saver: small picture, low frame rate. */
-export function callMediaConstraints(saver, facingMode, withVideo) {
+/**
+ * Camera/mic limits for a call. Capturing a smaller picture is what saves phone CPU and battery
+ * (every peer connection encodes its own copy), so the cap is applied at the camera, not only on the wire.
+ *   saver  : 320x240 @15
+ *   normal : 640x480 @24   (was 1280x720 @30: ~4x the pixels for no visible gain on a phone screen)
+ *   group  : 480x360 @15   (several people on a small screen; each extra person is another encode)
+ */
+export function callMediaConstraints(saver, facingMode, withVideo, group = false) {
+  let video = { facingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } };
+  if (saver) video = { facingMode, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 } };
+  else if (group) video = { facingMode, width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 20 } };
   return {
     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    video: !withVideo ? false
-      : saver
-        ? { facingMode, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 } }
-        : { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
+    video: withVideo ? video : false,
   };
 }
 
-/** Upper bounds on what is sent, in bits per second. Audio stays clear either way. */
-export function senderLimits(saver) {
-  return saver
-    ? { audio: 24_000, video: 150_000, maxFramerate: 15 }
-    : { audio: 48_000, video: 1_200_000, maxFramerate: 30 };
+/**
+ * Upper bounds on what is sent, in bits per second. Audio stays clear either way.
+ * `peers` = how many other people receive this stream. In a mesh every peer gets its own copy, so one
+ * fixed cap per connection multiplies: the cap is split so total upload stays near a fixed budget.
+ */
+export function senderLimits(saver, peers = 1) {
+  const n = Math.max(1, peers);
+  if (n === 1) {
+    return saver
+      ? { audio: 24_000, video: 150_000, maxFramerate: 15, scale: 1 }
+      : { audio: 32_000, video: 500_000, maxFramerate: 24, scale: 1 };
+  }
+  const budget = saver ? 250_000 : 600_000;          // total video upload for the whole group call
+  const video = Math.max(60_000, Math.floor(budget / n));
+  return {
+    audio: 24_000,
+    video,
+    maxFramerate: 15,
+    scale: video < 80_000 ? 4 : video < 160_000 ? 2 : 1, // small share of the budget: send a smaller picture too
+  };
 }
 
 /** Apply the limits to every sender of a live call. Safe to call again when the setting changes. */
-export async function applySenderLimits(pc, saver) {
+export async function applySenderLimits(pc, saver, { peers = 1 } = {}) {
   if (!pc) return;
-  const limits = senderLimits(saver);
+  const limits = senderLimits(saver, peers);
   await Promise.all(pc.getSenders().map(async (sender) => {
     if (!sender.track) return;
     try {
@@ -67,7 +89,8 @@ export async function applySenderLimits(pc, saver) {
       } else {
         enc.maxBitrate = limits.video;
         enc.maxFramerate = limits.maxFramerate;
-        if (saver) enc.scaleResolutionDownBy = 1;
+        enc.scaleResolutionDownBy = limits.scale;
+        params.degradationPreference = 'maintain-framerate'; // under load, shrink the picture before stuttering
       }
       await sender.setParameters(params);
     } catch { /* this browser does not allow it: the call still works at default quality */ }

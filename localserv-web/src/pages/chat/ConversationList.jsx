@@ -63,7 +63,7 @@ export default function ConversationList() {
   useEffect(() => {
     load().catch(setError);
     const tick = () => { if (document.visibilityState === 'visible') load().catch(() => {}); };
-    const timer = setInterval(tick, 15000);
+    const timer = setInterval(tick, 30000);
     document.addEventListener('visibilitychange', tick);
     window.addEventListener('focus', tick);
     window.addEventListener('online', tick);

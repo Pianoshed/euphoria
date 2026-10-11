@@ -14,7 +14,7 @@ const AlertsContext = createContext({ messages: 0, missedCalls: 0, setMessages: 
 export const useAlerts = () => useContext(AlertsContext);
 
 const MISSED = new Set(['no_answer', 'busy', 'cancelled']);
-const POLL_MS = 15_000;
+const POLL_MS = 60_000;
 const seenKey = (uid) => `calls-seen-v1:${uid}`;
 const readSeen = (uid) => { try { return Number(localStorage.getItem(seenKey(uid))) || 0; } catch { return 0; } };
 const writeSeen = (uid, t) => { try { localStorage.setItem(seenKey(uid), String(t)); } catch { /* private mode: in-memory only */ } };

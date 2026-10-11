@@ -401,7 +401,7 @@ export function useVideoCall({ conversationId, myId, enabled = true }) {
           failedOpens += 1;
           if (failedOpens >= MAX_FAILED_OPENS) return; // server keeps rejecting us; stop
         }
-        const delay = Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt);
+        const delay = Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt) * (0.5 + Math.random());
         attempt += 1;
         reconnectTimer = setTimeout(connect, delay);
       };

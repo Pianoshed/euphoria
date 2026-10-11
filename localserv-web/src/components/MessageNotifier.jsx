@@ -5,7 +5,7 @@ import * as chatApi from '../api/chat';
 import { armSound, notifyDevice, playMessageSound } from '../utils/notifySound';
 import { useAlerts } from '../context/AlertsContext';
 
-const POLL_MS = 10_000;
+const POLL_MS = 15_000;
 const COUNT_PREFIX = /^\(\d+\)\s*/;
 
 // "(2) Euphoria" in the tab title, so a message is visible even when the tab is in the background.
@@ -34,12 +34,11 @@ export default function MessageNotifier() {
   const check = useCallback(async () => {
     let data;
     try {
-      data = await chatApi.listConversations();
+      data = await chatApi.getUnreadSummary();
     } catch {
       return; // offline or signed out: try again on the next tick
     }
-    const list = data.results ?? data;
-    const next = new Map(list.map((c) => [String(c.id), c.unread_count || 0]));
+    const next = new Map(Object.entries(data?.by_conversation || {}).map(([id, n]) => [String(id), n || 0]));
     const prev = seenRef.current;
     seenRef.current = next;
 

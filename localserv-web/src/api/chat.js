@@ -2,6 +2,9 @@ import { apiFetch } from './client';
 
 export const listConversations = () => apiFetch('/api/chat/conversations/');
 
+// Just the unread counts (cheap). The site-wide notifier polls this instead of the whole conversation list.
+export const getUnreadSummary = () => apiFetch('/api/chat/unread/');
+
 export const startConversation = (targetUserId) =>
   apiFetch('/api/chat/conversations/', { method: 'POST', body: { target_user_id: targetUserId } });
 

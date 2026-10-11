@@ -1,0 +1,306 @@
+diff -ruN orig/api/chat.js src/api/chat.js
+--- orig/api/chat.js	2026-10-11 05:14:34.482872567 +0000
++++ src/api/chat.js	2026-10-11 05:14:34.490557779 +0000
+@@ -2,6 +2,9 @@
+ 
+ export const listConversations = () => apiFetch('/api/chat/conversations/');
+ 
++// Just the unread counts (cheap). The site-wide notifier polls this instead of the whole conversation list.
++export const getUnreadSummary = () => apiFetch('/api/chat/unread/');
++
+ export const startConversation = (targetUserId) =>
+   apiFetch('/api/chat/conversations/', { method: 'POST', body: { target_user_id: targetUserId } });
+ 
+diff -ruN orig/components/IncomingCallNotifier.jsx src/components/IncomingCallNotifier.jsx
+--- orig/components/IncomingCallNotifier.jsx	2026-10-11 05:14:34.483407745 +0000
++++ src/components/IncomingCallNotifier.jsx	2026-10-11 05:14:34.491020589 +0000
+@@ -116,7 +116,7 @@
+         if (socket === ws) socket = null;
+         socketOpenRef.current = false;
+         if (closed || NO_RETRY.has(e.code)) return;
+-        retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt));
++        retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random()));
+         attempt += 1;
+       };
+     };
+diff -ruN orig/components/MessageNotifier.jsx src/components/MessageNotifier.jsx
+--- orig/components/MessageNotifier.jsx	2026-10-11 05:14:34.483453536 +0000
++++ src/components/MessageNotifier.jsx	2026-10-11 05:14:34.491066675 +0000
+@@ -5,7 +5,7 @@
+ import { armSound, notifyDevice, playMessageSound } from '../utils/notifySound';
+ import { useAlerts } from '../context/AlertsContext';
+ 
+-const POLL_MS = 10_000;
++const POLL_MS = 15_000;
+ const COUNT_PREFIX = /^\(\d+\)\s*/;
+ 
+ // "(2) Euphoria" in the tab title, so a message is visible even when the tab is in the background.
+@@ -34,12 +34,11 @@
+   const check = useCallback(async () => {
+     let data;
+     try {
+-      data = await chatApi.listConversations();
++      data = await chatApi.getUnreadSummary();
+     } catch {
+       return; // offline or signed out: try again on the next tick
+     }
+-    const list = data.results ?? data;
+-    const next = new Map(list.map((c) => [String(c.id), c.unread_count || 0]));
++    const next = new Map(Object.entries(data?.by_conversation || {}).map(([id, n]) => [String(id), n || 0]));
+     const prev = seenRef.current;
+     seenRef.current = next;
+ 
+diff -ruN orig/components/ReceiptNotifier.jsx src/components/ReceiptNotifier.jsx
+--- orig/components/ReceiptNotifier.jsx	2026-10-11 05:14:34.483714963 +0000
++++ src/components/ReceiptNotifier.jsx	2026-10-11 05:14:34.491283068 +0000
+@@ -7,7 +7,7 @@
+ import { formatNaira } from '../utils/money';
+ import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
+ 
+-const POLL_MS = 30_000;
++const POLL_MS = 60_000;
+ const MAX_SHOWN = 3;
+ const AUTO_HIDE_MS = 12_000;
+ const seenKey = (uid) => `receipts-seen-v1:${uid}`;
+diff -ruN orig/context/AlertsContext.jsx src/context/AlertsContext.jsx
+--- orig/context/AlertsContext.jsx	2026-10-11 05:14:34.483976352 +0000
++++ src/context/AlertsContext.jsx	2026-10-11 05:14:34.491490519 +0000
+@@ -14,7 +14,7 @@
+ export const useAlerts = () => useContext(AlertsContext);
+ 
+ const MISSED = new Set(['no_answer', 'busy', 'cancelled']);
+-const POLL_MS = 15_000;
++const POLL_MS = 60_000;
+ const seenKey = (uid) => `calls-seen-v1:${uid}`;
+ const readSeen = (uid) => { try { return Number(localStorage.getItem(seenKey(uid))) || 0; } catch { return 0; } };
+ const writeSeen = (uid, t) => { try { localStorage.setItem(seenKey(uid), String(t)); } catch { /* private mode: in-memory only */ } };
+diff -ruN orig/hooks/useChatSocket.js src/hooks/useChatSocket.js
+--- orig/hooks/useChatSocket.js	2026-10-11 05:14:34.484109688 +0000
++++ src/hooks/useChatSocket.js	2026-10-11 05:14:34.491611489 +0000
+@@ -71,7 +71,7 @@
+           failedOpens += 1;
+           if (failedOpens >= MAX_FAILED_OPENS) return; // server is rejecting us; stop
+         }
+-        const delay = Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt);
++        const delay = Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random());
+         attempt += 1;
+         timer = setTimeout(open, delay);
+       };
+diff -ruN orig/hooks/useGroupCall.js src/hooks/useGroupCall.js
+--- orig/hooks/useGroupCall.js	2026-10-11 05:14:34.484241153 +0000
++++ src/hooks/useGroupCall.js	2026-10-11 05:14:34.491673101 +0000
+@@ -68,6 +68,8 @@
+     }
+     iceQueueRef.current.delete(userId);
+     setRemotes((r) => { if (!(userId in r)) return r; const { [userId]: _gone, ...rest } = r; return rest; });
++    const peers = pcsRef.current.size; // someone left: the rest can have a bigger share
++    pcsRef.current.forEach((p) => applySenderLimits(p, isDataSaverOn(), { peers }));
+   }, []);
+ 
+   const dropAllPeers = useCallback(() => {
+@@ -75,6 +77,12 @@
+     setRemotes({});
+   }, [dropPeer]);
+ 
++  // Split the upload budget across everyone we are connected to (see senderLimits in utils/dataSaver).
++  const reapplyLimits = useCallback(() => {
++    const peers = pcsRef.current.size;
++    pcsRef.current.forEach((pc) => applySenderLimits(pc, isDataSaverOn(), { peers }));
++  }, []);
++
+   const makePeer = useCallback(async (userId) => {
+     dropPeer(userId); // a fresh connection replaces any old one (e.g. that person rejoined)
+     const pc = new RTCPeerConnection({ iceServers: await loadIceServers() });
+@@ -88,11 +96,11 @@
+       if (pc.connectionState === 'failed') dropPeer(userId); // that one link failed; the rest of the call carries on
+     };
+     localRef.current?.getTracks().forEach((t) => pc.addTrack(t, localRef.current));
+-    await applySenderLimits(pc, isDataSaverOn());
+     pcsRef.current.set(userId, pc);
++    reapplyLimits(); // every connection's share of the upload budget depends on how many there are
+     setRemotes((r) => (userId in r ? r : { ...r, [userId]: null }));
+     return pc;
+-  }, [dropPeer, send]);
++  }, [dropPeer, reapplyLimits, send]);
+ 
+   const flushIce = useCallback(async (userId) => {
+     const pc = pcsRef.current.get(userId);
+@@ -155,7 +163,7 @@
+     setStatusBoth('joining');
+     try {
+       if (!(await waitForSignal())) throw new Error('signal');
+-      const stream = await navigator.mediaDevices.getUserMedia(callMediaConstraints(isDataSaverOn(), facing, !voice));
++      const stream = await navigator.mediaDevices.getUserMedia(callMediaConstraints(isDataSaverOn(), facing, !voice, true));
+       localRef.current = stream;
+       setLocalStream(stream);
+       wantJoinRef.current = modeRef.current;
+@@ -192,7 +200,7 @@
+     const nextFacing = facing === 'user' ? 'environment' : 'user';
+     try {
+       const fresh = await navigator.mediaDevices.getUserMedia({
+-        video: callMediaConstraints(isDataSaverOn(), nextFacing, true).video,
++        video: callMediaConstraints(isDataSaverOn(), nextFacing, true, true).video,
+       });
+       const track = fresh.getVideoTracks()[0];
+       track.enabled = camOn;
+@@ -211,8 +219,8 @@
+   }, [camOn, facing]);
+ 
+   useEffect(() => subscribeDataSaver(() => {
+-    pcsRef.current.forEach((pc) => applySenderLimits(pc, isDataSaverOn()));
+-  }), []);
++    reapplyLimits();
++  }), [reapplyLimits]);
+ 
+   /* ---------- signals from the server ---------- */
+ 
+@@ -324,7 +332,7 @@
+             return;
+           }
+         }
+-        reconnectTimer = setTimeout(connect, Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt));
++        reconnectTimer = setTimeout(connect, Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt) * (0.5 + Math.random()));
+         attempt += 1;
+       };
+     };
+diff -ruN orig/hooks/usePresenceHeartbeat.js src/hooks/usePresenceHeartbeat.js
+--- orig/hooks/usePresenceHeartbeat.js	2026-10-11 05:14:34.484288651 +0000
++++ src/hooks/usePresenceHeartbeat.js	2026-10-11 05:14:34.491719310 +0000
+@@ -1,16 +1,16 @@
+-import { useEffect } from 'react';
+-import * as accountsApi from '../api/accounts';
+-import { useAuth } from '../context/AuthContext';
+-
+-const HEARTBEAT_INTERVAL_MS = 30 * 1000;
+-
+-export function usePresenceHeartbeat() {
+-  const { user } = useAuth();
+-
+-  useEffect(() => {
+-    if (!user) return undefined;
+-    accountsApi.sendPresencePing().catch(() => {});
+-    const interval = setInterval(() => accountsApi.sendPresencePing().catch(() => {}), HEARTBEAT_INTERVAL_MS);
+-    return () => clearInterval(interval);
+-  }, [user]);
++import { useEffect } from 'react';
++import * as accountsApi from '../api/accounts';
++import { useAuth } from '../context/AuthContext';
++
++const HEARTBEAT_INTERVAL_MS = 60 * 1000; // server only records once a minute; 'online' lasts 5 min
++
++export function usePresenceHeartbeat() {
++  const { user } = useAuth();
++
++  useEffect(() => {
++    if (!user) return undefined;
++    accountsApi.sendPresencePing().catch(() => {});
++    const interval = setInterval(() => accountsApi.sendPresencePing().catch(() => {}), HEARTBEAT_INTERVAL_MS);
++    return () => clearInterval(interval);
++  }, [user]);
+ }
+\ No newline at end of file
+diff -ruN orig/hooks/useVideoCall.js src/hooks/useVideoCall.js
+--- orig/hooks/useVideoCall.js	2026-10-11 05:14:34.484328948 +0000
++++ src/hooks/useVideoCall.js	2026-10-11 05:14:34.491757941 +0000
+@@ -401,7 +401,7 @@
+           failedOpens += 1;
+           if (failedOpens >= MAX_FAILED_OPENS) return; // server keeps rejecting us; stop
+         }
+-        const delay = Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt);
++        const delay = Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt) * (0.5 + Math.random());
+         attempt += 1;
+         reconnectTimer = setTimeout(connect, delay);
+       };
+diff -ruN orig/pages/chat/ConversationList.jsx src/pages/chat/ConversationList.jsx
+--- orig/pages/chat/ConversationList.jsx	2026-10-11 05:14:34.485260714 +0000
++++ src/pages/chat/ConversationList.jsx	2026-10-11 05:14:34.492588571 +0000
+@@ -63,7 +63,7 @@
+   useEffect(() => {
+     load().catch(setError);
+     const tick = () => { if (document.visibilityState === 'visible') load().catch(() => {}); };
+-    const timer = setInterval(tick, 15000);
++    const timer = setInterval(tick, 30000);
+     document.addEventListener('visibilitychange', tick);
+     window.addEventListener('focus', tick);
+     window.addEventListener('online', tick);
+diff -ruN orig/utils/dataSaver.js src/utils/dataSaver.js
+--- orig/utils/dataSaver.js	2026-10-11 05:14:34.488135803 +0000
++++ src/utils/dataSaver.js	2026-10-11 05:14:34.494838628 +0000
+@@ -31,31 +31,53 @@
+   if (setting === 'off') return false;
+   const c = typeof navigator !== 'undefined' ? (navigator.connection || navigator.mozConnection) : null;
+   if (!c) return false;
+-  return Boolean(c.saveData) || c.type === 'cellular' || /(^|-)2g$|3g/.test(c.effectiveType || '');
++  return Boolean(c.saveData) || c.type === 'cellular' || /(^|-)2g$|3g/.test(c.effectiveType || '')
++    || (typeof c.downlink === 'number' && c.downlink > 0 && c.downlink < 1.5) || (typeof c.rtt === 'number' && c.rtt > 450);
+ }
+ 
+-/** Camera/mic limits for a call. Saver: small picture, low frame rate. */
+-export function callMediaConstraints(saver, facingMode, withVideo) {
++/**
++ * Camera/mic limits for a call. Capturing a smaller picture is what saves phone CPU and battery
++ * (every peer connection encodes its own copy), so the cap is applied at the camera, not only on the wire.
++ *   saver  : 320x240 @15
++ *   normal : 640x480 @24   (was 1280x720 @30: ~4x the pixels for no visible gain on a phone screen)
++ *   group  : 480x360 @15   (several people on a small screen; each extra person is another encode)
++ */
++export function callMediaConstraints(saver, facingMode, withVideo, group = false) {
++  let video = { facingMode, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24, max: 30 } };
++  if (saver) video = { facingMode, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 } };
++  else if (group) video = { facingMode, width: { ideal: 480 }, height: { ideal: 360 }, frameRate: { ideal: 15, max: 20 } };
+   return {
+     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+-    video: !withVideo ? false
+-      : saver
+-        ? { facingMode, width: { ideal: 320 }, height: { ideal: 240 }, frameRate: { ideal: 15, max: 15 } }
+-        : { facingMode, width: { ideal: 1280 }, height: { ideal: 720 } },
++    video: withVideo ? video : false,
+   };
+ }
+ 
+-/** Upper bounds on what is sent, in bits per second. Audio stays clear either way. */
+-export function senderLimits(saver) {
+-  return saver
+-    ? { audio: 24_000, video: 150_000, maxFramerate: 15 }
+-    : { audio: 48_000, video: 1_200_000, maxFramerate: 30 };
++/**
++ * Upper bounds on what is sent, in bits per second. Audio stays clear either way.
++ * `peers` = how many other people receive this stream. In a mesh every peer gets its own copy, so one
++ * fixed cap per connection multiplies: the cap is split so total upload stays near a fixed budget.
++ */
++export function senderLimits(saver, peers = 1) {
++  const n = Math.max(1, peers);
++  if (n === 1) {
++    return saver
++      ? { audio: 24_000, video: 150_000, maxFramerate: 15, scale: 1 }
++      : { audio: 32_000, video: 500_000, maxFramerate: 24, scale: 1 };
++  }
++  const budget = saver ? 250_000 : 600_000;          // total video upload for the whole group call
++  const video = Math.max(60_000, Math.floor(budget / n));
++  return {
++    audio: 24_000,
++    video,
++    maxFramerate: 15,
++    scale: video < 80_000 ? 4 : video < 160_000 ? 2 : 1, // small share of the budget: send a smaller picture too
++  };
+ }
+ 
+ /** Apply the limits to every sender of a live call. Safe to call again when the setting changes. */
+-export async function applySenderLimits(pc, saver) {
++export async function applySenderLimits(pc, saver, { peers = 1 } = {}) {
+   if (!pc) return;
+-  const limits = senderLimits(saver);
++  const limits = senderLimits(saver, peers);
+   await Promise.all(pc.getSenders().map(async (sender) => {
+     if (!sender.track) return;
+     try {
+@@ -67,7 +89,8 @@
+       } else {
+         enc.maxBitrate = limits.video;
+         enc.maxFramerate = limits.maxFramerate;
+-        if (saver) enc.scaleResolutionDownBy = 1;
++        enc.scaleResolutionDownBy = limits.scale;
++        params.degradationPreference = 'maintain-framerate'; // under load, shrink the picture before stuttering
+       }
+       await sender.setParameters(params);
+     } catch { /* this browser does not allow it: the call still works at default quality */ }

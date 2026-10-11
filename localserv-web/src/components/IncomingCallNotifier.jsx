@@ -116,7 +116,7 @@ export default function IncomingCallNotifier() {
         if (socket === ws) socket = null;
         socketOpenRef.current = false;
         if (closed || NO_RETRY.has(e.code)) return;
-        retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt));
+        retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random()));
         attempt += 1;
       };
     };

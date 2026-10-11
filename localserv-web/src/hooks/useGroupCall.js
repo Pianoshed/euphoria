@@ -68,12 +68,20 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
     }
     iceQueueRef.current.delete(userId);
     setRemotes((r) => { if (!(userId in r)) return r; const { [userId]: _gone, ...rest } = r; return rest; });
+    const peers = pcsRef.current.size; // someone left: the rest can have a bigger share
+    pcsRef.current.forEach((p) => applySenderLimits(p, isDataSaverOn(), { peers }));
   }, []);
 
   const dropAllPeers = useCallback(() => {
     [...pcsRef.current.keys()].forEach(dropPeer);
     setRemotes({});
   }, [dropPeer]);
+
+  // Split the upload budget across everyone we are connected to (see senderLimits in utils/dataSaver).
+  const reapplyLimits = useCallback(() => {
+    const peers = pcsRef.current.size;
+    pcsRef.current.forEach((pc) => applySenderLimits(pc, isDataSaverOn(), { peers }));
+  }, []);
 
   const makePeer = useCallback(async (userId) => {
     dropPeer(userId); // a fresh connection replaces any old one (e.g. that person rejoined)
@@ -88,11 +96,11 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
       if (pc.connectionState === 'failed') dropPeer(userId); // that one link failed; the rest of the call carries on
     };
     localRef.current?.getTracks().forEach((t) => pc.addTrack(t, localRef.current));
-    await applySenderLimits(pc, isDataSaverOn());
     pcsRef.current.set(userId, pc);
+    reapplyLimits(); // every connection's share of the upload budget depends on how many there are
     setRemotes((r) => (userId in r ? r : { ...r, [userId]: null }));
     return pc;
-  }, [dropPeer, send]);
+  }, [dropPeer, reapplyLimits, send]);
 
   const flushIce = useCallback(async (userId) => {
     const pc = pcsRef.current.get(userId);
@@ -155,7 +163,7 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
     setStatusBoth('joining');
     try {
       if (!(await waitForSignal())) throw new Error('signal');
-      const stream = await navigator.mediaDevices.getUserMedia(callMediaConstraints(isDataSaverOn(), facing, !voice));
+      const stream = await navigator.mediaDevices.getUserMedia(callMediaConstraints(isDataSaverOn(), facing, !voice, true));
       localRef.current = stream;
       setLocalStream(stream);
       wantJoinRef.current = modeRef.current;
@@ -192,7 +200,7 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
     const nextFacing = facing === 'user' ? 'environment' : 'user';
     try {
       const fresh = await navigator.mediaDevices.getUserMedia({
-        video: callMediaConstraints(isDataSaverOn(), nextFacing, true).video,
+        video: callMediaConstraints(isDataSaverOn(), nextFacing, true, true).video,
       });
       const track = fresh.getVideoTracks()[0];
       track.enabled = camOn;
@@ -211,8 +219,8 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
   }, [camOn, facing]);
 
   useEffect(() => subscribeDataSaver(() => {
-    pcsRef.current.forEach((pc) => applySenderLimits(pc, isDataSaverOn()));
-  }), []);
+    reapplyLimits();
+  }), [reapplyLimits]);
 
   /* ---------- signals from the server ---------- */
 
@@ -324,7 +332,7 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
             return;
           }
         }
-        reconnectTimer = setTimeout(connect, Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt));
+        reconnectTimer = setTimeout(connect, Math.min(MAX_RECONNECT_MS, MIN_RECONNECT_MS * 2 ** attempt) * (0.5 + Math.random()));
         attempt += 1;
       };
     };

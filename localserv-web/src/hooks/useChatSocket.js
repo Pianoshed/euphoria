@@ -71,7 +71,7 @@ export function useChatSocket(conversationId, { onMessage, onOpen } = {}) {
           failedOpens += 1;
           if (failedOpens >= MAX_FAILED_OPENS) return; // server is rejecting us; stop
         }
-        const delay = Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt);
+        const delay = Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random());
         attempt += 1;
         timer = setTimeout(open, delay);
       };
