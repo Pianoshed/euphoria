@@ -51,7 +51,10 @@ body[data-backdrop='scene']::before {
 .hf-ico, .hf-av {
   display: grid; place-items: center; flex: none; width: 34px; height: 34px; border-radius: 50%;
   background: color-mix(in srgb, var(--acc) 18%, transparent); color: color-mix(in srgb, var(--acc) 78%, var(--hf-ink));
+  overflow: hidden; line-height: 0; aspect-ratio: 1;
 }
+/* icons always sit centred inside the circle and can never be larger than it */
+.hf-ico > svg, .hf-av > svg { display: block; flex: none; max-width: 62%; max-height: 62%; }
 .hf-av { font-family: var(--hf-display); font-weight: 800; font-size: .92rem; color: var(--hf-ink); }
 .hf-link { display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; font-size: .8rem; font-weight: 800; color: var(--hf-muted); cursor: pointer; white-space: nowrap; }
 .hf-link:hover { color: var(--hf-ink); }
