@@ -2,6 +2,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 
 // Fonts, hosted by the app itself (no request to Google Fonts, so they load on any network)
+import '@fontsource/fredoka/600.css';
+import '@fontsource/fredoka/700.css';
 import '@fontsource/sora/600.css';
 import '@fontsource/sora/700.css';
 import '@fontsource/sora/800.css';

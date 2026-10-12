@@ -73,7 +73,7 @@ export default function SideNav() {
 
   return (
     <aside className="sidenav" aria-label="Main">
-      <BrandLogo className="sn-brand-logo" />
+      <BrandLogo image className="sn-brand-logo" />
 
       <nav className="sn-links">
         {items.map((it) => (

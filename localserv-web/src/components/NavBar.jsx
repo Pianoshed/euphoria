@@ -89,7 +89,7 @@ export function NavBar() {
   return (
     <header className="navbar">
       <div className="navbar__inner">
-        <BrandLogo className="navbar__brand-logo" onClick={closeMenu} />
+        <BrandLogo image className="navbar__brand-logo" onClick={closeMenu} />
 
         {user ? (
           <>

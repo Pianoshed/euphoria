@@ -1,13 +1,21 @@
-/* Hiclr wordmark (text). Size comes from --logo-h, set by whichever place uses it. */
+/* HiClr logo. Size comes from --logo-h, set by whichever place uses it. */
 .brand-logo-link { display: inline-flex; align-items: center; text-decoration: none; }
-.brand-logo { --logo-h: 44px; display: inline-flex; flex-direction: column; justify-content: center; line-height: 1; color: var(--color-ink, #24213A); }
-.brand-logo__name { font-family: 'Sora', system-ui, sans-serif; font-weight: 800; letter-spacing: -0.02em; font-size: calc(var(--logo-h) * 0.62); }
+.brand-logo { --logo-h: 44px; display: inline-flex; align-items: center; line-height: 1; color: var(--color-ink, #24213A); }
+.brand-logo__text { display: inline-flex; flex-direction: column; justify-content: center; }
+.brand-logo__name { font-family: 'Fredoka', 'Baloo 2', 'Nunito', ui-rounded, system-ui, sans-serif; font-weight: 700; letter-spacing: .01em; font-size: calc(var(--logo-h) * 0.7); }
 .brand-logo__tagline { font-family: 'Manrope', system-ui, sans-serif; font-weight: 600; opacity: .75; margin-top: .3em; font-size: calc(var(--logo-h) * 0.24); letter-spacing: .01em; }
 
+/* Text colour */
 :root[data-theme='dark'] .brand-logo--auto, :root[data-theme='dark'] .brand-logo--light { color: #FFF8F1; }
 .brand-logo--dark, :root[data-theme='dark'] .brand-logo--dark { color: #fff; }
 
-/* Sizes in the places the old brand lived */
+/* Image logo: shown on the light theme; the dark theme uses the text wordmark instead */
+.brand-logo__img { height: var(--logo-h); width: auto; aspect-ratio: 876 / 444; object-fit: contain; display: block; }
+.brand-logo--has-img .brand-logo__text { display: none; }
+:root[data-theme='dark'] .brand-logo--has-img .brand-logo__img { display: none; }
+:root[data-theme='dark'] .brand-logo--has-img .brand-logo__text { display: inline-flex; }
+
+/* Sizes in the places the brand lives */
 .navbar__brand-logo { --logo-h: 40px; }
 .sn-brand-logo { --logo-h: 52px; margin: 0 0 4px 4px; }
 .e-nav__logo-mark { --logo-h: 52px; }
