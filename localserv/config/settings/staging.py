@@ -37,7 +37,11 @@ if not RESEND_API_KEY:
 LOGGING["formatters"]["json"] = {"()": "apps.common.log_formatters.JSONFormatter"}
 LOGGING["handlers"]["console"]["formatter"] = "json"
 
+# Keep base.py's S3/R2 default when MEDIA_S3_BUCKET is set; otherwise fall back to local disk.
+_default_storage = globals().get("STORAGES", {}).get(
+    "default", {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+)
 STORAGES = {
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "default": _default_storage,
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
