@@ -32,21 +32,33 @@ export default function BrandLogo({ animated = false, surface = 'auto', to = '/'
     const saveData = navigator.connection?.saveData === true;
     if (alreadyPlayed || reducedMotion() || saveData) return undefined; // keep the static logo, never fetch the video
 
+    let cancelled = false; // StrictMode / re-render cleanup: a play() we aborted ourselves must not count as "played"
     const onPlaying = () => setPhase('playing');
-    const done = () => {
+    const finish = (markPlayed) => {
+      if (cancelled) return;
       setPhase('static');
+      if (!markPlayed) return;
       try { sessionStorage.setItem(PLAYED_KEY, '1'); } catch { /* ignore */ }
     };
+    const onEnded = () => finish(true);
+    const onError = () => { console.warn('[BrandLogo] intro video failed to load:', video.currentSrc || BRAND_ASSETS.introMp4); finish(false); };
     video.addEventListener('playing', onPlaying);
-    video.addEventListener('ended', done);
-    video.addEventListener('error', done);
+    video.addEventListener('ended', onEnded);
+    video.addEventListener('error', onError);
     video.load();
     const attempt = video.play();
-    if (attempt?.catch) attempt.catch(done); // autoplay refused: stay on the static logo
+    if (attempt?.catch) {
+      attempt.catch((err) => {
+        if (err?.name === 'AbortError') return; // interrupted by our own load()/cleanup, not a real failure
+        console.warn('[BrandLogo] intro video could not play:', err?.name || err);
+        finish(false); // autoplay refused / unsupported: stay on the static logo, try again next visit
+      });
+    }
     return () => {
+      cancelled = true;
       video.removeEventListener('playing', onPlaying);
-      video.removeEventListener('ended', done);
-      video.removeEventListener('error', done);
+      video.removeEventListener('ended', onEnded);
+      video.removeEventListener('error', onError);
     };
   }, [animated, surface]);
 
@@ -68,7 +80,7 @@ export default function BrandLogo({ animated = false, surface = 'auto', to = '/'
           width="876" height="444"
         >
           <source src={BRAND_ASSETS.introWebm} type="video/webm" />
-          <source src={BRAND_ASSETS.introMp4} type="video/mp4" />
+          <source src={BRAND_ASSETS.introMp4} type="video/mp4" onError={() => console.warn('[BrandLogo] missing/invalid', BRAND_ASSETS.introMp4)} />
         </video>
       )}
     </span>
