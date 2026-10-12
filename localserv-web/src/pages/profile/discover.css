@@ -99,6 +99,7 @@
 .dp-field {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(144px, 1fr));
+  grid-auto-rows: 1fr;          /* every bubble in a row is the same height */
   gap: 16px 14px;
   justify-items: center;
   padding: 8px 0 56px;
@@ -110,11 +111,11 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   width: 100%;
   max-width: 164px;
-  height: 140px;              /* fixed: the bubble never grows with the info inside it */
-  padding: 14px 18px;          /* side room so the curved edge never clips a name */
+  min-height: 146px;          /* room for photo + name + tag stacked, never overlapping */
+  padding: 16px 20px 14px;     /* side room so the curved edge never clips a name */
   border: 0;
   border-radius: var(--shape);
   background: var(--tint);
@@ -137,17 +138,17 @@
   flex: none;
   display: grid;
   place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: var(--avatar-shape);
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
   background: rgba(255, 255, 255, 0.7);
   font-family: var(--dp-display);
-  font-size: 1.3rem;
+  font-size: 1.25rem;
   font-weight: 700;
-  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9);   /* ring sits outside, photo stays whole inside the circle */
 }
-.dp-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.dp-avatar--lg { width: 84px; height: 84px; font-size: 2rem; }
+.dp-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.dp-avatar--lg { width: 96px; height: 96px; font-size: 2.2rem; }
 
 .dp-online {
   position: absolute;
@@ -162,8 +163,10 @@
 
 .dp-card__name {
   max-width: 100%;
+  flex: none;
+  margin-top: 2px;
   font-family: var(--dp-display);
-  font-size: 0.95rem;
+  font-size: 0.82rem;
   line-height: 1.2;
   /* full name on up to two lines instead of one clipped line */
   display: -webkit-box;
@@ -179,7 +182,8 @@
 .dp-card__role {
   padding: 1px 9px;
   border-radius: 999px;
-  font-size: 0.7rem;
+  flex: none;
+  font-size: 0.66rem;
   font-weight: 700;
   white-space: nowrap;
   border: 1.5px solid currentColor;
@@ -306,10 +310,10 @@
 
   /* people: small bubbles, two or three to a row; the popup becomes a bottom sheet */
   .dp-field { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; padding-bottom: 32px; }
-  .dp-card { height: 124px; padding: 10px 8px; gap: 4px; }
-  .dp-avatar { width: 46px; height: 46px; font-size: 1.15rem; }
-  .dp-card__name { font-size: 0.9rem; }
-  .dp-card__role { font-size: 0.66rem; padding: 0 7px; }
+  .dp-card { min-height: 128px; padding: 12px 8px 10px; gap: 6px; }
+  .dp-avatar { width: 44px; height: 44px; font-size: 1.1rem; }
+  .dp-card__name { font-size: 0.78rem; }
+  .dp-card__role { font-size: 0.62rem; padding: 0 7px; }
 
   .dp-pop { place-items: end center; padding: 0; }
   .dp-pop__card {
@@ -384,11 +388,11 @@
 
   /* people: keep the bubble shapes, just smaller, three to a row */
   .dp-field { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 6px; padding: 0 0 12px; }
-  .dp-card { max-width: 128px; height: 108px; padding: 8px 10px; gap: 2px; box-shadow: 0 8px 14px -12px rgba(31, 29, 61, 0.55); }
-  .dp-avatar { width: 36px; height: 36px; font-size: 0.95rem; }
+  .dp-card { max-width: 128px; min-height: 112px; padding: 10px 10px 8px; gap: 5px; box-shadow: 0 8px 14px -12px rgba(31, 29, 61, 0.55); }
+  .dp-avatar { width: 38px; height: 38px; font-size: 1rem; box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.9); }
   .dp-online { width: 10px; height: 10px; box-shadow: 0 0 0 2px #fff; }
-  .dp-card__name { font-size: 0.78rem; line-height: 1.15; }
-  .dp-card__role { font-size: 0.6rem; padding: 0 6px; border-width: 1px; }
+  .dp-card__name { font-size: 0.7rem; line-height: 1.15; }
+  .dp-card__role { font-size: 0.56rem; padding: 0 6px; border-width: 1px; }
 
   .dp-pop__card { border-radius: 24px 24px 0 0; }
 }

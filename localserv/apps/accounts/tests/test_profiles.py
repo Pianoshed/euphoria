@@ -297,3 +297,58 @@ def test_presence_ping_updates_last_seen(client):
     assert resp.status_code == 200
     profile = Profile.objects.get(user__email="user@example.com")
     assert profile.last_seen_at is not None
+
+
+# --- Discovery: seeded random pages -----------------------------------------------------
+
+def _random_page(client, **params):
+    params.setdefault("ordering", "random")
+    params.setdefault("seed", "k3j9x1ab")
+    resp = client.get(reverse("accounts:discover"), params)
+    assert resp.status_code == 200
+    return resp.json()
+
+
+def test_discover_random_pages_have_no_repeats_and_cover_everyone(client):
+    for i in range(7):
+        make_verified_user(email=f"r{i}@example.com", username=f"randuser{i}")
+    make_verified_user(email="rviewer@example.com", username="rviewer")
+    login(client, "rviewer@example.com")
+
+    seen, page = [], 1
+    while page:
+        body = _random_page(client, page=page, page_size=3)
+        assert len(body["results"]) <= 3
+        seen += [r["id"] for r in body["results"]]
+        page = body["next"]
+
+    assert len(seen) == len(set(seen)) == 7  # every other user exactly once, wrap-around included
+
+
+def test_discover_random_same_seed_same_order(client):
+    for i in range(5):
+        make_verified_user(email=f"s{i}@example.com", username=f"seeduser{i}")
+    make_verified_user(email="sviewer@example.com", username="sviewer")
+    login(client, "sviewer@example.com")
+
+    first = [r["id"] for r in _random_page(client, page_size=5)["results"]]
+    again = [r["id"] for r in _random_page(client, page_size=5)["results"]]
+    assert first == again
+
+
+def test_discover_random_still_hides_blocked_and_self(client):
+    a = make_verified_user(email="ra@example.com", username="randblocked")
+    make_verified_user(email="rb@example.com", username="randother")
+    viewer = make_verified_user(email="rv@example.com", username="randviewer")
+    login(client, "rv@example.com")
+    client.post(reverse("accounts:blocks"), {"user_id": str(a.id)}, content_type="application/json")
+
+    ids = [r["id"] for r in _random_page(client, page_size=48)["results"]]
+    assert str(a.id) not in ids and str(viewer.id) not in ids
+
+
+def test_discover_random_caps_page_size_and_has_no_count(client):
+    make_verified_user(email="cv@example.com", username="capviewer")
+    login(client, "cv@example.com")
+    body = _random_page(client, page_size=100)
+    assert "count" not in body and body["next"] is None

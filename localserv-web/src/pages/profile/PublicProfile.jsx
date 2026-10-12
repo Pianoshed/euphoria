@@ -22,10 +22,21 @@ export default function PublicProfile() {
   const [error, setError] = useState(null);
   const [blocked, setBlocked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [zoom, setZoom] = useState(false);
 
   useEffect(() => {
     accountsApi.getPublicProfile(id).then(setProfile).catch(setError);
   }, [id]);
+
+  // Photo lightbox: Esc closes it and the page behind it stops scrolling.
+  useEffect(() => {
+    if (!zoom) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') setZoom(false); };
+    document.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [zoom]);
 
   const handleMessage = async () => {
     setBusy(true);
@@ -64,12 +75,17 @@ export default function PublicProfile() {
   return (
     <div className="page pf" style={{ '--tint': look.tint.bg, '--ring': look.tint.ring, '--avatar-shape': look.avatarShape }}>
       <header className="pf-hero" {...ageGlowProps(profile.age_range)}>
-        <span className="pf-avatar">
-          {profile.avatar
-            ? <img src={profile.avatar} alt="" />
-            : <span aria-hidden="true">{name[0].toUpperCase()}</span>}
+        <div className="pf-cover" aria-hidden="true" />
+        <div className="pf-avatar-wrap">
+          {profile.avatar ? (
+            <button type="button" className="pf-avatar pf-avatar--btn" aria-label={`View ${name}'s photo full size`} aria-haspopup="dialog" onClick={() => setZoom(true)}>
+              <img src={profile.avatar} alt="" />
+            </button>
+          ) : (
+            <span className="pf-avatar"><span aria-hidden="true">{name[0].toUpperCase()}</span></span>
+          )}
           {profile.online && <span className="pf-online" role="img" aria-label="Online" />}
-        </span>
+        </div>
         <h1 className="pf-name">{name}</h1>
         <p className="pf-handle">@{profile.username}</p>
         <p className="pf-chips">
@@ -98,6 +114,12 @@ export default function PublicProfile() {
         <p className="text-sm muted" style={{ marginTop: 'var(--space-2)' }}>
           Blocking hides you from each other. You can unblock within 6 months; after that the block is permanent.
         </p>
+      )}
+      {zoom && profile.avatar && (
+        <div className="pf-lightbox" role="dialog" aria-modal="true" aria-label={`${name}'s photo`} onClick={() => setZoom(false)}>
+          <button type="button" className="pf-lightbox__close" aria-label="Close photo" autoFocus onClick={() => setZoom(false)}>×</button>
+          <img className="pf-lightbox__img" src={profile.avatar} alt={`${name}'s photo`} onClick={(e) => e.stopPropagation()} />
+        </div>
       )}
       {blocked && <p className="alert alert--info" style={{ marginTop: 'var(--space-4)' }}>You've blocked this user. You can undo it for 6 months from <Link to="/profile/blocked">Blocked people</Link>.</p>}
     </div>

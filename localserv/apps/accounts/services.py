@@ -1,8 +1,10 @@
 from datetime import timedelta
 
 
+import hashlib
 import logging
 import re
+import uuid
 from django.db import IntegrityError, transaction
 from google.auth.exceptions import GoogleAuthError
 from django.contrib.auth import authenticate
@@ -671,7 +673,9 @@ def _is_online(profile: Profile) -> bool:
 DISCOVER_ALLOWED_ORDERING = ["created_at", "-created_at", "username", "-username"]
 
 
-def list_discoverable_profiles(viewer, *, role: str | None, query: str, ordering: str | None, page_size):
+def _discoverable_users(viewer, *, role: str | None, query: str):
+    """Every visibility rule for Find people lives here (status, role, self, blocks both ways,
+    privacy, search), so the classic and the seeded-random listings can never drift apart."""
     qs = User.objects.select_related("profile", "privacy").filter(status=AccountStatus.ACTIVE)
 
     if role:
@@ -699,11 +703,62 @@ def list_discoverable_profiles(viewer, *, role: str | None, query: str, ordering
             | Q(profile__display_name__icontains=query)
             | Q(profile__general_location__icontains=query)
         )
+    return qs
 
+
+def list_discoverable_profiles(viewer, *, role: str | None, query: str, ordering: str | None, page_size):
+    qs = _discoverable_users(viewer, role=role, query=query)
     order = whitelist_ordering(ordering, DISCOVER_ALLOWED_ORDERING, default="-created_at")
     qs = qs.order_by(order)
-
     return qs, clamp_page_size(page_size)
+
+
+DISCOVER_RANDOM_MAX_PAGES = 40   # nobody pages through a million people; Shuffle / search covers the rest
+DISCOVER_RANDOM_DEFAULT_SIZE = 24
+DISCOVER_RANDOM_MAX_SIZE = 48
+
+
+def list_discoverable_random_page(viewer, *, role, query, seed, page, page_size):
+    """One page of a random-but-stable ordering, without ORDER BY random().
+
+    User ids are UUID4s (uniformly random), so the seed picks a start point in id order and the
+    list is read from there, wrapping around the end of the id range. Same seed -> same start ->
+    no repeats between pages, and it is an index range scan at 1,000 or 1,000,000 users.
+
+    Returns (rows, next_page_or_None). No COUNT(*) on purpose.
+    """
+    try:
+        page = max(1, int(page or 1))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        size = min(max(1, int(page_size or DISCOVER_RANDOM_DEFAULT_SIZE)), DISCOVER_RANDOM_MAX_SIZE)
+    except (TypeError, ValueError):
+        size = DISCOVER_RANDOM_DEFAULT_SIZE
+    page = min(page, DISCOVER_RANDOM_MAX_PAGES)
+
+    qs = _discoverable_users(viewer, role=role, query=query)
+    start = uuid.UUID(hashlib.md5((seed or "").encode()).hexdigest())
+    offset = (page - 1) * size
+    needed = size + 1  # one extra row tells us whether another page exists
+
+    at_or_after = qs.filter(id__gte=start).order_by("id")
+    rows = list(at_or_after[offset: offset + needed])
+
+    if len(rows) < needed:
+        # The window runs past the end of the id range: continue from the lowest ids.
+        if rows:
+            wrap_offset = 0
+        else:
+            # Offset is already beyond the ids >= start. Count them (bounded by offset) so
+            # the wrapped part continues where the sequence left off instead of repeating.
+            after_count = len(at_or_after.values_list("id", flat=True)[:offset])
+            wrap_offset = offset - after_count
+        before = qs.filter(id__lt=start).order_by("id")
+        rows += list(before[wrap_offset: wrap_offset + needed - len(rows)])
+
+    has_more = len(rows) > size and page < DISCOVER_RANDOM_MAX_PAGES
+    return rows[:size], (page + 1 if has_more else None)
 
 
 # --- Blocking --------------------------------------------------------------------

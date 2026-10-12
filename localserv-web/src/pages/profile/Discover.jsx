@@ -23,8 +23,11 @@ const ROLE_FILTERS = [
   { value: 'CUSTOMER', label: ROLE_META.CUSTOMER.plural },
 ];
 
-// Bubbles per page: fewer on phones so the page stays short.
+// Bubbles per page. The server decides the real size (DRF PAGE_SIZE); this is only a request hint.
 const pageSizeNow = () => (window.matchMedia('(max-width: 720px)').matches ? 12 : 24);
+// One random order per visit: every page of a visit follows the same order (no repeats between pages),
+// and a new visit or "Shuffle" gives a different order, so different people get seen by different visitors.
+const newSeed = () => Math.random().toString(36).slice(2, 10);
 const startsOpen = () => !window.matchMedia('(max-width: 720px)').matches;
 
 /* ------------------------------------------------------------------ */
@@ -46,11 +49,24 @@ export default function Discover() {
   const roleParam = params.get('role');
   const role = ROLE_FILTERS.some((f) => f.value === roleParam) ? roleParam : '';
   const [results, setResults] = useState(null);
+  const [hasNext, setHasNext] = useState(false);
+  const [total, setTotal] = useState(null);
   const [error, setError] = useState(null);
   const [shuffle, setShuffle] = useState(0);
+  const [seed, setSeed] = useState(newSeed);
   const [notesOpen] = useState(startsOpen);
-  const [page, setPage] = useState(0);
   const [pageSize] = useState(pageSizeNow);
+  // Typing waits 300 ms before asking the server, so a million-row search isn't hit on every keystroke.
+  const [dq, setDq] = useState(q);
+  useEffect(() => {
+    const t = setTimeout(() => setDq(q), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+  // The page number belongs to one search+filter+shuffle; changing any of them starts again at page 1.
+  const queryKey = `${dq}|${role}|${seed}`;
+  const [pageState, setPageState] = useState({ key: queryKey, page: 1 });
+  const page = pageState.key === queryKey ? pageState.page : 1;
+  const setPage = (n) => setPageState({ key: queryKey, page: n });
   const [openId, setOpenId] = useState(null);
   const [messaging, setMessaging] = useState(false);
   const [popupError, setPopupError] = useState(null);
@@ -61,12 +77,24 @@ export default function Discover() {
     let cancelled = false;
     setResults(null);
     setError(null);
-    setPage(0);
-    accountsApi.discoverProfiles({ role: role || undefined, q })
-      .then((data) => { if (!cancelled) setResults(data.results); })
+    accountsApi.discoverProfiles({
+      role: role || undefined,
+      q: dq || undefined,
+      page,
+      page_size: pageSize,
+      ordering: 'random',
+      seed,
+    })
+      .then((data) => {
+        if (cancelled) return;
+        const list = Array.isArray(data) ? data : (data.results || []);
+        setResults(list);
+        setHasNext(Array.isArray(data) ? false : Boolean(data.next));
+        setTotal(Array.isArray(data) ? list.length : (data.count ?? null));
+      })
       .catch((err) => { if (!cancelled) setError(err); });
     return () => { cancelled = true; };
-  }, [q, role]);
+  }, [dq, role, page, seed, pageSize]);
 
   const pickRole = (value) => {
     const next = new URLSearchParams(params);
@@ -74,9 +102,9 @@ export default function Discover() {
     setParams(next, { replace: true });
   };
 
-  const pages = Math.max(1, Math.ceil((results?.length || 0) / pageSize));
-  const safePage = Math.min(page, pages - 1);
-  const shownPeople = useMemo(() => (results || []).slice(safePage * pageSize, (safePage + 1) * pageSize), [results, safePage, pageSize]);
+  // The server already sends exactly one page, so there is nothing to slice here.
+  const shownPeople = results || [];
+  const goPage = (n) => { setPage(n); window.scrollTo({ top: 0, behavior: 'smooth' }); };
 
   const looks = useMemo(
     () => Object.fromEntries((results || []).map((p) => [p.id, lookFor(p.id, shuffle)])),
@@ -140,7 +168,7 @@ export default function Discover() {
           <p className="dp-sub">Pick a face, say hi, and plan something together.</p>
         </div>
         <div className="dp-actions">
-          <button type="button" className="dp-btn" onClick={() => setShuffle((s) => s + 1)} disabled={!results?.length}>
+          <button type="button" className="dp-btn" onClick={() => { setShuffle((n) => n + 1); setSeed(newSeed()); }} disabled={!results?.length}>
             Shuffle
           </button>
           <button type="button" className="dp-btn dp-btn--solid" onClick={surpriseMe} disabled={!results?.length}>
@@ -216,7 +244,11 @@ export default function Discover() {
       {!results && <ChillLoader kind="people" />}
       {results?.length === 0 && <div className="empty-state"><p>No one found. Try a different name, area or filter.</p></div>}
 
-      {results?.length > 0 && <p className="dp-count">{results.length} {results.length === 1 ? 'person' : 'people'}</p>}
+      {results?.length > 0 && (
+        <p className="dp-count">
+          {total != null ? `${total.toLocaleString()} ${total === 1 ? 'person' : 'people'}` : `Showing ${results.length} people`}
+        </p>
+      )}
       <div className="dp-field">
         {shownPeople.map((p) => {
           const look = looks[p.id];
@@ -246,16 +278,11 @@ export default function Discover() {
         })}
       </div>
 
-      {pages > 1 && (
+      {(page > 1 || hasNext) && (
         <nav className="dp-pager" aria-label="More people">
-          <button type="button" className="dp-pager__btn" disabled={safePage === 0}
-            onClick={() => { setPage(safePage - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Previous page">‹</button>
-          <span className="dp-pager__dots" aria-hidden="true">
-            {Array.from({ length: Math.min(pages, 7) }, (_, i) => <i key={i} className={i === Math.min(safePage, 6) ? 'on' : ''} />)}
-          </span>
-          <span className="dp-pager__txt" role="status">Page {safePage + 1} of {pages}</span>
-          <button type="button" className="dp-pager__btn" disabled={safePage >= pages - 1}
-            onClick={() => { setPage(safePage + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }} aria-label="Next page">›</button>
+          <button type="button" className="dp-pager__btn" disabled={page === 1} onClick={() => goPage(page - 1)} aria-label="Previous page">‹</button>
+          <span className="dp-pager__txt" role="status">Page {page}</span>
+          <button type="button" className="dp-pager__btn" disabled={!hasNext} onClick={() => goPage(page + 1)} aria-label="Next page">›</button>
         </nav>
       )}
 

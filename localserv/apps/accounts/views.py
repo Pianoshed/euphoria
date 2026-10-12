@@ -335,6 +335,20 @@ class DiscoverProfilesView(APIView):
         query_serializer = DiscoverQuerySerializer(data=request.query_params)
         query_serializer.is_valid(raise_exception=True)
         params = query_serializer.validated_data
+        viewer = request.user if request.user.is_authenticated else None
+
+        if params.get("ordering") == "random":
+            # Seeded random, one page at a time, no COUNT(*): see services.list_discoverable_random_page.
+            rows, next_page = services.list_discoverable_random_page(
+                viewer,
+                role=params.get("role"),
+                query=params.get("q", ""),
+                seed=params.get("seed", ""),
+                page=params.get("page"),
+                page_size=params.get("page_size"),
+            )
+            results = [services.get_public_profile(viewer, u) for u in rows]
+            return Response({"results": [r for r in results if r is not None], "next": next_page})
 
         qs, page_size = services.list_discoverable_profiles(
             request.user if request.user.is_authenticated else None,

@@ -6,16 +6,26 @@
 
 .pf-hero {
   position: relative; display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center;
-  padding: 30px 20px 22px; border-radius: 32px; background: var(--tint);
+  padding: 0 20px 22px; border-radius: 32px; background: var(--tint);
   box-shadow: 0 22px 40px -28px rgba(31, 29, 61, 0.6), 0 0 0 3px var(--ring);
 }
-.pf-avatar {
-  position: relative; display: grid; place-items: center; width: 104px; height: 104px;
-  border-radius: var(--avatar-shape); background: rgba(255, 255, 255, 0.72);
-  font-size: 2.4rem; font-weight: 700; box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.9);
+/* Cover band: the photo circle sits half on the band, half on the card body. */
+.pf-cover {
+  align-self: stretch; height: 112px; margin: 0 -20px; border-radius: 32px 32px 0 0;
+  background: linear-gradient(135deg, var(--ring), rgba(255, 255, 255, 0.35)), var(--tint);
 }
-.pf-avatar img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
-.pf-online { position: absolute; right: 4px; bottom: 4px; width: 16px; height: 16px; border-radius: 50%; background: #1f9d6a; box-shadow: 0 0 0 3px #fff; }
+.pf-avatar-wrap { position: relative; margin-top: -60px; width: 120px; height: 120px; flex: none; z-index: 1; }
+.pf-avatar {
+  position: relative; display: grid; place-items: center; width: 100%; height: 100%; padding: 0;
+  border: 5px solid #fff; border-radius: 50%; overflow: hidden; background: #fff;
+  font-size: 2.6rem; font-weight: 700; color: var(--pf-ink);
+  box-shadow: 0 10px 24px -10px rgba(31, 29, 61, 0.55);
+}
+.pf-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.pf-avatar--btn { cursor: zoom-in; font: inherit; transition: transform 160ms; }
+.pf-avatar--btn:hover { transform: scale(1.03); }
+.pf-avatar--btn:active { transform: scale(0.98); }
+.pf-online { position: absolute; right: 8px; bottom: 8px; width: 18px; height: 18px; border-radius: 50%; background: #1f9d6a; box-shadow: 0 0 0 3px #fff; }
 .pf-name { margin: 8px 0 0; font-size: clamp(1.4rem, 5vw, 1.9rem); line-height: 1.15; overflow-wrap: anywhere; }
 .pf-handle { margin: 0; font-size: 0.9rem; font-weight: 600; color: var(--pf-muted); overflow-wrap: anywhere; }
 .pf-chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 8px 0 0; }
@@ -48,11 +58,30 @@
 .pf-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .pf-actions .btn { min-height: 44px; border-radius: 999px; }
 
+/* Full-size photo viewer */
+.pf-lightbox {
+  position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 16px;
+  background: rgba(15, 12, 35, 0.88); cursor: zoom-out; animation: pf-fade 150ms ease-out;
+}
+.pf-lightbox__img {
+  display: block; max-width: min(96vw, 900px); max-height: 88vh; width: auto; height: auto;
+  object-fit: contain; border-radius: 18px; box-shadow: 0 30px 80px -20px rgba(0, 0, 0, 0.7); cursor: default;
+}
+.pf-lightbox__close {
+  position: absolute; top: calc(12px + env(safe-area-inset-top, 0px)); right: 14px; width: 42px; height: 42px;
+  border: 0; border-radius: 50%; background: rgba(255, 255, 255, 0.92); color: #1f1d3d; font-size: 1.6rem; line-height: 1; cursor: pointer;
+}
+@keyframes pf-fade { from { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pf-lightbox { animation: none; } .pf-avatar--btn { transition: none; } }
+
+.pf-lightbox button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 .page.pf button:focus-visible, .page.pf a:focus-visible { outline: 3px solid rgba(61, 59, 148, 0.6); outline-offset: 3px; }
 
 @media (max-width: 720px) {
   .page.pf { padding-top: 0; }
-  .pf-hero { margin: 0 -16px; padding: 26px 18px 20px; border-radius: 0 0 32px 32px; }
-  .pf-avatar { width: 88px; height: 88px; font-size: 2rem; }
+  .pf-hero { margin: 0 -16px; padding: 0 18px 20px; border-radius: 0 0 32px 32px; }
+  .pf-cover { height: 96px; margin: 0 -18px; border-radius: 0; }
+  .pf-avatar-wrap { width: 104px; height: 104px; margin-top: -52px; }
+  .pf-avatar { font-size: 2.2rem; }
   .pf-actions .pf-btn, .pf-actions .btn { flex: 1; }
 }

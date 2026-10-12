@@ -99,6 +99,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         indexes = [
             models.Index(fields=["status"]),
             models.Index(fields=["role"]),
+            # Find people (seeded random pages): filter by status/role, walk ids in order.
+            models.Index(fields=["status", "role", "id"], name="acct_user_discover_idx"),
         ]
 
     def __str__(self):
