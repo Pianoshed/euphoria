@@ -1,6 +1,9 @@
 import logging
 import time
 
+from django.conf import settings
+from django.contrib.sessions.middleware import SessionMiddleware
+
 logger = logging.getLogger("apps")
 
 SENSITIVE_KEYS = {
@@ -74,3 +77,24 @@ class SecurityHeadersMiddleware:
             if request.method != "OPTIONS" and not response.has_header("Cache-Control"):
                 response["Cache-Control"] = "no-store"
         return response
+
+
+class SlidingSessionMiddleware(SessionMiddleware):
+    """Idle-timeout that slides WITHOUT a database write on every request.
+
+    `SESSION_SAVE_EVERY_REQUEST = True` re-saved the session row (and cookie) on every single request,
+    including every presence ping. Here the session is re-saved only when it has not been refreshed
+    for SESSION_REFRESH_SECONDS (default: 60 s, at most a quarter of the idle timeout). Result: the same
+    "logged out after N idle minutes, kept alive while the tab is open" behaviour, with the effective
+    idle time between (N - 1) and N minutes, and roughly 1 session write per user per minute instead of
+    one per request.
+    """
+
+    def process_response(self, request, response):
+        session = getattr(request, "session", None)
+        if session is not None and session.accessed and not session.modified and not session.is_empty():
+            refresh = min(getattr(settings, "SESSION_REFRESH_SECONDS", 60), settings.SESSION_COOKIE_AGE // 4)
+            now = int(time.time())
+            if now - session.get("_refreshed_at", 0) >= refresh:
+                session["_refreshed_at"] = now  # marks the session modified -> saved with a fresh expiry + cookie
+        return super().process_response(request, response)

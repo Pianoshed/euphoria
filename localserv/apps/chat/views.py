@@ -9,6 +9,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
 from rest_framework.views import APIView
+from apps.common.throttles import ReadRateThrottle, WriteScopedRateThrottle
 
 from apps.common.permissions import IsActiveAccount
 
@@ -42,7 +43,8 @@ def _get_conversation_or_404(conversation_id, user):
 
 class ConversationListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsActiveAccount]
-    throttle_classes = [ScopedRateThrottle]
+    # Writes keep the tight chat_write limit; reads (list polling) get their own generous cap.
+    throttle_classes = [WriteScopedRateThrottle, ReadRateThrottle]
     throttle_scope = "chat_write"
 
     def get(self, request):
@@ -140,7 +142,8 @@ class ConversationMemberDetailView(APIView):
 
 class ConversationMessageListCreateView(APIView):
     permission_classes = [IsAuthenticated, IsActiveAccount]
-    throttle_classes = [ScopedRateThrottle]
+    # Sending keeps the `messages` limit; polling for new messages no longer eats into it.
+    throttle_classes = [WriteScopedRateThrottle, ReadRateThrottle]
     throttle_scope = "messages"
 
     def get(self, request, conversation_id):

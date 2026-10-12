@@ -23,6 +23,13 @@ MAX_PARTICIPANTS = getattr(settings, "GROUP_CALL_MAX_PARTICIPANTS", 4)
 RING_SECONDS = 45
 MAX_GROUP_CALL_SECONDS = 6 * 3600
 
+# A connected participant's socket refreshes its seat every HEARTBEAT_SECONDS. If the server dies mid-call
+# (a deploy, a crash) nobody runs the "leave" code, so those seats would stay taken -- and with a cap of 4
+# the group would show "full" for up to MAX_GROUP_CALL_SECONDS. A seat nobody has refreshed for three beats
+# is a ghost and is freed the next time someone looks at / joins the call.
+HEARTBEAT_SECONDS = getattr(settings, "GROUP_CALL_HEARTBEAT_SECONDS", 30)
+SEAT_STALE_SECONDS = HEARTBEAT_SECONDS * 3
+
 
 class CallFull(Exception):
     """The call already has MAX_PARTICIPANTS people on it."""
@@ -45,6 +52,22 @@ def reap_stale(conversation_id=None) -> int:
     return closed
 
 
+def reap_ghost_seats(call) -> int:
+    """Free seats whose socket stopped refreshing them; close the call if that leaves it empty."""
+    now = timezone.now()
+    freed = _open_seats(call).filter(updated_at__lt=now - timedelta(seconds=SEAT_STALE_SECONDS)).update(left_at=now, updated_at=now)
+    if freed and call.ended_at is None and not _open_seats(call).exists():
+        _close(call, now)
+    return freed
+
+
+def touch_seat(call_id, user_id) -> bool:
+    """Heartbeat from a connected participant. False means the seat no longer exists (it was freed)."""
+    return GroupCallParticipant.objects.filter(call_id=call_id, user_id=user_id, left_at__isnull=True).update(
+        updated_at=timezone.now()
+    ) > 0
+
+
 def _close(call, now=None):
     now = now or timezone.now()
     call.ended_at = now
@@ -64,6 +87,10 @@ def join(conversation, user, mode):
     with transaction.atomic():
         reap_stale(conversation.id)
         call = GroupCall.objects.select_for_update().filter(conversation=conversation, ended_at__isnull=True).first()
+        if call is not None:
+            reap_ghost_seats(call)
+            if call.ended_at is not None:  # every seat was a ghost: that call is over, start a fresh one
+                call = None
         created = False
         if call is None:
             try:
@@ -109,6 +136,9 @@ def active_call(conversation_id):
     reap_stale(conversation_id)
     call = GroupCall.objects.filter(conversation_id=conversation_id, ended_at__isnull=True).first()
     if call is None:
+        return None
+    reap_ghost_seats(call)
+    if call.ended_at is not None:
         return None
     ids = [str(u) for u in _open_seats(call).values_list("user_id", flat=True)]
     if not ids:

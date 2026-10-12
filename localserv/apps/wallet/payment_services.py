@@ -49,8 +49,17 @@ BANK_CODE = re.compile(r"^\d{2,6}$")
 # synchronous "auto-completed" response at initiation (there being no
 # real gateway to redirect to in dev/test).
 # ---------------------------------------------------------------------------
-@transaction.atomic
+# A deposit start that never got a provider reference and is older than this was abandoned
+# (the process died between creating the row and hearing back from the provider). Two provider
+# calls of PROVIDER_TIMEOUT each is the longest a live request can legitimately take.
+ABANDONED_START_AFTER = timedelta(seconds=90)
+
+
 def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentIntent:
+    """Creates the PENDING intent, THEN calls the provider, with no database transaction open
+    during the network call (a slow gateway used to hold a Postgres connection for up to 30 s per
+    request). If the provider call fails the placeholder row is removed, so the same idempotency
+    key can be retried exactly as before."""
     if amount < MIN_DEPOSIT:
         raise DomainError(f"Minimum deposit is {MIN_DEPOSIT}.")
 
@@ -58,11 +67,18 @@ def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentI
     if existing is not None:
         if existing.user_id != user.id:
             raise DomainError("Invalid idempotency key.")
-        return existing  # replaying the same request returns the same intent, never double-charges
+        if not _start_incomplete(existing):
+            return existing  # replaying the same request returns the same intent, never double-charges
+        if timezone.now() - existing.created_at < ABANDONED_START_AFTER:
+            raise DomainError("This payment is still being set up. Please retry in a few seconds.")
+        # Abandoned start: nothing was ever sent to the provider for it, so it is safe to remove.
+        PaymentIntent.objects.filter(
+            pk=existing.pk, provider_reference="", status=PaymentIntentStatus.PENDING
+        ).delete()
 
     provider = get_provider()
     try:
-        with transaction.atomic():  # savepoint: a unique-key clash must not poison the outer transaction
+        with transaction.atomic():  # commits the placeholder immediately
             intent = PaymentIntent.objects.create(
                 user=user, amount=amount, provider=provider.name,
                 status=PaymentIntentStatus.PENDING, idempotency_key=idempotency_key,
@@ -72,8 +88,18 @@ def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentI
         existing = PaymentIntent.objects.get(idempotency_key=idempotency_key)
         if existing.user_id != user.id:
             raise DomainError("Invalid idempotency key.")
+        if _start_incomplete(existing):
+            raise DomainError("This payment is still being set up. Please retry in a few seconds.")
         return existing
-    result = provider.initiate_deposit(user=user, amount=amount, idempotency_key=idempotency_key)
+
+    try:
+        result = provider.initiate_deposit(user=user, amount=amount, idempotency_key=idempotency_key)
+    except Exception:
+        # Nothing was started with the provider: drop the placeholder so the key can be retried.
+        PaymentIntent.objects.filter(
+            pk=intent.pk, provider_reference="", status=PaymentIntentStatus.PENDING
+        ).delete()
+        raise
     intent.provider_reference = result["provider_reference"]
     intent.checkout_url = result.get("client_action", {}).get("checkout_url", "")
     intent.save(update_fields=["provider_reference", "checkout_url", "updated_at"])
@@ -86,6 +112,10 @@ def initiate_deposit(user, *, amount: Decimal, idempotency_key: str) -> PaymentI
         intent = _complete_deposit(intent, provider_event_id=f"auto_{intent.id}")
 
     return intent
+
+
+def _start_incomplete(intent: PaymentIntent) -> bool:
+    return intent.status == PaymentIntentStatus.PENDING and not intent.provider_reference
 
 
 @transaction.atomic
@@ -117,7 +147,6 @@ def _complete_deposit(intent: PaymentIntent, *, provider_event_id: str, allow_fa
     return intent
 
 
-@transaction.atomic
 def process_deposit_webhook(*, headers, body: bytes) -> PaymentIntent | None:
     provider = get_provider()
     if not provider.verify_webhook_signature(headers=headers, body=body):
@@ -127,6 +156,26 @@ def process_deposit_webhook(*, headers, body: bytes) -> PaymentIntent | None:
     if event_data["status"] == "ignored":
         return None  # a valid, signed event we don't act on (acknowledged with 200 by the view)
 
+    if event_data["status"] == "succeeded":
+        # Ask the provider to confirm BEFORE taking any row lock or opening a transaction: this is a
+        # network call (up to 15 s) and used to run while holding a Postgres connection and the
+        # PaymentIntent row lock. The decision to credit is still made under the lock below.
+        try:
+            peek = PaymentIntent.objects.get(provider_reference=event_data["provider_reference"])
+        except PaymentIntent.DoesNotExist as exc:
+            raise DomainError("Unknown payment intent.") from exc
+        if (event_data["amount"] >= peek.amount
+                and peek.status in (PaymentIntentStatus.PENDING, PaymentIntentStatus.FAILED)):
+            confirmed = provider.verify_deposit(transaction_reference=event_data["event_id"])
+            if confirmed is not None and (not confirmed["paid"] or confirmed["amount"] < peek.amount):
+                logger.error("Deposit webhook for intent %s not confirmed by provider: %s", peek.id, confirmed)
+                raise DomainError("Payment could not be confirmed with the provider.")
+
+    return _apply_deposit_webhook(event_data)
+
+
+@transaction.atomic
+def _apply_deposit_webhook(event_data: dict) -> PaymentIntent | None:
     try:
         intent = PaymentIntent.objects.select_for_update().get(
             provider_reference=event_data["provider_reference"]
@@ -146,11 +195,6 @@ def process_deposit_webhook(*, headers, body: bytes) -> PaymentIntent | None:
                 )
                 intent.save(update_fields=["status", "failure_reason", "updated_at"])
             return intent
-        if intent.status in (PaymentIntentStatus.PENDING, PaymentIntentStatus.FAILED):
-            confirmed = provider.verify_deposit(transaction_reference=event_data["event_id"])
-            if confirmed is not None and (not confirmed["paid"] or confirmed["amount"] < intent.amount):
-                logger.error("Deposit webhook for intent %s not confirmed by provider: %s", intent.id, confirmed)
-                raise DomainError("Payment could not be confirmed with the provider.")
         return _complete_deposit(intent, provider_event_id=event_data["event_id"], allow_failed=True)
 
     if event_data["status"] == "failed":

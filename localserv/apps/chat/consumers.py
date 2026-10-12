@@ -7,6 +7,7 @@ from apps.common.constants import AccountStatus
 from apps.common.exceptions import DomainError
 
 from . import services
+from .account_guard import AccountCloseMixin
 
 # Close codes (4000-4999 is the app-defined range per the WS spec):
 CLOSE_UNAUTHENTICATED = 4401
@@ -15,7 +16,7 @@ CLOSE_NOT_FOUND_OR_NOT_PARTICIPANT = 4404
 CLOSE_BLOCKED = 4403
 
 
-class ChatConsumer(AsyncJsonWebsocketConsumer):
+class ChatConsumer(AccountCloseMixin, AsyncJsonWebsocketConsumer):
     """
     Connection sequence (Sec 8 of the master spec, applied literally):
     authenticate -> verify participant -> verify account status ->
@@ -56,13 +57,18 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         self._last_typing = 0.0
         self.group_name = f"conversation_{conversation.id}"
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.join_account_group(user)
         await self.accept()
 
     async def disconnect(self, code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.leave_account_group()
 
     async def receive_json(self, content, **kwargs):
+        if not isinstance(content, dict):
+            await self.send_json({"type": "error", "detail": "Unknown message type."})
+            return
         if content.get("type") == "typing":
             # "X is typing...": relayed to everyone else, at most once every 1.5 s per person.
             now = time.monotonic()
@@ -82,13 +88,13 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
             return
 
         try:
-            message = await self._send_message(self.conversation, self.user, content.get("body", ""))
+            # One thread hop (and one DB connection checkout) for save + serialize, not two.
+            payload = await self._send_and_serialize(self.conversation, self.user, content.get("body", ""))
         except DomainError as exc:
             detail = getattr(exc, "detail", str(exc))
             await self.send_json({"type": "error", "detail": str(detail)})
             return
 
-        payload = await self._serialize_for_broadcast(self.conversation, message)
         await self.channel_layer.group_send(self.group_name, {"type": "chat.message", "payload": payload})
 
     async def chat_message(self, event):
@@ -122,9 +128,6 @@ class ChatConsumer(AsyncJsonWebsocketConsumer):
         return services.check_and_increment_ws_rate_limit(user)
 
     @database_sync_to_async
-    def _send_message(self, conversation, user, body):
-        return services.send_message(conversation, user, body=body)
-
-    @database_sync_to_async
-    def _serialize_for_broadcast(self, conversation, message):
+    def _send_and_serialize(self, conversation, user, body):
+        message = services.send_message(conversation, user, body=body)
         return services.serialize_message_for_broadcast(conversation, message)

@@ -8,6 +8,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from apps.common.constants import AccountStatus
 
 from . import call_logs, group_calls, services
+from .account_guard import AccountCloseMixin
 from .consumers import (
     CLOSE_ACCOUNT_NOT_ACTIVE,
     CLOSE_BLOCKED,
@@ -35,7 +36,7 @@ def inbox_group(user_id) -> str:
     return f"call_inbox_{user_id}"
 
 
-class CallConsumer(AsyncJsonWebsocketConsumer):
+class CallConsumer(AccountCloseMixin, AsyncJsonWebsocketConsumer):
     """
     WebRTC signaling for one-to-one video calls inside a conversation.
 
@@ -89,12 +90,14 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = f"call_{conversation.id}"
         self._sent_at = deque()
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.join_account_group(user)
         await self.accept()
         await self._replay_ringing_offer()
 
     async def disconnect(self, code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.leave_account_group()
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
@@ -248,7 +251,7 @@ class CallConsumer(AsyncJsonWebsocketConsumer):
         return is_blocked_between(user_id, other_id)
 
 
-class CallInboxConsumer(AsyncJsonWebsocketConsumer):
+class CallInboxConsumer(AccountCloseMixin, AsyncJsonWebsocketConsumer):
     """
     One socket per open tab, on every page of the site. It carries no signaling: it says
     "someone is calling you in conversation X" (so the site can ring), "that call is over"
@@ -270,6 +273,7 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
         self.user = user
         self.group_name = inbox_group(user.id)
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.join_account_group(user)
         await self.accept()
         # Tells the browser this server pushes inbox events (message / read / wallet / missed_call), so it
         # can stop polling. A browser talking to an older server never sees this and keeps polling.
@@ -294,6 +298,7 @@ class CallInboxConsumer(AsyncJsonWebsocketConsumer):
     async def disconnect(self, code):
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.leave_account_group()
 
     async def receive_json(self, content, **kwargs):
         return  # one-way channel

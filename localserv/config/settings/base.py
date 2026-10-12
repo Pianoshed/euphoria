@@ -45,7 +45,7 @@ MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",  # serves collected static files (admin CSS/JS)
     "corsheaders.middleware.CorsMiddleware",
-    "django.contrib.sessions.middleware.SessionMiddleware",
+    "apps.common.middleware.SlidingSessionMiddleware",  # sliding idle timeout, ~1 write/min (see class)
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -82,11 +82,36 @@ DATABASES = {
 DATABASES["default"]["ATOMIC_REQUESTS"] = False
 
 # --- DB connection hygiene ----------------------------------------------------------------
-# DB_USE_PGBOUNCER=1 when DATABASE_URL points at PgBouncer (transaction pooling): the pooler then
-# owns connection reuse, so Django must not hold connections open itself (CONN_MAX_AGE=0) and must
-# not use server-side cursors (they do not survive transaction pooling).
+# Three ways to get connections right under ASGI, in order of preference:
+#  1. In-process pool (needs psycopg 3 + `psycopg[pool]`, Django 5.1+). Used automatically when installed:
+#     CONN_MAX_AGE is forced to 0 and at most DB_POOL_MAX_SIZE (default 10) connections are open PER PROCESS,
+#     so (processes x pool size) must stay below the Postgres max_connections. Set DB_POOL_MAX_SIZE=0 to disable.
+#  2. PgBouncer in front of Postgres: DB_USE_PGBOUNCER=1 (the pooler owns reuse, so CONN_MAX_AGE=0).
+#  3. Neither: CONN_MAX_AGE=60 as before. WARNING: under ASGI every HTTP request runs in its own thread, so
+#     those connections are never reused or closed and pile up (measured: 60 concurrent requests left 60 open).
+# Do NOT set CONN_MAX_AGE=0 without 1 or 2: every chat-socket database call would then open a brand-new
+# connection (measured: 524 of 570 socket connects failed and message round trips took ~18 s).
 _USE_PGBOUNCER = env.bool("DB_USE_PGBOUNCER", default=False)
-DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=0 if _USE_PGBOUNCER else 60)
+try:
+    import psycopg  # noqa: F401
+    import psycopg_pool  # noqa: F401
+    _POOL_AVAILABLE = True
+except ImportError:
+    _POOL_AVAILABLE = False
+_db_pool_max = 0 if _USE_PGBOUNCER else env.int("DB_POOL_MAX_SIZE", default=10 if _POOL_AVAILABLE else 0)
+if _db_pool_max and not _POOL_AVAILABLE:
+    raise ImportError("DB_POOL_MAX_SIZE is set but psycopg 3 / psycopg_pool is not installed. pip install 'psycopg[binary,pool]'")
+_DB_CONN_MAX_AGE_DEFAULT = 0 if (_USE_PGBOUNCER or _db_pool_max) else 60
+DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=_DB_CONN_MAX_AGE_DEFAULT)
+if _db_pool_max:
+    DATABASES["default"]["CONN_MAX_AGE"] = 0  # Django refuses CONN_MAX_AGE together with a pool
+if "postgresql" in DATABASES["default"].get("ENGINE", "") and not (_db_pool_max or _USE_PGBOUNCER):
+    import warnings
+
+    warnings.warn(
+        "Postgres connections are persistent (CONN_MAX_AGE=60) with no pool: under ASGI they pile up. "
+        "Install 'psycopg[binary,pool]' (automatic pool) or set DB_USE_PGBOUNCER=1.", RuntimeWarning,
+    )
 # Drop dead connections (e.g. after a Render Postgres restart) instead of reusing them. Django 4.1+.
 DATABASES["default"]["CONN_HEALTH_CHECKS"] = True
 if "postgresql" in DATABASES["default"].get("ENGINE", ""):
@@ -100,6 +125,12 @@ if "postgresql" in DATABASES["default"].get("ENGINE", ""):
         "keepalives_interval": 10,
         "keepalives_count": 5,
     })
+    if _db_pool_max:
+        _db_opts["pool"] = {
+            "min_size": min(env.int("DB_POOL_MIN_SIZE", default=2), _db_pool_max),
+            "max_size": _db_pool_max,
+            "timeout": env.int("DB_POOL_TIMEOUT", default=10),
+        }
     if _USE_PGBOUNCER:
         DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
         # Startup `options` are rejected by PgBouncer transaction mode. Set the same timeouts per role instead:
@@ -127,10 +158,22 @@ if "test" in sys.argv:
         }
     }
 
+# Channel layer (WebSocket fan-out). Every value below defaults to what channels_redis already uses.
+#  * CHANNEL_LAYER_MAX_CONNECTIONS: size of the Redis connection pool PER PROCESS. Newer redis-py versions
+#    default to 100, so a burst of >100 simultaneous socket connects/sends fails with "Too many connections"
+#    (reproduced at ~570 simultaneous connects). Raise it, but keep it under your Redis plan's client limit.
+#  * CHANNEL_LAYER_CAPACITY: messages queued per socket before the oldest are dropped (slow clients).
+_channel_host = {"address": env("REDIS_URL")}
+if env.int("CHANNEL_LAYER_MAX_CONNECTIONS", default=0):
+    _channel_host["max_connections"] = env.int("CHANNEL_LAYER_MAX_CONNECTIONS")
 CHANNEL_LAYERS = {
     "default": {
         "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [env("REDIS_URL")]},
+        "CONFIG": {
+            "hosts": [_channel_host],
+            "capacity": env.int("CHANNEL_LAYER_CAPACITY", default=100),
+            "expiry": env.int("CHANNEL_LAYER_EXPIRY", default=60),
+        },
     }
 }
 
@@ -160,6 +203,39 @@ STATICFILES_DIRS = [BASE_DIR / "static"] if (BASE_DIR / "static").is_dir() else 
 
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# --- Uploaded files: avatars, chat photos / voice / video, statuses ----------------------------------
+# Default: the local `media/` folder. On Render that folder is wiped on EVERY deploy and restart (a
+# persistent disk needs a paid service and ties the app to a single instance). To keep files for good, set
+# MEDIA_S3_BUCKET to any S3-compatible bucket (Cloudflare R2, Supabase Storage S3, Backblaze B2, AWS S3).
+# Needs `django-storages[s3]` in requirements. Env vars:
+#   MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY,
+#   MEDIA_S3_ENDPOINT_URL (R2 / Supabase / B2: their S3 endpoint; leave empty for AWS), MEDIA_S3_REGION (default "auto"),
+#   MEDIA_S3_SIGNED_URLS (default True: private bucket, links expire after MEDIA_S3_URL_EXPIRE_SECONDS, default 3600).
+_media_bucket = env("MEDIA_S3_BUCKET", default="")
+if _media_bucket:
+    try:
+        import storages  # noqa: F401
+    except ImportError as exc:
+        raise ImportError("MEDIA_S3_BUCKET is set but django-storages is missing: pip install 'django-storages[s3]'") from exc
+    STORAGES = {
+        "default": {
+            "BACKEND": "storages.backends.s3.S3Storage",
+            "OPTIONS": {
+                "bucket_name": _media_bucket,
+                "access_key": env("MEDIA_S3_ACCESS_KEY_ID"),
+                "secret_key": env("MEDIA_S3_SECRET_ACCESS_KEY"),
+                "endpoint_url": env("MEDIA_S3_ENDPOINT_URL", default="") or None,
+                "region_name": env("MEDIA_S3_REGION", default="auto"),
+                "signature_version": "s3v4",
+                "querystring_auth": env.bool("MEDIA_S3_SIGNED_URLS", default=True),
+                "querystring_expire": env.int("MEDIA_S3_URL_EXPIRE_SECONDS", default=3600),
+                "file_overwrite": False,  # never replace someone else's file with the same name
+                "default_acl": None,
+            },
+        },
+        "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},  # unchanged
+    }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
@@ -203,6 +279,7 @@ REST_FRAMEWORK = {
         "payment_webhook": "120/min",
         "messages": "120/min",
         "chat_write": "60/min",
+        "chat_read": "600/min",  # reads on the chat list/message views (writes use chat_write / messages)
         "moderation_write": "60/hour",
         "ice_servers": "30/min",
     },
@@ -250,7 +327,8 @@ CSRF_COOKIE_DOMAIN = env("CSRF_COOKIE_DOMAIN", default=None) or None
 # While a tab is open, the presence pings keep the session alive (sliding expiry).
 SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_AGE = env.int("SESSION_IDLE_MINUTES", default=15) * 60
-SESSION_SAVE_EVERY_REQUEST = True
+SESSION_SAVE_EVERY_REQUEST = False  # replaced by SlidingSessionMiddleware: one write per minute, not per request
+SESSION_REFRESH_SECONDS = env.int("SESSION_REFRESH_SECONDS", default=60)
 CSRF_COOKIE_AGE = None  # default is 1 year; None = cookie dies with the browser
 
 # --- Payments (Phase 6) ---

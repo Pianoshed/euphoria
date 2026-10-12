@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import time
 import uuid
@@ -9,6 +10,7 @@ from channels.generic.websocket import AsyncJsonWebsocketConsumer
 from apps.common.constants import AccountStatus
 
 from . import group_calls, services
+from .account_guard import AccountCloseMixin
 from .call_consumers import CallConsumer, inbox_group
 from .consumers import (
     CLOSE_ACCOUNT_NOT_ACTIVE,
@@ -21,9 +23,10 @@ log = logging.getLogger("apps")
 SIGNALS = {"offer", "answer", "ice"}
 MAX_SIGNALS_PER_MINUTE = 900  # a mesh of 8 trades a lot of ICE; this only stops abuse
 RATE_WINDOW_SECONDS = 60
+CLOSE_SEAT_LOST = 4410  # app-defined: the heartbeat found this person's seat already freed
 
 
-class GroupCallConsumer(AsyncJsonWebsocketConsumer):
+class GroupCallConsumer(AccountCloseMixin, AsyncJsonWebsocketConsumer):
     """
     WebRTC signaling for a call inside a GROUP chat (/ws/gcall/<conversation_id>/).
 
@@ -53,6 +56,7 @@ class GroupCallConsumer(AsyncJsonWebsocketConsumer):
         self.group_name = f"gcall_{conversation.id}"
         self._sent_at = deque()
         await self.channel_layer.group_add(self.group_name, self.channel_name)
+        await self.join_account_group(user)
         await self.accept()
 
     async def disconnect(self, code):
@@ -60,6 +64,7 @@ class GroupCallConsumer(AsyncJsonWebsocketConsumer):
             await self._leave()
         if hasattr(self, "group_name"):
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        await self.leave_account_group()
 
     async def receive_json(self, content, **kwargs):
         if not isinstance(content, dict):
@@ -117,6 +122,7 @@ class GroupCallConsumer(AsyncJsonWebsocketConsumer):
             return await self._error("Could not join the call. Try again.")
 
         self.call_id = str(call.id)
+        self._start_heartbeat()
         me = str(self.user.id)
         if replaced:
             await self.channel_layer.group_send(
@@ -132,7 +138,38 @@ class GroupCallConsumer(AsyncJsonWebsocketConsumer):
         if created:
             await self._ring_members(call)
 
+    # --- seat heartbeat --------------------------------------------------------------
+
+    def _start_heartbeat(self):
+        self._stop_heartbeat()
+        self._heartbeat_task = asyncio.ensure_future(self._heartbeat(self.call_id))
+
+    def _stop_heartbeat(self):
+        task = getattr(self, "_heartbeat_task", None)
+        self._heartbeat_task = None
+        if task is not None and not task.done():
+            task.cancel()
+
+    async def _heartbeat(self, call_id):
+        """Keeps this person's seat fresh while the socket is alive (see group_calls.HEARTBEAT_SECONDS)."""
+        while self.call_id == call_id:
+            await asyncio.sleep(group_calls.HEARTBEAT_SECONDS)
+            if self.call_id != call_id:
+                return
+            try:
+                alive = await database_sync_to_async(group_calls.touch_seat)(call_id, self.user.id)
+            except Exception:
+                log.warning("Group call heartbeat failed; will retry", exc_info=True)
+                continue
+            if not alive:
+                # The seat was freed (this socket stalled for ~3 beats). Step off cleanly instead of
+                # staying in the media mesh without a seat.
+                log.warning("Group call seat lost for user %s", self.user.id)
+                await self.close(code=CLOSE_SEAT_LOST)
+                return
+
     async def _leave(self):
+        self._stop_heartbeat()
         call_id, self.call_id = self.call_id, None
         me = str(self.user.id)
         ended = await database_sync_to_async(group_calls.leave)(call_id, self.user.id)

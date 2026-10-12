@@ -11,6 +11,7 @@ Rules for everything sent through here:
   * Best-effort. If Redis / the channel layer is down the request that caused the event must still succeed;
     the browser's slow reconcile poll covers the gap.
 """
+import asyncio
 import logging
 
 from django.core.cache import cache
@@ -35,14 +36,24 @@ def _send(user_ids, payload, forget_unread):
     layer = get_channel_layer()
     if layer is None:
         return
-    send = async_to_sync(layer.group_send)
-    for uid in user_ids:
-        try:
-            send(inbox_group(uid), {"type": "inbox.event", "payload": payload})
-        except Exception:
-            # Channel layer unreachable: stop here instead of waiting on a timeout for every recipient.
-            log.warning("Inbox push failed (%s)", payload.get("type"), exc_info=True)
-            return
+
+    async def _all():
+        # In parallel, one loop entry: a 20-member group used to cost 20 sequential Redis round trips
+        # inside the sender's request (and, for WebSocket messages, inside the shared DB thread).
+        results = await asyncio.gather(
+            *(layer.group_send(inbox_group(uid), {"type": "inbox.event", "payload": payload}) for uid in user_ids),
+            return_exceptions=True,
+        )
+        failed = [r for r in results if isinstance(r, Exception)]
+        if failed:
+            # Channel layer unreachable / full: the browser's slow reconcile poll covers the gap.
+            log.warning("Inbox push failed for %d of %d recipients (%s): %r",
+                        len(failed), len(user_ids), payload.get("type"), failed[0])
+
+    try:
+        async_to_sync(_all)()
+    except Exception:
+        log.warning("Inbox push failed (%s)", payload.get("type"), exc_info=True)
 
 
 def push_to_users(user_ids, payload, *, forget_unread=False) -> None:
@@ -67,3 +78,24 @@ def notify_read(conversation, user) -> None:
     push_to_users(
         [user.id], {"type": "read", "conversation_id": str(conversation.id)}, forget_unread=True
     )
+
+
+def close_user_sockets(user_id) -> None:
+    """The account is no longer ACTIVE: close every open chat / call / inbox socket of this user, once the
+    transaction that changed the status commits. Best-effort like every push (new connections are already
+    refused by the status check at connect time)."""
+    from asgiref.sync import async_to_sync
+    from channels.layers import get_channel_layer
+
+    from .account_guard import account_group
+
+    def _close():
+        layer = get_channel_layer()
+        if layer is None:
+            return
+        try:
+            async_to_sync(layer.group_send)(account_group(user_id), {"type": "account.closed"})
+        except Exception:
+            log.warning("Could not close the sockets of a deactivated account", exc_info=True)
+
+    transaction.on_commit(_close)

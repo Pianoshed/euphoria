@@ -40,6 +40,24 @@ class WriteScopedRateThrottle(ScopedRateThrottle):
         return super().allow_request(request, view)
 
 
+class ReadRateThrottle(SimpleRateThrottle):
+    """Generous per-user (or per-IP) cap on READS only, for list+create views whose write scope is tight.
+
+    Those views use WriteScopedRateThrottle for POST/PUT/PATCH/DELETE, so a 60/min "write" limit no longer
+    locks people out of polling or opening their own conversation list. This keeps a sane ceiling on reads
+    (scraping, runaway client loops) without getting in the way of normal use.
+    """
+
+    scope = "chat_read"
+
+    def get_cache_key(self, request, view):
+        if request.method not in SAFE_METHODS:
+            return None
+        user = getattr(request, "user", None)
+        ident = f"u{user.pk}" if user is not None and user.is_authenticated else self.get_ident(request)
+        return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
 class _BodyFieldThrottle(SimpleRateThrottle):
     """Throttle on a value in the request body (hashed, so no raw emails in the cache)."""
 
