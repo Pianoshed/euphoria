@@ -352,3 +352,18 @@ def test_discover_random_caps_page_size_and_has_no_count(client):
     login(client, "cv@example.com")
     body = _random_page(client, page_size=100)
     assert "count" not in body and body["next"] is None
+
+
+def test_avatar_is_square_and_respects_exif_rotation():
+    import io
+    from PIL import Image
+    from apps.accounts.media_utils import process_avatar_upload
+
+    img = Image.new("RGB", (400, 200), (200, 30, 30))      # wide photo...
+    exif = Image.Exif()
+    exif[0x0112] = 6                                        # ...flagged "rotate 90 degrees"
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", exif=exif)
+    out = process_avatar_upload(SimpleUploadedFile("p.jpg", buf.getvalue(), content_type="image/jpeg"))
+    result = Image.open(io.BytesIO(out.read()))
+    assert result.size[0] == result.size[1] == 200          # square, not stretched
