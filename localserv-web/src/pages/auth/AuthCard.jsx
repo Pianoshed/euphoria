@@ -11,7 +11,7 @@ export default function AuthCard({ children }) {
     <div className="auth-shell">
       <div className="auth-panel">
         <div className="auth-form-wrap">
-          <BrandLogo className="auth-brand-logo" />
+          <BrandLogo tagline className="auth-brand-logo" />
           {children}
         </div>
       </div>

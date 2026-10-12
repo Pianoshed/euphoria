@@ -10,7 +10,7 @@ export default function AuthShowcase({ variant = 'cafe', title, text, event, quo
   return (
     <div className={`auth-panel auth-panel--decorative auth-panel--${variant}`}>
       <div className="auth-showcase__top">
-        <BrandLogo surface="dark" className="auth-brand-logo" />
+        <BrandLogo surface="dark" tagline className="auth-brand-logo" />
         <h2>{title}</h2>
         <p>{text}</p>
       </div>

@@ -40,7 +40,7 @@ export default function Home() {
       <header className="e-scene-hero">
         <div className="e-shell">
           <nav className="e-nav" aria-label="Main">
-            <BrandLogo animated surface="dark" className="e-nav__logo-mark" />
+            <BrandLogo surface="dark" tagline className="e-nav__logo-mark" />
             <div className="e-nav__links">
               <Link to="/services" className="e-nav__link e-nav__link--wide">Browse activities</Link>
               <Link to="/providers" className="e-nav__link e-nav__link--wide">Find people</Link>

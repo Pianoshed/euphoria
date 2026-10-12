@@ -1,31 +1,15 @@
-/* Hiclr logo. Both artworks share one 876x444 box (aspect-ratio reserved up front: no layout shift).
-   Height comes from --logo-h, set by whichever place uses it. */
-.brand-logo-link { display: inline-flex; align-items: center; line-height: 0; text-decoration: none; }
-.brand-logo { --logo-h: 44px; position: relative; display: inline-block; height: var(--logo-h); aspect-ratio: 876 / 444; line-height: 0; }
-.brand-logo__img, .brand-logo__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Hiclr wordmark (text). Size comes from --logo-h, set by whichever place uses it. */
+.brand-logo-link { display: inline-flex; align-items: center; text-decoration: none; }
+.brand-logo { --logo-h: 44px; display: inline-flex; flex-direction: column; justify-content: center; line-height: 1; color: #24213A; }
+.brand-logo__name { font-family: 'Sora', system-ui, sans-serif; font-weight: 800; letter-spacing: -0.02em; font-size: calc(var(--logo-h) * 0.62); }
+.brand-logo__tagline { font-family: 'Manrope', system-ui, sans-serif; font-weight: 600; opacity: .75; margin-top: .3em; font-size: calc(var(--logo-h) * 0.24); letter-spacing: .01em; }
 
-/* Which artwork: the dark one (final intro frame, black background) is blended with `screen`, which makes
-   its black vanish on any dark surface. Light surfaces get the flat logo with dark ink. */
-.brand-logo__img--dark, .brand-logo__video { mix-blend-mode: screen; }
-.brand-logo__img--dark { display: none; }
-.brand-logo--dark .brand-logo__img--light { display: none; }
-.brand-logo--dark .brand-logo__img--dark { display: block; }
-:root[data-theme='dark'] .brand-logo--auto .brand-logo__img--light { display: none; }
-:root[data-theme='dark'] .brand-logo--auto .brand-logo__img--dark { display: block; }
+.brand-logo--dark { color: #fff; }
+:root[data-theme='dark'] .brand-logo--auto { color: #FFF8F1; }
 
-/* The intro video sits on top, invisible until it is really playing, then gone again when it ends. */
-.brand-logo__video { opacity: 0; transition: opacity .25s ease; pointer-events: none; }
-.brand-logo__video.is-playing { opacity: 1; }
-
-/* The video is made for dark backgrounds, so on a light surface it is never shown. */
-.brand-logo--light .brand-logo__video { display: none; }
-:root:not([data-theme='dark']) .brand-logo--auto .brand-logo__video { display: none; }
-
-@media (prefers-reduced-motion: reduce) { .brand-logo__video { display: none; } }
-
-/* Sizes in the places the old text brand lived */
+/* Sizes in the places the old brand lived */
 .navbar__brand-logo { --logo-h: 40px; }
 .sn-brand-logo { --logo-h: 52px; margin: 0 0 4px 4px; }
-.e-nav__logo-mark { --logo-h: 64px; }
+.e-nav__logo-mark { --logo-h: 52px; }
 .auth-brand-logo { --logo-h: 52px; margin-bottom: var(--space-3, 12px); }
-@media (max-width: 720px) { .e-nav__logo-mark { --logo-h: 52px; } .navbar__brand-logo { --logo-h: 36px; } }
+@media (max-width: 720px) { .e-nav__logo-mark { --logo-h: 44px; } .navbar__brand-logo { --logo-h: 36px; } }
