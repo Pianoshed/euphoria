@@ -15,7 +15,7 @@ export default function Login() {
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
-  const [notice, setNotice] = useState(location.state?.expired ? 'Your session ended. Please log in again.' : null);
+  const [notice, setNotice] = useState(location.state?.suspended ? 'This account has been suspended. Contact support if you think this is a mistake.' : location.state?.expired ? 'Your session ended. Please log in again.' : null);
   const [submitting, setSubmitting] = useState(false);
   const [googleSubmitting, setGoogleSubmitting] = useState(false);
   // Set when the account is already signed in on another device: { challenge, devices }.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { WS_BASE } from '../api/client';
+import { ACCOUNT_SUSPENDED_EVENT, WS_BASE } from '../api/client';
 import { setInCall } from '../utils/callActivity';
 import { applySenderLimits, callMediaConstraints, isDataSaverOn, subscribeDataSaver } from '../utils/dataSaver';
 import { friendlyMediaError, loadIceServers } from './useVideoCall';
@@ -21,7 +21,7 @@ import { friendlyMediaError, loadIceServers } from './useVideoCall';
 
 const MIN_RECONNECT_MS = 1_000;
 const MAX_RECONNECT_MS = 15_000;
-const NO_RETRY = new Set([4401, 4403, 4404]);
+const NO_RETRY = new Set([4401, 4403, 4404, 4410]); // 4410 = the server freed our seat (we went quiet for ~90s)
 const MAX_FAILED_OPENS = 5;
 const gcallSocketUrl = (conversationId) => `${WS_BASE}/ws/gcall/${conversationId}/`;
 
@@ -324,7 +324,19 @@ export function useGroupCall({ conversationId, myId, enabled = true }) {
       ws.onclose = (e) => {
         if (wsRef.current === ws) wsRef.current = null;
         setSignalReady(false);
-        if (closedRef.current || NO_RETRY.has(e.code)) return;
+        if (closedRef.current) return;
+        if (e.code === 4403) {
+          // Account suspended: leave the call and let the app sign the person out.
+          finish('Your account has been suspended.');
+          window.dispatchEvent(new Event(ACCOUNT_SUSPENDED_EVENT));
+          return;
+        }
+        if (e.code === 4410) {
+          // The server gave our seat away. The others already dropped us, so leave cleanly instead of reconnecting into a dead call.
+          finish('You were disconnected from the call. Tap Join to come back.');
+          return;
+        }
+        if (NO_RETRY.has(e.code)) return;
         if (!didOpen) {
           failedOpens += 1;
           if (failedOpens >= MAX_FAILED_OPENS) {

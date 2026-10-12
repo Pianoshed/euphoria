@@ -7,6 +7,7 @@ import { NavBar } from './components/NavBar';
 import SideNav from './components/SideNav';
 import BottomNav from './components/BottomNav';
 import OfflineBanner from './components/OfflineBanner';
+import SiteMeta from './components/SiteMeta';
 import ReceiptNotifier from './components/ReceiptNotifier';
 import MessageNotifier from './components/MessageNotifier';
 import IncomingCallNotifier from './components/IncomingCallNotifier';
@@ -110,6 +111,7 @@ export default function App() {
           <InboxSocketProvider>
             <CallProvider>
               <AlertsProvider>
+                <SiteMeta />
                 <OfflineBanner />
                 <NavBar />
                 <SideNav />

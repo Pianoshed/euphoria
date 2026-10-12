@@ -2,12 +2,13 @@ import '../styles/index.css';
 import { useState, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { API_BASE } from '../api/client';
+import { mediaUrl } from '../api/client';
 import { isStaff } from '../utils/permissions';
 import { usePresenceHeartbeat } from '../hooks/usePresenceHeartbeat';
 import { TONE_LIST, askDeviceNotifications, getTone, isSoundOn, nextTone, playMessageSound, setSoundOn } from '../utils/notifySound';
 import { MenuIcon, CloseIcon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
+import BrandLogo from './BrandLogo';
 import { Icon } from './icons';
 import { useAlerts } from '../context/AlertsContext';
 import './alerts.css';
@@ -24,7 +25,7 @@ function NavAvatar({ user, initial }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [user.avatar]);
   return user.avatar && !failed
-    ? <img className="avatar avatar--sm" src={`${API_BASE}${user.avatar}`} alt="" onError={() => setFailed(true)} />
+    ? <img className="avatar avatar--sm" src={mediaUrl(user.avatar)} alt="" onError={() => setFailed(true)} />
     : <span className="avatar avatar--sm" aria-hidden="true">{initial}</span>;
 }
 
@@ -88,7 +89,7 @@ export function NavBar() {
   return (
     <header className="navbar">
       <div className="navbar__inner">
-        <NavLink to="/" className="navbar__brand" onClick={closeMenu}>Euphoria</NavLink>
+        <BrandLogo className="navbar__brand-logo" onClick={closeMenu} />
 
         {user ? (
           <>

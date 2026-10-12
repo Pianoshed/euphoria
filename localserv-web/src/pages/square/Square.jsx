@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import PeoplePicker from '../../components/PeoplePicker';
 import { Icon } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
+import { BRAND_NAME } from '../../brand';
 import * as api from '../../api/square';
 import { shrinkImage, shrinkVideo, MAX_VIDEO_SECONDS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
@@ -324,7 +325,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
     try {
       const file = new File([await treeBlob(tree)], treeFileName(tree), { type: 'image/png' });
       if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: tree.title });
-      else await navigator.share({ title: tree.title, text: `${tree.title} on Euphoria` });
+      else await navigator.share({ title: tree.title, text: `${tree.title} on ${BRAND_NAME}` });
     } catch (e) { if (e?.name !== 'AbortError') pop('Could not share'); }
   };
   const postStatus = async () => {

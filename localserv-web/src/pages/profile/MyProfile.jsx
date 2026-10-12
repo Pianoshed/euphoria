@@ -3,7 +3,7 @@ import './myprofile.css';
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import * as accountsApi from '../../api/accounts';
-import { API_BASE } from '../../api/client';
+import { mediaUrl } from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner } from '../../components/ui';
 import PasswordPanel from './PasswordPanel';
@@ -77,7 +77,7 @@ function Avatar({ user, className = '' }) {
   const name = user.display_name || user.username || '?';
   return user.avatar && !failed
     ? (
-      <img className={`mp-avatar ${className}`} src={`${API_BASE}${user.avatar}`} alt=""
+      <img className={`mp-avatar ${className}`} src={mediaUrl(user.avatar)} alt=""
         onError={() => setFailed(true)} />
     )
     : <span className={`mp-avatar ${className}`} aria-hidden="true">{name[0].toUpperCase()}</span>;

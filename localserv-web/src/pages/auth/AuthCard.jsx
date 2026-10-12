@@ -1,5 +1,5 @@
 import '../../styles/index.css';
-import { Link } from 'react-router-dom';
+import BrandLogo from '../../components/BrandLogo';
 
 /**
  * Single themed card on the illustrated backdrop.
@@ -11,7 +11,7 @@ export default function AuthCard({ children }) {
     <div className="auth-shell">
       <div className="auth-panel">
         <div className="auth-form-wrap">
-          <Link to="/" className="auth-brand">Euphoria</Link>
+          <BrandLogo className="auth-brand-logo" />
           {children}
         </div>
       </div>

@@ -10,7 +10,7 @@ import * as accountsApi from '../api/accounts';
 import * as servicesApi from '../api/services';
 import * as bookingsApi from '../api/bookings';
 import * as walletApi from '../api/wallet';
-import { API_BASE } from '../api/client';
+import { mediaUrl } from '../api/client';
 import { formatNaira, formatPrice } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 import { lookFor } from '../utils/bubbleLook';
@@ -403,7 +403,7 @@ export default function HomeFeed() {
   };
 
   const avatar = user?.avatar && !avatarFailed
-    ? <img className="hf-me__img" src={`${API_BASE}${user.avatar}`} alt="" onError={() => setAvatarFailed(true)} />
+    ? <img className="hf-me__img" src={mediaUrl(user.avatar)} alt="" onError={() => setAvatarFailed(true)} />
     : <span className="hf-me__img" aria-hidden="true">{initial(fullName)}</span>;
 
   const rings = useMemo(() => {

@@ -10,7 +10,7 @@ const MOOD_CARDS = [
 ];
 
 const STEPS = [
-  { order: 'First', title: 'Set your vibe', body: 'Pick the scenes you are into — music, football, food, gaming, whatever — so Euphoria knows what to show you.' },
+  { order: 'First', title: 'Set your vibe', body: 'Pick the scenes you are into — music, football, food, gaming, whatever — so Hiclr knows what to show you.' },
   { order: 'Next', title: 'See what’s popping', body: 'Browse hangouts happening near you today, this weekend, or tonight, dropped by people your age.' },
   { order: 'Then', title: 'Pull up', body: 'RSVP, gist in the group chat before you go, and show up already knowing a few faces.' },
 ];
@@ -43,7 +43,7 @@ export default function LandingHome() {
               <span className="e-hero__eyebrow">Now live in Lagos</span>
               <h1>Your people are already here.</h1>
               <p>
-                Euphoria is where young Naija comes to gist, link up, and find out what's
+                Hiclr is where young Naija comes to gist, link up, and find out what's
                 popping near you — from Sunday jollof cook-ups to Friday night sets.
               </p>
               <div className="e-hero__actions">

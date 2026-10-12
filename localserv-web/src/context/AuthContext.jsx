@@ -13,7 +13,7 @@ import {
   logout as apiLogout,
   getMyProfile,
 } from '../api/accounts';
-import { AUTH_EXPIRED_EVENT, isTransientError } from '../api/client';
+import { ACCOUNT_SUSPENDED_EVENT, AUTH_EXPIRED_EVENT, isTransientError } from '../api/client';
 
 const AuthContext = createContext(null);
 
@@ -21,6 +21,7 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [checkingSession, setCheckingSession] = useState(true);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [accountSuspended, setAccountSuspended] = useState(false);
   const [sessionUnreachable, setSessionUnreachable] = useState(false); // server/network hiccup during the session check
   const userRef = useRef(null);
   useEffect(() => { userRef.current = user; }, [user]);
@@ -33,8 +34,18 @@ export function AuthProvider({ children }) {
       setSessionExpired(true);
       setUser(null);
     };
+    // The server closed our live socket with 4403: the account was suspended or banned. Sign out and say why.
+    const onSuspended = () => {
+      if (!userRef.current) return;
+      setAccountSuspended(true);
+      setUser(null);
+    };
     window.addEventListener(AUTH_EXPIRED_EVENT, onExpired);
-    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+    window.addEventListener(ACCOUNT_SUSPENDED_EVENT, onSuspended);
+    return () => {
+      window.removeEventListener(AUTH_EXPIRED_EVENT, onExpired);
+      window.removeEventListener(ACCOUNT_SUSPENDED_EVENT, onSuspended);
+    };
   }, []);
 
   // 401/403 simply means "not signed in", so it resolves to null instead of throwing.
@@ -89,6 +100,7 @@ export function AuthProvider({ children }) {
   // login with no explanation (and the server now counts that dead session as "another device").
   const finishLogin = useCallback(async (data) => {
     setSessionExpired(false);
+    setAccountSuspended(false);
     if (!data?.user) {
       await refreshSession();
       return data;
@@ -153,9 +165,9 @@ export function AuthProvider({ children }) {
   }, []);
 
   const value = useMemo(() => ({
-    user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
+    user, checkingSession, sessionExpired, accountSuspended, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, confirmDeviceTakeover, logout, refreshSession,
-  }), [user, checkingSession, sessionExpired, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
+  }), [user, checkingSession, sessionExpired, accountSuspended, sessionUnreachable, login, loginWithGoogle, registerWithGoogle,
     completeMfaLogin, confirmDeviceTakeover, logout, refreshSession]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

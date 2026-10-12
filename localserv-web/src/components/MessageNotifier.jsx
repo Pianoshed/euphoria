@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { BRAND_NAME } from '../brand';
 import { useInbox } from '../context/InboxSocketContext';
 import * as chatApi from '../api/chat';
 import { armSound, notifyDevice, playMessageSound } from '../utils/notifySound';
@@ -10,7 +11,7 @@ import { useInboxEvent, useInboxSync } from '../hooks/useInboxSync';
 const FALLBACK_POLL_MS = 30_000; // only used while the live socket is down
 const COUNT_PREFIX = /^\(\d+\)\s*/;
 
-// "(2) Euphoria" in the tab title, so a message is visible even when the tab is in the background.
+// "(2) Hiclr" in the tab title, so a message is visible even when the tab is in the background.
 function showUnreadInTitle(total) {
   const base = document.title.replace(COUNT_PREFIX, '');
   document.title = total > 0 ? `(${total}) ${base}` : base;
@@ -54,7 +55,7 @@ export default function MessageNotifier() {
     });
     if (fresh) {
       playMessageSound();
-      notifyDevice('New message', 'Open Euphoria to read it.'); // OS plays its own tone when the tab is hidden
+      notifyDevice('New message', `Open ${BRAND_NAME} to read it.`); // OS plays its own tone when the tab is hidden
     }
   }, [setMessages]);
 

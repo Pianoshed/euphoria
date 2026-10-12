@@ -1,4 +1,5 @@
 import './age-glow.css';
+import { BRAND_NAME } from '../brand';
 
 /**
  * Small copyright + privacy notes. Plain-language summary of what the app collects and where it goes,
@@ -11,7 +12,7 @@ import './age-glow.css';
  *
  * Optional env: VITE_PRIVACY_URL (full notice), VITE_PRIVACY_EMAIL (where rights requests go).
  */
-export const APP_NAME = 'Euphoria';
+export const APP_NAME = BRAND_NAME;
 const PRIVACY_URL = import.meta.env.VITE_PRIVACY_URL;
 const PRIVACY_EMAIL = import.meta.env.VITE_PRIVACY_EMAIL;
 

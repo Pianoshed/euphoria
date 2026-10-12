@@ -1,5 +1,6 @@
 import '../styles/index.css'; // the whole theme: safe to import here, bundlers load it once
 import { Link } from 'react-router-dom';
+import BrandLogo from '../components/BrandLogo';
 
 // Hero artwork = the login "cafe" image; closing panel = the register "couples" image.
 
@@ -39,7 +40,7 @@ export default function Home() {
       <header className="e-scene-hero">
         <div className="e-shell">
           <nav className="e-nav" aria-label="Main">
-            <Link to="/" className="e-nav__logo">Euphoria</Link>
+            <BrandLogo animated surface="dark" className="e-nav__logo-mark" />
             <div className="e-nav__links">
               <Link to="/services" className="e-nav__link e-nav__link--wide">Browse activities</Link>
               <Link to="/providers" className="e-nav__link e-nav__link--wide">Find people</Link>

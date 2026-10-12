@@ -1,4 +1,5 @@
 // Draws a friend tree to a PNG with plain canvas (no libraries, initials only, no remote images).
+import { BRAND_NAME } from '../../brand';
 import { CIRCLES, circleMeta, fruitFor, hasLabels, labelFor } from './circles';
 
 const W = 1080;
@@ -110,7 +111,7 @@ export function drawTree(tree) {
   });
 
   ctx.fillStyle = '#5f5d7a'; ctx.font = '600 22px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Euphoria · friend tree', W / 2, H - 38);
+  ctx.fillText(`${BRAND_NAME} · friend tree`, W / 2, H - 38);
   return c;
 }
 

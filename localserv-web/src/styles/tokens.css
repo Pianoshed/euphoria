@@ -1,6 +1,13 @@
 /* Fonts (Sora, Manrope) are loaded in main.jsx from @fontsource, not from Google Fonts. */
 
 :root {
+  /* Hiclr brand palette (from the logo). Available for brand moments; the interface keeps its own accessible
+     --color-primary (white text on coral is only ~3:1, so coral is not used behind small text). */
+  --brand-coral: #E76A52;
+  --brand-blue: #4263EB;
+  --brand-lilac: #A16AE8;
+  --brand-cream: #FFF8F1;
+  --brand-ink: #24213A;
   /* --- color: core --- */
   --color-bg: #FFF7F1;
   --color-surface: #FFFFFF;

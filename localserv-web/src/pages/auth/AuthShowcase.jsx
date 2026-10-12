@@ -1,5 +1,5 @@
 import '../../styles/index.css';
-import { Link } from 'react-router-dom';
+import BrandLogo from '../../components/BrandLogo';
 
 /**
  * Left-hand "poster" panel shared by Login + Register.
@@ -10,7 +10,7 @@ export default function AuthShowcase({ variant = 'cafe', title, text, event, quo
   return (
     <div className={`auth-panel auth-panel--decorative auth-panel--${variant}`}>
       <div className="auth-showcase__top">
-        <Link to="/" className="site-nav__logo">Euphoria</Link>
+        <BrandLogo surface="dark" className="auth-brand-logo" />
         <h2>{title}</h2>
         <p>{text}</p>
       </div>

@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from './AuthContext';
-import { WS_BASE } from '../api/client';
+import { ACCOUNT_SUSPENDED_EVENT, WS_BASE } from '../api/client';
 
 /**
  * The ONE site-wide socket per open tab (/ws/calls/inbox/). The server pushes small, content-free
@@ -61,7 +61,9 @@ export function InboxSocketProvider({ children }) {
       ws.onclose = (e) => {
         if (socket === ws) socket = null;
         setConnected(false);
-        if (closed || NO_RETRY.has(e.code)) return;
+        if (closed) return;
+        if (e.code === 4403) window.dispatchEvent(new Event(ACCOUNT_SUSPENDED_EVENT)); // suspended/banned: stop and sign out
+        if (NO_RETRY.has(e.code)) return;
         retry = setTimeout(open, Math.min(MAX_DELAY_MS, MIN_DELAY_MS * 2 ** attempt) * (0.5 + Math.random()));
         attempt += 1;
       };

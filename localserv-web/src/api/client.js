@@ -15,18 +15,32 @@ function getCookie(name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+// Turns whatever the API gave for a file (a relative /media/... path, or a full signed bucket link) into
+// something an <img>/<audio>/<video> can load. Full links (https:, blob:, data:) are left alone, so signed
+// R2/S3 URLs keep working once the backend moves uploads to a bucket.
+export const mediaUrl = (u) => (u && !/^(https?:|blob:|data:)/i.test(u) ? `${API_BASE}${u}` : u);
+
+// Fired by the inbox socket when the server closes it with 4403 (account suspended / not active).
+export const ACCOUNT_SUSPENDED_EVENT = 'auth:suspended';
+
 // Shown instead of "Failed to fetch" / "Request failed (500)" so people don't panic on a bad network.
 export const CALM_NETWORK_MESSAGE = 'Your connection seems slow. Give it a moment and try again.';
 
 /** Thrown for any non-2xx response (status 0 = the network itself failed). Carries the parsed body (if any)
  * so callers can read field-level validation errors DRF returns. */
 export class ApiError extends Error {
-  constructor(status, body) {
+  constructor(status, body, retryAfter = null) {
     const transient = !status || status >= 500;
-    super(transient ? CALM_NETWORK_MESSAGE : typeof body?.detail === 'string' ? body.detail : `Request failed (${status})`);
+    const wait = retryAfter ? ` Try again in ${retryAfter > 90 ? `${Math.ceil(retryAfter / 60)} minutes` : `${retryAfter} seconds`}.` : ' Try again in a moment.';
+    super(
+      transient ? CALM_NETWORK_MESSAGE
+        : status === 429 ? `You're doing that too fast.${wait}`
+          : typeof body?.detail === 'string' ? body.detail : `Request failed (${status})`,
+    );
     this.status = status;
     this.body = body;
     this.transient = transient;
+    this.retryAfter = retryAfter; // seconds, from the Retry-After header on a 429
   }
 }
 
@@ -55,6 +69,13 @@ async function fetchResilient(url, init, canRetry) {
       await sleep(RETRY_DELAYS_MS[attempt]);
     }
   }
+}
+
+// Retry-After on a 429 is a number of seconds (DRF's throttles send that form).
+function retryAfterSeconds(resp) {
+  if (resp.status !== 429) return null;
+  const n = Number.parseInt(resp.headers.get('Retry-After') || '', 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 const UNSAFE_METHODS = new Set(['POST', 'PATCH', 'PUT', 'DELETE']);
@@ -163,7 +184,7 @@ export async function apiFetch(path, { method = 'GET', body, query } = {}, _retr
     console.error('[api]', method, path, resp.status, JSON.stringify(data), {
       sentCsrfHeader: !!headers['X-CSRFToken'],
     });
-    throw new ApiError(resp.status, data);
+    throw new ApiError(resp.status, data, retryAfterSeconds(resp));
   }
 
   if (method === 'POST' && LOGIN_PATHS.has(path)) {
@@ -198,7 +219,7 @@ export async function apiBlob(path, { method = 'POST' } = {}) {
   if (!resp.ok) {
     const contentType = resp.headers.get('content-type') || '';
     const data = contentType.includes('application/json') ? await resp.json().catch(() => null) : null;
-    throw new ApiError(resp.status, data);
+    throw new ApiError(resp.status, data, retryAfterSeconds(resp));
   }
   return resp.blob();
 }

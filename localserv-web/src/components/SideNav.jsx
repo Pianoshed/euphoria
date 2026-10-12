@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useAlerts } from '../context/AlertsContext';
-import { API_BASE } from '../api/client';
+import { mediaUrl } from '../api/client';
+import BrandLogo from './BrandLogo';
 import { isStaff } from '../utils/permissions';
 import { Icon } from './icons';
 import { ThemeToggle } from './ThemeToggle';
@@ -15,7 +16,7 @@ function Avatar({ user, initial }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => { setFailed(false); }, [user.avatar]);
   return user.avatar && !failed
-    ? <img className="sn-av" src={`${API_BASE}${user.avatar}`} alt="" onError={() => setFailed(true)} />
+    ? <img className="sn-av" src={mediaUrl(user.avatar)} alt="" onError={() => setFailed(true)} />
     : <span className="sn-av" aria-hidden="true">{initial}</span>;
 }
 
@@ -72,7 +73,7 @@ export default function SideNav() {
 
   return (
     <aside className="sidenav" aria-label="Main">
-      <NavLink to="/" className="sn-brand">Euphoria<span>.</span></NavLink>
+      <BrandLogo className="sn-brand-logo" />
 
       <nav className="sn-links">
         {items.map((it) => (

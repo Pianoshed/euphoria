@@ -1,4 +1,5 @@
 import './receipts.css';
+import { BRAND_NAME } from '../brand';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import * as walletApi from '../api/wallet';
@@ -21,7 +22,7 @@ const when = (iso) => {
 };
 
 const receiptText = (e, who) => [
-  'EUPHORIA RECEIPT',
+  `${BRAND_NAME.toUpperCase()} RECEIPT`,
   `Receipt no: ${receiptNumber(e)}`,
   `Type: ${ledgerLabel(e.entry_type)}`,
   `Amount: ${formatNaira(e.amount)}`,
@@ -45,7 +46,7 @@ export function ReceiptSheet({ entry, who }) {
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard blocked */ }
   };
-  const share = () => { navigator.share?.({ title: 'Euphoria receipt', text }).catch(() => {}); };
+  const share = () => { navigator.share?.({ title: `${BRAND_NAME} receipt`, text }).catch(() => {}); };
 
   return (
     <div className="receipt-sheet">
