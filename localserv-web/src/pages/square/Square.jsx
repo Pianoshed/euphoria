@@ -121,6 +121,19 @@ function SlideStage({ url, slideMs, template = DEFAULT_TEMPLATE, canvas = DEFAUL
 
 /* ---------- status viewer (tap right = next, left = back, auto-advances; nothing plays longer than 15s) ---------- */
 let soundOff = false; // remembered while the page is open, so muting once sticks for the next statuses
+// One shared <audio>, unlocked inside the tap that opens a status. Browsers (iOS Safari especially) only let an element
+// play sound if it was started from a tap; a fresh Audio() created later in an effect (or by the auto-advance timer) is blocked.
+let sharedAudio = null;
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+function primeAudio() {
+  try {
+    if (!sharedAudio) sharedAudio = new Audio();
+    sharedAudio.muted = true;
+    sharedAudio.src = SILENT_WAV;
+    const p = sharedAudio.play();
+    if (p && p.catch) p.catch(() => {});
+  } catch { /* the viewer falls back to the "Tap for sound" button */ }
+}
 
 function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   const isVideo = status.kind === 'video';
@@ -153,31 +166,34 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   // loops if the track is shorter than the show, fades out at the end, and the show plays silently if it fails.
   const track = isShow ? status.music : null;
   const audioRef = useRef(null);
-  const [sound, setSound] = useState(soundOff ? 'off' : 'on'); // 'on' | 'off' | 'blocked'
+  const [sound, setSound] = useState(soundOff ? 'off' : 'on'); // 'on' | 'off' | 'blocked' | 'failed'
   useEffect(() => {
     if (!track?.url) return undefined;
-    const a = new Audio();
+    if (!sharedAudio) sharedAudio = new Audio();
+    const a = sharedAudio;
+    a.pause();
+    a.onerror = () => { console.warn('Status music failed to load', a.error && a.error.code, track.url); setSound('failed'); };
     a.preload = 'auto';
     a.loop = true;
     a.volume = 0.85;
     a.muted = soundOff;
     a.src = track.url;
     audioRef.current = a;
-    a.play()?.catch(() => setSound('blocked'));
-    a.onerror = () => setSound('off');
+    const p = a.play();
+    if (p && p.catch) p.catch((err) => { if (err && err.name === 'NotAllowedError') setSound('blocked'); });
     let fadeTimer;
     const fadeStart = setTimeout(() => {
       fadeTimer = setInterval(() => { a.volume = Math.max(0, a.volume - 0.1); }, 80);
     }, Math.max(0, ms - 900));
     return () => {
       clearTimeout(fadeStart); clearInterval(fadeTimer);
-      a.onerror = null; a.pause(); a.removeAttribute('src'); a.load();
+      a.onerror = null; a.pause();
       audioRef.current = null;
     };
   }, [status.id, track?.url, ms]);
   const toggleSound = () => {
     const a = audioRef.current;
-    if (!a) return;
+    if (!a || sound === 'failed') return;
     if (sound === 'blocked') { a.play().then(() => setSound('on')).catch(() => {}); return; }
     soundOff = sound === 'on';
     a.muted = soundOff;
@@ -216,7 +232,7 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
             ? <a href={track.source_url} target="_blank" rel="noopener noreferrer" title={track.credit}>♪ {track.credit}</a>
             : <span title={track.credit}>♪ {track.credit}</span>}
           <button type="button" onClick={toggleSound} aria-label={sound === 'on' ? 'Mute music' : 'Play music'}>
-            {sound === 'on' ? 'Sound on' : sound === 'blocked' ? 'Tap for sound' : 'Muted'}
+            {sound === 'on' ? 'Sound on' : sound === 'blocked' ? 'Tap for sound' : sound === 'failed' ? 'Music unavailable' : 'Muted'}
           </button>
         </div>
       )}
@@ -726,7 +742,7 @@ function Composer({ onClose, onPosted }) {
                     {SHOW_TEMPLATES.map((t) => (
                       <button key={t.id} type="button" role="radio" aria-checked={template === t.id}
                         className={`sq-tile${template === t.id ? ' is-on' : ''}`} onClick={() => setTemplate(t.id)}>
-                        <span className="sq-tile__ico" aria-hidden="true">{{ fade: '◐', drift: '⤢', slide: '➜', pop: '✦' }[t.id]}</span>{t.label}
+                        <span className="sq-tile__ico" aria-hidden="true">{{ fade: '◐', drift: '⤢', slide: '➜', pop: '✦', cinema: '🎬', burst: '💥', spin: '🌀', flip: '⇋', curtain: '🎭', flash: '⚡', swing: '🎠', zoomout: '🔭' }[t.id]}</span>{t.label}
                       </button>
                     ))}
                   </div>
@@ -1050,6 +1066,7 @@ export default function Square() {
   /* ----- actions ----- */
   const swap = (setList) => (item) => setList((cur) => cur.map((x) => (x.id === item.id ? item : x)));
   const open = (s) => {
+    primeAudio(); // inside the tap, so the music in this status is allowed to play
     setSeen((x) => { const n = { ...x, [s.id]: true }; if (user) writeSeen(user.id, n); return n; });
     if (!s.seen && s.user.id !== user?.id) api.markSeen(s.id).catch(() => { /* local copy still marks it */ });
     setViewing(s); setDrawer(null);

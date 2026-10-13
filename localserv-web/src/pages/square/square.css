@@ -508,14 +508,34 @@
 /* Dark: the photo (never cropped) on near-black with a soft vignette */
 .sq-show--night::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55))}
 
-@keyframes sq-fx-fade{from{opacity:0}to{opacity:1}}
-@keyframes sq-fx-drift{from{opacity:0;transform:scale(1)}8%{opacity:1}to{opacity:1;transform:scale(1.12) translate(-1.5%,-1%)}}
-@keyframes sq-fx-slide{from{opacity:0;transform:translateX(9%)}to{opacity:1;transform:none}}
-@keyframes sq-fx-pop{0%{opacity:0;transform:scale(.86)}60%{opacity:1;transform:scale(1.03)}100%{opacity:1;transform:none}}
-.sq-fx--fade .sq-show__card{animation:sq-fx-fade .45s ease-out both}
+/* Every template animates the photo IN at the start of its slot and OUT at the end (percentages of --sq-ms, the slot length),
+   so the next photo's "in" follows straight on from this one's "out". */
+@keyframes sq-fx-fade{0%{opacity:0}14%,86%{opacity:1}100%{opacity:0}}
+@keyframes sq-fx-drift{0%{opacity:0;transform:scale(1)}10%{opacity:1}88%{opacity:1}100%{opacity:0;transform:scale(1.14) translate(-1.5%,-1%)}}
+@keyframes sq-fx-slide{0%{opacity:0;transform:translateX(12%);animation-timing-function:cubic-bezier(.22,1,.36,1)}15%,85%{opacity:1;transform:none;animation-timing-function:ease-in}100%{opacity:0;transform:translateX(-12%)}}
+@keyframes sq-fx-pop{0%{opacity:0;transform:scale(.8)}10%{opacity:1;transform:scale(1.05)}16%,84%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.9)}}
+@keyframes sq-fx-cinema{0%{opacity:0;transform:scale(1)}12%,88%{opacity:1}100%{opacity:0;transform:scale(1.2)}}
+@keyframes sq-fx-burst{0%{opacity:0;transform:scale(1.8);filter:blur(8px)}11%{opacity:1;transform:scale(.97);filter:blur(0)}16%{transform:scale(1)}84%{opacity:1;transform:scale(1.03);filter:blur(0)}100%{opacity:0;transform:scale(1.6);filter:blur(8px)}}
+@keyframes sq-fx-spin{0%{opacity:0;transform:rotate(-16deg) scale(.55);animation-timing-function:cubic-bezier(.34,1.45,.64,1)}17%,83%{opacity:1;transform:none;animation-timing-function:ease-in}100%{opacity:0;transform:rotate(16deg) scale(.55)}}
+@keyframes sq-fx-flip{0%{opacity:0;transform:perspective(900px) rotateY(-90deg);animation-timing-function:cubic-bezier(.22,1,.36,1)}17%,83%{opacity:1;transform:perspective(900px) rotateY(0);animation-timing-function:ease-in}100%{opacity:0;transform:perspective(900px) rotateY(90deg)}}
+@keyframes sq-fx-curtain{0%{clip-path:inset(0 50% 0 50%);transform:scale(1.1);animation-timing-function:cubic-bezier(.22,1,.36,1)}20%,80%{clip-path:inset(0 0 0 0);transform:scale(1);animation-timing-function:ease-in}100%{clip-path:inset(0 50% 0 50%);transform:scale(1.06)}}
+@keyframes sq-fx-flash{0%{filter:brightness(4) saturate(0);transform:scale(1.06)}12%{filter:brightness(1) saturate(1);transform:scale(1)}86%{filter:brightness(1) saturate(1)}100%{filter:brightness(4) saturate(0);transform:scale(1.04)}}
+@keyframes sq-fx-swing{0%{opacity:0;transform:translateX(45%) rotate(14deg);animation-timing-function:cubic-bezier(.34,1.3,.64,1)}17%,83%{opacity:1;transform:none;animation-timing-function:ease-in}100%{opacity:0;transform:translateX(-45%) rotate(-14deg)}}
+@keyframes sq-fx-zoomout{0%{opacity:0;transform:scale(1.4)}12%{opacity:1}88%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(1)}}
+.sq-fx--fade .sq-show__card{animation:sq-fx-fade var(--sq-ms) ease-in-out both}
 .sq-fx--drift .sq-show__card{animation:sq-fx-drift var(--sq-ms) linear both}
-.sq-fx--slide .sq-show__card{animation:sq-fx-slide .5s var(--sq-ease) both}
-.sq-fx--pop .sq-show__card{animation:sq-fx-pop .55s var(--sq-spring) both}
+.sq-fx--slide .sq-show__card{animation:sq-fx-slide var(--sq-ms) both}
+.sq-fx--pop .sq-show__card{animation:sq-fx-pop var(--sq-ms) ease-out both}
+.sq-fx--cinema .sq-show__card{animation:sq-fx-cinema var(--sq-ms) linear both}
+.sq-fx--burst .sq-show__card{animation:sq-fx-burst var(--sq-ms) cubic-bezier(.22,1,.36,1) both}
+.sq-fx--spin .sq-show__card{animation:sq-fx-spin var(--sq-ms) both}
+.sq-fx--flip .sq-show__card{animation:sq-fx-flip var(--sq-ms) both}
+.sq-fx--curtain .sq-show__card{animation:sq-fx-curtain var(--sq-ms) both}
+.sq-fx--flash .sq-show__card{animation:sq-fx-flash var(--sq-ms) ease-out both}
+.sq-fx--swing .sq-show__card{animation:sq-fx-swing var(--sq-ms) both;transform-origin:50% 115%}
+.sq-fx--zoomout .sq-show__card{animation:sq-fx-zoomout var(--sq-ms) linear both}
+/* Cinema: letterbox bars over the photo */
+.sq-fx--cinema::before{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:linear-gradient(#000 0 7%,transparent 7% 93%,#000 93%)}
 @media (prefers-reduced-motion:reduce){.sq-show .sq-show__card{animation:sq-fx-fade .3s ease-out both}}
 /* keep the header/footer gradients and the progress bar above the stage */
 .sq-stage .sq-show{z-index:0}

@@ -41,6 +41,14 @@ export const SHOW_TEMPLATES = [
   { id: 'drift', label: 'Drift' },
   { id: 'slide', label: 'Slide' },
   { id: 'pop', label: 'Pop' },
+  { id: 'cinema', label: 'Cinema' },
+  { id: 'burst', label: 'Burst' },
+  { id: 'spin', label: 'Spin' },
+  { id: 'flip', label: 'Flip' },
+  { id: 'curtain', label: 'Curtain' },
+  { id: 'flash', label: 'Flash' },
+  { id: 'swing', label: 'Swing' },
+  { id: 'zoomout', label: 'Zoom out' },
 ];
 export const SHOW_CANVASES = [
   { id: 'blur', label: 'Blur' },
