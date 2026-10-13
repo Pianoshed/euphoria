@@ -6,6 +6,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
 import Modal from '../../components/Modal';
 import { formatNaira } from '../../utils/money';
+import { useHideBalance } from '../../hooks/useHideBalance';
+import { Icon } from '../../components/icons';
 import { goToCheckout } from '../../utils/safeRedirect';
 import { ledgerLabel } from '../../utils/ledger';
 import { WALLET_LOCKED } from '../../utils/walletFlags';
@@ -47,6 +49,7 @@ export default function Wallet() {
   const { user } = useAuth();
   const holder = user?.display_name || user?.username || 'You';
 
+  const { hidden: balHidden, toggle: toggleBal, naira } = useHideBalance();
   const [balance, setBalance] = useState(null);
   const [credits, setCredits] = useState(null);
   const [creditList, setCreditList] = useState(null);
@@ -247,12 +250,18 @@ export default function Wallet() {
                 <div>
                   <p className="wl-hero__who">Wallet of <b>{holder}</b></p>
                   <p className="wl-hero__label">Available balance</p>
-                  <p className="wl-hero__amount">{balance === null ? <Spinner /> : formatNaira(balance)}</p>
+                  <p className="wl-hero__amount">
+                    {balance === null ? <Spinner /> : naira(balance)}
+                    <button type="button" className="wl-eye" onClick={toggleBal} aria-pressed={balHidden}
+                      aria-label={balHidden ? 'Show balance' : 'Hide balance'}>
+                      <Icon name={balHidden ? 'eyeOff' : 'eye'} size={20} />
+                    </button>
+                  </p>
                 </div>
               </div>
               {promoTotal > 0 && (
                 <p className="wl-hero__promo">
-                  🎁 + {formatNaira(credits.promotional_balance)} platform credits. Spent first on plans; they can't be withdrawn.
+                  🎁 + {naira(credits.promotional_balance)} platform credits. Spent first on plans; they can't be withdrawn.
                 </p>
               )}
               <div className="wl-hero__acts">
@@ -295,7 +304,7 @@ export default function Wallet() {
                     </small>
                     {c.code && <span className="wl-code">{c.code}</span>}
                   </span>
-                  <b>{formatNaira(c.remaining_amount)}</b>
+                  <b>{naira(c.remaining_amount)}</b>
                 </div>
               ))}
               {creditList?.length === 0 && <p className="text-sm muted">No promo credits right now.</p>}
@@ -358,7 +367,7 @@ export default function Wallet() {
       {dialog === 'topup' && (
         <WalletDialog
           emoji="💰" title="Add money" subtitle="Pay by card or bank transfer" onClose={closeDialog}
-          facts={[{ label: 'Balance', value: formatNaira(balance ?? 0) }, { label: 'Minimum', value: formatNaira(MIN_DEPOSIT) }]}
+          facts={[{ label: 'Balance', value: naira(balance ?? 0) }, { label: 'Minimum', value: formatNaira(MIN_DEPOSIT) }]}
           notes={['You pay on a secure page', 'Your balance updates once the payment is confirmed']}
         >
           <ErrorAlert error={dialogError} />
@@ -397,7 +406,7 @@ export default function Wallet() {
         <WalletDialog
           emoji="🏧" title="Withdraw" subtitle="Send money to your bank" onClose={closeDialog}
           facts={[
-            { label: 'Balance', value: formatNaira(balance ?? 0) },
+            { label: 'Balance', value: naira(balance ?? 0) },
             { label: 'Earnings', value: formatNaira(availableEarnings) },
             { label: 'Minimum', value: formatNaira(MIN_WITHDRAWAL) },
           ]}
@@ -411,7 +420,7 @@ export default function Wallet() {
           <form onSubmit={handleWithdraw}>
             <select className="select" aria-label="Withdraw from" value={withdrawForm.source}
               onChange={(e) => setWithdrawForm((f) => ({ ...f, source: e.target.value }))}>
-              <option value="WALLET">From my balance ({formatNaira(balance ?? 0)})</option>
+              <option value="WALLET">From my balance ({naira(balance ?? 0)})</option>
               <option value="EARNINGS" disabled={availableEarnings <= 0}>From my earnings ({formatNaira(availableEarnings)})</option>
             </select>
             <input type="number" min={MIN_WITHDRAWAL} step="0.01" inputMode="decimal" className="input"

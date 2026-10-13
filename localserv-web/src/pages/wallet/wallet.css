@@ -27,6 +27,8 @@
 .wl-hero__who { margin: 0; font-size: 0.9rem; color: rgba(255, 255, 255, 0.82); }
 .wl-hero__who b { color: #fff; font-family: var(--font-display); }
 .wl-hero__label { margin: 0; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.08em; color: rgba(255, 255, 255, 0.7); }
+.wl-eye { display: inline-grid; place-items: center; width: 34px; height: 34px; margin-left: 10px; padding: 0; border: 0; border-radius: 50%; vertical-align: middle; background: rgba(255, 255, 255, 0.16); color: #fff; cursor: pointer; transition: background 0.15s; }
+.wl-eye:hover, .wl-eye:focus-visible { background: rgba(255, 255, 255, 0.3); }
 .wl-hero__amount { margin: 0; font-family: var(--font-display); font-weight: 800; font-size: clamp(2.1rem, 7vw, 3.1rem); line-height: 1.05; color: #fff; }
 .wl-hero__promo { margin: 0; font-size: 0.85rem; color: rgba(255, 255, 255, 0.85); }
 .wl-hero__acts { display: flex; flex-wrap: wrap; gap: 10px; }

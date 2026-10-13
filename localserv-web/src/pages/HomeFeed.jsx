@@ -15,6 +15,7 @@ import { formatNaira, formatPrice } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 import { lookFor } from '../utils/bubbleLook';
 import { usePageBackdrop } from '../hooks/usePageBackdrop';
+import { useHideBalance } from '../hooks/useHideBalance';
 import { Icon } from '../components/icons';
 import Modal from '../components/Modal';
 import { ReceiptSheet } from '../components/ReceiptNotifier';
@@ -195,14 +196,15 @@ function UpdateRow({ item, onReceipt }) {
     </>
   );
   return item.receipt
-    ? <button type="button" className="hf-row" onClick={() => onReceipt(item.receipt)}>{body}</button>
-    : <Link to={item.to} className="hf-row">{body}</Link>;
+    ? <button type="button" className={`hf-row${item.hot ? ' is-hot' : ''}`} onClick={() => onReceipt(item.receipt)}>{body}</button>
+    : <Link to={item.to} className={`hf-row${item.hot ? ' is-hot' : ''}`}>{body}</Link>;
 }
 
 export default function HomeFeed() {
   usePageBackdrop('scene');
   const { user } = useAuth();
   const alerts = useAlerts();
+  const { hidden: balHidden, toggle: toggleBal, naira } = useHideBalance();
   const uid = user?.id;
   const fullName = user?.display_name || user?.username || '';
   const firstName = fullName.trim().split(/\s+/)[0] || 'there';
@@ -446,13 +448,17 @@ export default function HomeFeed() {
               <div className="hf-wallet__top">
                 <span className="hf-ico" data-tint="mint" aria-hidden="true"><Icon name="wallet" size={18} /></span>
                 <span className="hf-wallet__label">Wallet balance</span>
+                <button type="button" className="hf-eye" onClick={toggleBal} aria-pressed={balHidden}
+                  aria-label={balHidden ? 'Show wallet balance' : 'Hide wallet balance'}>
+                  <Icon name={balHidden ? 'eyeOff' : 'eye'} size={17} />
+                </button>
                 <Link to="/wallet" className="hf-link">Open<Icon name="chevron" size={14} /></Link>
               </div>
-              <p className="hf-wallet__amount">{balance == null ? '–' : formatNaira(balance)}</p>
+              <p className="hf-wallet__amount">{balance == null ? '–' : naira(balance)}</p>
               {bonus > 0 && (
                 <p className="hf-wallet__bonus">
                   <Icon name="gift" size={15} />
-                  <span><b>{formatNaira(bonus)}</b> bonus credit<small> · spent first on plans, not withdrawable</small></span>
+                  <span><b>{naira(bonus)}</b> bonus credit<small> · spent first on plans, not withdrawable</small></span>
                 </p>
               )}
               <div className="hf-wallet__acts">
@@ -531,8 +537,8 @@ export default function HomeFeed() {
 
           <h3 className="hf-drawer__sub">Your money</h3>
           <dl className="hf-money">
-            <div><dt>Wallet balance</dt><dd>{balance == null ? '–' : formatNaira(balance)}</dd></div>
-            <div><dt>Bonus credit</dt><dd>{bonus == null ? '–' : formatNaira(bonus)}</dd></div>
+            <div><dt>Wallet balance</dt><dd>{balance == null ? '–' : naira(balance)}</dd></div>
+            <div><dt>Bonus credit</dt><dd>{bonus == null ? '–' : naira(bonus)}</dd></div>
           </dl>
           <button type="button" className="hf-row hf-row--flat" onClick={() => setPromoOpen(true)}>
             <span className="hf-ico" data-tint="gold" aria-hidden="true"><Icon name="gift" size={17} /></span>
