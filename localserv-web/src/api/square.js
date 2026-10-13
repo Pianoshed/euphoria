@@ -6,6 +6,8 @@ export const listStatuses = () => apiFetch('/api/square/statuses/');
 export const createStatus = (formData) => apiFetch('/api/square/statuses/', { method: 'POST', body: formData });
 export const reactStatus = (id, emoji) =>
   apiFetch(`/api/square/statuses/${id}/react/`, { method: 'POST', body: { emoji } });
+// Owner only (anyone else gets 404). Removes the files and the row for good; resolves on 204.
+export const deleteStatus = (id) => apiFetch(`/api/square/statuses/${id}/`, { method: 'DELETE' });
 
 // Free-to-use (CC0 / public domain / CC-BY) tracks for slideshow music. Nothing is stored on our side.
 export const searchMusic = (q) => apiFetch('/api/square/music/', { query: { q } });

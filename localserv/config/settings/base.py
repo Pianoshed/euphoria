@@ -232,7 +232,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 # Needs `django-storages[s3]` in requirements. Env vars:
 #   MEDIA_S3_BUCKET, MEDIA_S3_ACCESS_KEY_ID, MEDIA_S3_SECRET_ACCESS_KEY,
 #   MEDIA_S3_ENDPOINT_URL (R2 / Supabase / B2: their S3 endpoint; leave empty for AWS), MEDIA_S3_REGION (default "auto"),
-#   MEDIA_S3_SIGNED_URLS (default True: private bucket, links expire after MEDIA_S3_URL_EXPIRE_SECONDS, default 3600).
+#   MEDIA_S3_SIGNED_URLS (default True: private bucket, links expire after MEDIA_S3_URL_EXPIRE_SECONDS, default 21600 = 6h).
 _media_bucket = env("MEDIA_S3_BUCKET", default="")
 if _media_bucket:
     try:
@@ -251,7 +251,7 @@ if _media_bucket:
                 "region_name": env("MEDIA_S3_REGION", default="auto"),
                 "signature_version": "s3v4",
                 "querystring_auth": env.bool("MEDIA_S3_SIGNED_URLS", default=True),
-                "querystring_expire": env.int("MEDIA_S3_URL_EXPIRE_SECONDS", default=3600),
+                "querystring_expire": env.int("MEDIA_S3_URL_EXPIRE_SECONDS", default=6 * 3600),
                 "file_overwrite": False,  # never replace someone else's file with the same name
                 # Every upload gets a unique random name and is never changed, so browsers/CDNs may keep it for
                 # the life of the status (24h). Saves bandwidth and makes slides appear instantly on re-open.
@@ -397,9 +397,9 @@ GIFT_EXPIRY_DAYS = env.int("GIFT_EXPIRY_DAYS", default=7)
 # Status posts (apps.square) live 24h. Rows AND files are deleted once they pass this age.
 STATUS_RETENTION_HOURS = env.int("STATUS_RETENTION_HOURS", default=24)
 # Chat media of these kinds is deleted this many days after it was sent. Chat has no "video" kind yet
-# (only "image" and "audio"); add "image" / "audio" here (comma-separated) to expire those as well.
+# (only "image" and "audio"); those two are purged by default. Set CHAT_MEDIA_PURGE_KINDS=video (or empty) to keep them.
 CHAT_MEDIA_RETENTION_DAYS = env.int("CHAT_MEDIA_RETENTION_DAYS", default=14)
-CHAT_MEDIA_PURGE_KINDS = env.list("CHAT_MEDIA_PURGE_KINDS", default=["video"])
+CHAT_MEDIA_PURGE_KINDS = env.list("CHAT_MEDIA_PURGE_KINDS", default=["image", "audio"])
 
 # --- Slideshow statuses (apps.square) ---
 # Photos are re-encoded as WebP: longest side and quality below (smaller = cheaper bucket, softer picture).

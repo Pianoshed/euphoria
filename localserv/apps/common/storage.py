@@ -15,11 +15,41 @@ from storages.backends.s3 import S3Storage
 
 
 class CachedSignedUrlS3Storage(S3Storage):
+    def _url_key(self, name):
+        return "media-url:" + hashlib.sha1(f"{self.bucket_name}/{name}".encode()).hexdigest()
+
+    def urls(self, names, expire=None):
+        """{name: url} for many files with ONE cache read (get_many) and one write for the misses, instead of a
+        network round trip per file. Same keys and lifetimes as url(), so both share the cache."""
+        names = list(dict.fromkeys(n for n in names if n))
+        if not names:
+            return {}
+        ttl = int(expire or self.querystring_expire)
+        if not self.querystring_auth:
+            return {n: super().url(n, expire=ttl) for n in names}
+        keys = {self._url_key(n): n for n in names}
+        try:
+            hit = cache.get_many(list(keys))
+        except Exception:  # cache down: fresh links
+            hit = {}
+        out, fresh = {}, {}
+        for key, name in keys.items():
+            if hit.get(key):
+                out[name] = hit[key]
+            else:
+                out[name] = fresh[key] = super().url(name, expire=ttl)
+        if fresh:
+            try:
+                cache.set_many(fresh, max(60, ttl // 2))
+            except Exception:
+                pass
+        return out
+
     def url(self, name, parameters=None, expire=None, http_method=None):
         if not self.querystring_auth or parameters or http_method:
             return super().url(name, parameters, expire, http_method)
         ttl = int(expire or self.querystring_expire)
-        key = "media-url:" + hashlib.sha1(f"{self.bucket_name}/{name}".encode()).hexdigest()
+        key = self._url_key(name)
         try:
             url = cache.get(key)
         except Exception:  # cache down: fall back to a fresh link

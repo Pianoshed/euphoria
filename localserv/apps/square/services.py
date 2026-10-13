@@ -26,20 +26,48 @@ def purge_expired(batch_size: int = 500) -> int:
     due = Q(expires_at__lte=now) | Q(created_at__lte=now - timedelta(hours=hours))
     storage = Status._meta.get_field("file").storage
     total = 0
+    stuck = set()  # rows whose files could not be deleted this run: kept (so the files are never orphaned), retried next run
     while True:
-        batch = list(Status.objects.filter(due).values_list("pk", "file", "cover")[:batch_size])
+        batch = list(Status.objects.filter(due).exclude(pk__in=stuck).values_list("pk", "file", "cover")[:batch_size])
         if not batch:
             return total
-        pks = [pk for pk, _f, _c in batch]
-        names = [n for _pk, f, c in batch for n in (f, c) if n]
-        names += list(StatusSlide.objects.filter(status_id__in=pks).values_list("file", flat=True))  # slideshow pictures
-        for name in names:
+        slide_files = {}
+        for sid, name in StatusSlide.objects.filter(status_id__in=[pk for pk, _f, _c in batch]).values_list("status_id", "file"):
+            slide_files.setdefault(sid, []).append(name)  # slideshow pictures
+        done = []
+        for pk, f, c in batch:
             try:
-                storage.delete(name)
-            except OSError:
-                logger.warning("Could not delete status file %s", name, exc_info=True)
-        Status.objects.filter(pk__in=pks).delete()
-        total += len(batch)
+                for name in [n for n in (f, c, *slide_files.get(pk, [])) if n]:
+                    storage.delete(name)  # deleting a missing object is fine; R2 deletes are free
+            except Exception:  # bucket/network errors are botocore errors, not OSError: one bad file must not stall the purge
+                logger.warning("Could not delete files of status %s; will retry on the next run", pk, exc_info=True)
+                stuck.add(pk)
+                continue
+            done.append(pk)
+        if done:
+            Status.objects.filter(pk__in=done).delete()
+            total += len(done)
+
+
+def delete_status(status: Status) -> bool:
+    """Permanently delete one status for its creator: every file (single file, cover, each slide) and then the row
+    (reactions and "seen" marks go with it via CASCADE). Nothing is kept or recoverable afterwards.
+
+    If the bucket refuses a delete, the row is NOT dropped (that would orphan the files, since purging works from DB
+    rows). Instead it is expired on the spot, so every query already hides it, and purge_expired() retries the files
+    on its next run. Returns True when everything is gone, False when clean-up was left for the purge."""
+    storage = Status._meta.get_field("file").storage
+    names = [n for n in (status.file.name, status.cover.name) if n]
+    names += list(StatusSlide.objects.filter(status_id=status.pk).values_list("file", flat=True))
+    try:
+        for name in names:
+            storage.delete(name)  # deleting a missing object is fine
+    except Exception:  # botocore errors are not OSError
+        logger.warning("Could not delete files of status %s; hidden now, the purge will retry", status.pk, exc_info=True)
+        Status.objects.filter(pk=status.pk).update(expires_at=timezone.now())
+        return False
+    status.delete()
+    return True
 
 
 def purge_in_background(every_seconds: int = 900) -> None:

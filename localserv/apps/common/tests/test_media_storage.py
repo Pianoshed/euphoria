@@ -25,6 +25,17 @@ class CachedSignedUrls(SimpleTestCase):
         self.assertNotEqual(st.url("square_status/u/b.webp"), first)
         self.assertIn("X-Amz-Signature", first)
 
+    def test_urls_batch_shares_the_cache_with_url_and_reads_it_once(self):
+        st = _storage()
+        batch = st.urls(["a.webp", "b.webp", "a.webp", ""])
+        self.assertEqual(set(batch), {"a.webp", "b.webp"})
+        self.assertEqual(st.url("a.webp"), batch["a.webp"])  # same cache entry as the single-file path
+        with mock.patch("apps.common.storage.cache") as c:
+            c.get_many.return_value = {}
+            st.urls(["x.webp", "y.webp"])
+        self.assertEqual(c.get_many.call_count, 1)
+        self.assertEqual(c.get.call_count, 0)
+
     def test_link_is_refreshed_before_it_gets_old(self):
         st = _storage()
         with mock.patch("apps.common.storage.cache") as c:

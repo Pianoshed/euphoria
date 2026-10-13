@@ -213,6 +213,72 @@ class SlideshowStatus(SquareBackend):
         self.assertEqual(self.stored_files(), [])
         self.assertEqual(StatusSlide.objects.count(), 0)
 
+    def test_purge_keeps_a_row_whose_file_cannot_be_deleted_and_still_purges_the_rest(self):
+        self.post([_img(size=(300, 300)), _img(size=(300, 300))])
+        self.post([_img(size=(300, 300)), _img(size=(300, 300))])
+        Status.objects.update(expires_at=Status.objects.first().created_at)
+        bad = Status.objects.order_by("created_at").first()
+        storage = Status._meta.get_field("file").storage
+        real = storage.delete
+
+        def flaky(name):
+            if name == bad.cover.name:
+                raise RuntimeError("bucket down")  # not an OSError, like a real botocore error
+            return real(name)
+
+        with mock.patch.object(storage, "delete", side_effect=flaky):
+            self.assertEqual(services.purge_expired(), 1)  # the other status is gone, the run did not stall
+        self.assertEqual(list(Status.objects.values_list("pk", flat=True)), [bad.pk])  # kept, so its files are not orphaned
+        self.assertEqual(services.purge_expired(), 1)  # next run, bucket healthy again
+        self.assertEqual(Status.objects.count(), 0)
+        self.assertEqual(self.stored_files(), [])
+
+    # ---------- creator deletes a status for good ----------
+    def test_creator_deletes_slideshow_files_and_rows_for_good(self):
+        sid = self.post([_img(size=(300, 300)), _img(size=(300, 300))]).json()["id"]
+        self.cl["a"].post(f"{BASE}/statuses/{sid}/react/", {"emoji": "🔥"}, format="json")
+        self.cl["b"].post(f"{BASE}/statuses/{sid}/seen/")
+        self.assertEqual(len(self.stored_files()), 3)
+        r = self.cl["a"].delete(f"{BASE}/statuses/{sid}/")
+        self.assertEqual(r.status_code, 204)
+        self.assertEqual(self.stored_files(), [])
+        self.assertFalse(Status.objects.filter(pk=sid).exists())
+        self.assertEqual(StatusSlide.objects.count(), 0)
+        self.assertNotIn(sid, {s["id"] for s in self.cl["b"].get(f"{BASE}/statuses/").json()})
+        self.assertEqual(self.cl["a"].delete(f"{BASE}/statuses/{sid}/").status_code, 404)  # already gone
+
+    def test_text_and_single_photo_statuses_are_deletable_too(self):
+        self.assertEqual(self.cl["a"].delete(f"{BASE}/statuses/{self.st['a']}/").status_code, 204)
+        r = self.cl["a"].post(f"{BASE}/statuses/", {"file": _img(size=(300, 300))}, format="multipart")
+        self.assertEqual(len(self.stored_files()), 1)
+        self.assertEqual(self.cl["a"].delete(f"{BASE}/statuses/{r.json()['id']}/").status_code, 204)
+        self.assertEqual(self.stored_files(), [])
+
+    def test_only_the_creator_can_delete(self):
+        sid = self.post([_img(size=(200, 200)), _img(size=(200, 200))]).json()["id"]
+        for who in ("b", "c"):  # b is tagged in a's tree and sees it; c is a stranger
+            self.assertEqual(self.cl[who].delete(f"{BASE}/statuses/{sid}/").status_code, 404)
+        self.assertTrue(Status.objects.filter(pk=sid).exists())
+        self.assertEqual(len(self.stored_files()), 3)
+        self.assertIn(self.client.delete(f"{BASE}/statuses/{sid}/").status_code, (401, 403))  # anonymous
+
+    def test_creator_can_delete_an_expired_status_the_purge_has_not_reached(self):
+        sid = self.post([_img(size=(200, 200)), _img(size=(200, 200))]).json()["id"]
+        Status.objects.filter(pk=sid).update(expires_at=Status.objects.get(pk=sid).created_at)
+        self.assertEqual(self.cl["a"].delete(f"{BASE}/statuses/{sid}/").status_code, 204)
+        self.assertEqual(self.stored_files(), [])
+
+    def test_delete_when_bucket_fails_hides_status_and_purge_finishes_it(self):
+        sid = self.post([_img(size=(200, 200)), _img(size=(200, 200))]).json()["id"]
+        storage = Status._meta.get_field("file").storage
+        with mock.patch.object(storage, "delete", side_effect=RuntimeError("bucket down")):
+            self.assertEqual(self.cl["a"].delete(f"{BASE}/statuses/{sid}/").status_code, 204)
+        self.assertNotIn(sid, {s["id"] for s in self.cl["a"].get(f"{BASE}/statuses/").json()})  # hidden at once
+        self.assertTrue(Status.objects.filter(pk=sid).exists())  # row kept so the files are not orphaned
+        self.assertEqual(services.purge_expired(), 1)            # bucket healthy again
+        self.assertEqual(self.stored_files(), [])
+        self.assertFalse(Status.objects.filter(pk=sid).exists())
+
     # ---------- music ----------
     @mock.patch("apps.square.music.requests.get")
     def test_music_is_verified_server_side_and_stored_as_reference(self, get):

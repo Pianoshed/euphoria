@@ -1,3 +1,4 @@
+import logging
 import secrets
 from datetime import timedelta
 
@@ -571,9 +572,10 @@ def _purge_attachment(message: Message) -> None:
     attachment.delete()
 
 
-def _expire_attachment(attachment: MessageAttachment) -> None:
+def _expire_attachment(attachment: MessageAttachment) -> bool:
     """Delete one attachment's file and row. The message text (if any) stays; a message that was ONLY
-    the media is soft-deleted, because the DB requires every live message to have a body or an attachment."""
+    the media is soft-deleted, because the DB requires every live message to have a body or an attachment.
+    Returns False (and keeps the row, so the next run retries) when the bucket refused the delete."""
     message = attachment.message
     now = timezone.now()
     if attachment.file:
@@ -581,6 +583,9 @@ def _expire_attachment(attachment: MessageAttachment) -> None:
             attachment.file.delete(save=False)
         except OSError:
             pass  # already gone (e.g. wiped by a redeploy); still drop the row
+        except Exception:  # bucket/network error: keep the row so the file is not orphaned
+            logging.getLogger("apps").warning("Could not delete chat media %s; will retry", attachment.pk, exc_info=True)
+            return False
     with transaction.atomic():
         attachment.delete()
         message.has_attachment = False
@@ -590,6 +595,7 @@ def _expire_attachment(attachment: MessageAttachment) -> None:
             message.pinned_at = message.pinned_by = None
             fields += ["is_deleted", "deleted_at", "pinned_at", "pinned_by"]
         message.save(update_fields=fields)
+    return True
 
 
 def purge_old_chat_media(*, days: int = 14, kinds=("video",), batch_size: int = 200) -> int:
@@ -597,16 +603,19 @@ def purge_old_chat_media(*, days: int = 14, kinds=("video",), batch_size: int = 
     Batched and safe to re-run (run it from cron, see `manage.py purge_expired_media`)."""
     cutoff = timezone.now() - timedelta(days=days)
     total = 0
+    stuck = set()  # attachments the bucket refused to delete this run; retried next run
     while True:
         batch = list(
             MessageAttachment.objects.filter(kind__in=list(kinds), created_at__lte=cutoff)
-            .select_related("message")[:batch_size]
+            .exclude(pk__in=stuck).select_related("message")[:batch_size]
         )
         if not batch:
             return total
         for attachment in batch:
-            _expire_attachment(attachment)
-        total += len(batch)
+            if _expire_attachment(attachment):
+                total += 1
+            else:
+                stuck.add(attachment.pk)
 
 
 def consume_view_once(message_id, user):

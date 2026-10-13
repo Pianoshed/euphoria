@@ -34,9 +34,23 @@ def _who(u):
     return {"id": str(u.id), "name": name or u.username}
 
 
-def _abs(request, f):
-    """Absolute URL of a stored file. Bucket links are already absolute; local-disk ones get the host added."""
-    return request.build_absolute_uri(f.url) if f else None
+def _abs(request, f, urls=None):
+    """Absolute URL of a stored file. Bucket links are already absolute; local-disk ones get the host added.
+    `urls` (from _urls_for) holds links fetched for the whole list in one go."""
+    if not f:
+        return None
+    return request.build_absolute_uri((urls or {}).get(f.name) or f.url)
+
+
+def _urls_for(statuses):
+    """Signed links for every file of these statuses with a single cache round trip (None on plain disk storage)."""
+    bulk = getattr(Status._meta.get_field("cover").storage, "urls", None)
+    if bulk is None:
+        return None
+    names = []
+    for s in statuses:
+        names += [s.file.name, s.cover.name] + [sl.file.name for sl in s.slides.all()]
+    return bulk(names)
 
 
 def _seen_ids(request, statuses):
@@ -55,7 +69,7 @@ def _music_public(m):
     return {k: m.get(k) for k in keys}
 
 
-def _status(request, s, seen=None):
+def _status(request, s, seen=None, urls=None):
     rs = list(s.reactions.all())
     if seen is None:
         seen = _seen_ids(request, [s])
@@ -64,12 +78,12 @@ def _status(request, s, seen=None):
     return {
         "seen": watched,
         "id": str(s.id), "kind": s.kind, "text": s.text, "duration": s.duration_seconds,
-        "file": _abs(request, s.file),
-        "cover": _abs(request, s.cover),
+        "file": _abs(request, s.file, urls),
+        "cover": _abs(request, s.cover, urls),
         "slide_seconds": s.slide_seconds,
         "template": (s.template or media.DEFAULT_TEMPLATE) if s.kind == Status.Kind.SLIDESHOW else None,
         "canvas": (s.canvas or media.DEFAULT_CANVAS) if s.kind == Status.Kind.SLIDESHOW else None,
-        "slides": [{"url": _abs(request, sl.file), "w": sl.width, "h": sl.height} for sl in s.slides.all()]
+        "slides": [{"url": _abs(request, sl.file, urls), "w": sl.width, "h": sl.height} for sl in s.slides.all()]
                   if s.kind == Status.Kind.SLIDESHOW else None,
         "music": _music_public(s.music),
         "created_at": s.created_at, "expires_at": s.expires_at, "user": _who(s.user),
@@ -115,6 +129,15 @@ def _visible_statuses(user):
     return Status.objects.filter(expires_at__gt=timezone.now(), user_id__in=_circle_ids(user))
 
 
+def _store(model, field_name, instance, filename, content, saved):
+    """Write `content` to the field's storage under its normal upload path and return the stored name.
+    Same result as FieldFile.save(), but without touching the DB; the name is remembered in `saved` for clean-up."""
+    field = model._meta.get_field(field_name)
+    stored = field.storage.save(field.generate_filename(instance, filename), content, max_length=field.max_length)
+    saved.append(stored)
+    return stored
+
+
 class _Base(APIView):
     permission_classes = [IsAuthenticated, IsActiveAccount]
 
@@ -126,7 +149,8 @@ class StatusListCreateView(_Base):
                   .select_related("user__profile").prefetch_related("reactions", "slides")
                   .order_by("-created_at")[:100])
         seen = _seen_ids(request, qs)
-        return Response([_status(request, s, seen) for s in qs])
+        urls = _urls_for(qs)
+        return Response([_status(request, s, seen, urls) for s in qs])
 
     def post(self, request):
         now = timezone.now()
@@ -165,19 +189,19 @@ class StatusListCreateView(_Base):
                 raise ValidationError({"file": ["Choose a photo or a video."]})
         saved = []  # storage names written so far, removed again if anything below fails
         try:
+            # 1) Upload first: no DB transaction (and no pooled connection) is held while the network is busy.
+            if content:
+                s.file = _store(Status, "file", s, name, content, saved)
+            if slides:
+                s.cover = _store(Status, "cover", s, "c.webp", cover, saved)
+                rows = [StatusSlide(status=s, position=i, width=w, height=h,
+                                    file=_store(StatusSlide, "file", StatusSlide(status=s), "s.webp", blob, saved))
+                        for i, (blob, w, h) in enumerate(slides)]
+            # 2) One short transaction: the status row (written once, with its file names) and all slides in one INSERT.
             with transaction.atomic():
                 s.save()
-                if content:
-                    s.file.save(name, content, save=True)
-                    saved.append(s.file.name)
                 if slides:
-                    s.cover.save("c.webp", cover, save=True)
-                    saved.append(s.cover.name)
-                    for i, (blob, w, h) in enumerate(slides):
-                        sl = StatusSlide(status=s, position=i, width=w, height=h)
-                        sl.file.save("s.webp", blob, save=False)
-                        saved.append(sl.file.name)
-                        sl.save()
+                    StatusSlide.objects.bulk_create(rows)
         except BaseException:
             storage = Status._meta.get_field("file").storage
             for n in saved:
@@ -202,6 +226,19 @@ class StatusListCreateView(_Base):
         if not isinstance(raw, dict):
             raise ValidationError({"music": ["Pick a track from the music list."]})
         return music.get_track(raw.get("provider"), raw.get("id"))
+
+
+class StatusDetailView(_Base):
+    """DELETE /statuses/<id>/ -> the creator permanently removes their own status (files + row, no undo).
+    Same 404 for "doesn't exist" and "not yours", so nobody can probe for other people's status ids. An already
+    expired status that the purge has not reached yet can still be deleted by its owner."""
+
+    def delete(self, request, status_id):
+        s = Status.objects.filter(pk=status_id, user=request.user).prefetch_related("slides").first()
+        if s is None:
+            raise NotFound("Status not found.")
+        services.delete_status(s)  # even if the bucket is down it is hidden at once and finished by the purge
+        return Response(status=http.HTTP_204_NO_CONTENT)
 
 
 class MusicSearchView(_Base):
@@ -293,8 +330,10 @@ class TrendingView(_Base):
             for row in model.objects.filter(created_at__gte=since, **scope).values("emoji").annotate(c=Count("id")):
                 tally[row["emoji"]] = tally.get(row["emoji"], 0) + row["c"]
         emoji = [e for e, _ in sorted(tally.items(), key=lambda kv: -kv[1])[:3]]
+        top_s = list(top_s)
+        seen_ids, urls = _seen_ids(request, top_s), _urls_for(top_s)
         return Response({
-            "statuses": [_status(request, s) for s in top_s],
+            "statuses": [_status(request, s, seen_ids, urls) for s in top_s],
             "thoughts": [_thought(request, t) for t in top_t],
             "emoji": emoji,
         })

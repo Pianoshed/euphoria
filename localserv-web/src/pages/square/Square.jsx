@@ -153,7 +153,7 @@ function primeAudio(url) {
   } catch { /* the viewer falls back to the speaker button */ }
 }
 
-function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
+function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, paused }) {
   const { user } = useAuth();
   const isVideo = status.kind === 'video';
   const slides = useMemo(() => (status.kind === 'slideshow' ? (status.slides || []) : []), [status]);
@@ -166,9 +166,11 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   const advance = useRef();
   advance.current = () => (onNext ? onNext() : close());
   const holding = useRef(false); // true while a share sheet is open: the auto-advance waits instead of closing it
+  const pausedRef = useRef(false);
+  pausedRef.current = !!paused; // the delete confirmation is open
   useEffect(() => {
     let t;
-    const tick = () => { if (holding.current) t = setTimeout(tick, 800); else advance.current(); };
+    const tick = () => { if (holding.current || pausedRef.current) t = setTimeout(tick, 800); else advance.current(); };
     t = setTimeout(tick, ms + 300);
     return () => clearTimeout(t);
   }, [status.id, ms]);
@@ -229,6 +231,7 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   // (friends-only content shouldn't be re-shared by whoever happens to see it); set canSend = isShow || image to open it to viewers.
   const isMine = !!user && String(status.user.id) === String(user.id);
   const canSend = isMine && (isShow || status.kind === 'image');
+  const canDelete = isMine && !!onDelete;
   const [note, setNote] = useState('');
   const noteTimer = useRef();
   const flash = (m) => { setNote(m); clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNote(''), 2200); };
@@ -289,7 +292,7 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
             : <span title={track.credit}>{soundLabel}</span>}
         </div>
       )}
-      {(track || canSend) && (
+      {(track || canSend || canDelete) && (
         <div className="sq-rail">
           {track && (
             <button type="button" className={`sq-rbtn is-${sound}`} onClick={toggleSound} disabled={sound === 'failed'}
@@ -303,6 +306,11 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
               <Icon name="share" size={18} />
             </button>
           )}
+          {canDelete && (
+            <button type="button" className="sq-rbtn sq-rbtn--danger" onClick={() => onDelete(status)} aria-label="Delete this status">
+              <Icon name="trash" size={18} />
+            </button>
+          )}
         </div>
       )}
       {note && <div className="sq-note" role="status">{note}</div>}
@@ -313,10 +321,10 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   );
 }
 
-function Viewer({ status, circle, onClose, onReact, onPrev, onNext }) {
+function Viewer({ status, circle, onClose, onReact, onPrev, onNext, onDelete, paused }) {
   return (
     <Overlay label={`${status.user.name}'s status`} onClose={onClose}>
-      {(close) => <ViewerBody key={status.id} status={status} circle={circle} close={close} onReact={onReact} onPrev={onPrev} onNext={onNext} />}
+      {(close) => <ViewerBody key={status.id} status={status} circle={circle} close={close} onReact={onReact} onPrev={onPrev} onNext={onNext} onDelete={onDelete} paused={paused} />}
     </Overlay>
   );
 }
@@ -1175,6 +1183,27 @@ export default function Square() {
   const reactStatus = async (s, emoji) => {
     try { const u = await api.reactStatus(s.id, emoji); swap(setStatuses)(u); setViewing((v) => (v?.id === u.id ? u : v)); load(); } catch { pop('Could not send that reaction'); }
   };
+  // Owner only. The server removes the files and the row (204); on success drop it from the list and close the viewer.
+  const deleteStatus = (s) => setConfirm({
+    title: 'Delete this status?',
+    body: 'It will be removed for everyone and cannot be undone.',
+    okLabel: 'Delete',
+    danger: true,
+    onOk: async () => {
+      try {
+        await api.deleteStatus(s.id);
+        setStatuses((cur) => cur.filter((x) => x.id !== s.id));
+        setViewing((v) => (v?.id === s.id ? null : v));
+        pop('Status deleted');
+        load();
+      } catch (e) {
+        if (e?.status === 404) { // already gone (expired and purged): just drop it locally
+          setStatuses((cur) => cur.filter((x) => x.id !== s.id));
+          setViewing((v) => (v?.id === s.id ? null : v));
+        } else pop(e?.body?.detail || 'Could not delete that status');
+      }
+    },
+  });
   const reactThought = async (t, emoji) => {
     try { swap(setThoughts)(await api.reactThought(t.id, emoji)); load(); } catch { pop('Could not send that reaction'); }
   };
@@ -1457,11 +1486,12 @@ export default function Square() {
       )}
       {thinking && <ThoughtSheet onClose={() => setThinking(false)} onPosted={(t) => { setThoughts((cur) => [t, ...cur]); setTab('thoughts'); load(); }} />}
       {composing && <Composer onClose={() => setComposing(false)} onPosted={(s) => { setStatuses((cur) => [s, ...cur]); load(); }} />}
-      {confirm && <ConfirmDialog {...confirm} onClose={() => setConfirm(null)} />}
       {viewing && (
         <Viewer status={viewing} circle={labelOf[viewing.user.id] ? circleMeta(labelOf[viewing.user.id]) : null}
-          onClose={() => setViewing(null)} onReact={reactStatus} onPrev={goPrev} onNext={goNext} />
+          onClose={() => setViewing(null)} onReact={reactStatus} onPrev={goPrev} onNext={goNext}
+          onDelete={deleteStatus} paused={!!confirm} />
       )}
+      {confirm && <ConfirmDialog {...confirm} onClose={() => setConfirm(null)} />}
     </main>
   );
 }

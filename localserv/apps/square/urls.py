@@ -6,6 +6,7 @@ app_name = "square"
 
 urlpatterns = [
     path("statuses/", views.StatusListCreateView.as_view(), name="status-list"),
+    path("statuses/<uuid:status_id>/", views.StatusDetailView.as_view(), name="status-detail"),
     path("statuses/<uuid:status_id>/react/", views.StatusReactView.as_view(), name="status-react"),
     path("statuses/<uuid:status_id>/seen/", views.StatusSeenView.as_view(), name="status-seen"),
     path("music/", views.MusicSearchView.as_view(), name="music-search"),
