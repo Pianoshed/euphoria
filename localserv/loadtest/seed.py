@@ -25,28 +25,58 @@ def main():
     ap.add_argument("--users", type=int, default=200)
     ap.add_argument("--group-size", type=int, default=10)
     ap.add_argument("--out", default="loadtest/seed.json")
+    ap.add_argument("--fast", action="store_true", help="bulk-create users without password hashing (thousands of users in seconds)")
     ap.add_argument("--i-know-this-is-not-production", action="store_true", required=True)
     a = ap.parse_args()
     if not settings.DEBUG and "localhost" not in str(settings.DATABASES["default"].get("HOST", "")) and "127.0.0.1" not in str(settings.DATABASES["default"].get("HOST", "")):
         print("Refusing: database host is not local. Point DATABASE_URL at a throw-away database."); sys.exit(2)
 
-    users = []
-    for i in range(a.users):
-        email = f"lt_{i}@loadtest.invalid"
-        u = User.objects.filter(email=email).first() or User.objects.create_user(
-            email=email, username=f"lt{i}user", password="unused-Loadtest-1!", role="CUSTOMER")
-        u.mark_email_verified()
-        users.append(u)
+    if a.fast:
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+        from django.utils.crypto import get_random_string
+        from apps.accounts.models import Profile, ProfilePrivacy
+        existing = {u.email: u for u in User.objects.filter(email__startswith="lt_", email__endswith="@loadtest.invalid")}
+        tpl = next(iter(existing.values()), None) or User.objects.create_user(
+            email="lt_tpl@loadtest.invalid", username="lttpluser", password="unused-Loadtest-1!", role="CUSTOMER")
+        pf = Profile.objects.get(user=tpl); pv = ProfilePrivacy.objects.get(user=tpl)
+        pf_f = {f.name: getattr(pf, f.name) for f in Profile._meta.concrete_fields if f.name not in ("id", "user", "created_at", "updated_at", "display_name")}
+        pv_f = {f.name: getattr(pv, f.name) for f in ProfilePrivacy._meta.concrete_fields if f.name not in ("id", "user", "created_at", "updated_at")}
+        missing = [i for i in range(a.users) if f"lt_{i}@loadtest.invalid" not in existing]
+        for start in range(0, len(missing), 2000):
+            chunk = missing[start:start + 2000]
+            new_users = [User(email=f"lt_{i}@loadtest.invalid", username=f"lt{i}user", role="CUSTOMER", status="ACTIVE", password="!", email_verified=True, email_verified_at=timezone.now()) for i in chunk]
+            User.objects.bulk_create(new_users)
+            Profile.objects.bulk_create([Profile(user_id=u.id, display_name=f"LT {u.username}", **pf_f) for u in new_users])
+            ProfilePrivacy.objects.bulk_create([ProfilePrivacy(user_id=u.id, **pv_f) for u in new_users])
+        by_email = {u.email: u for u in User.objects.filter(email__startswith="lt_", email__endswith="@loadtest.invalid")}
+        users = [by_email[f"lt_{i}@loadtest.invalid"] for i in range(a.users)]
+        store = SessionStore()
+        sessions, clients = [], []
+        for u in users:
+            data = {SESSION_KEY: str(u.pk), BACKEND_SESSION_KEY: "django.contrib.auth.backends.ModelBackend", HASH_SESSION_KEY: u.get_session_auth_hash()}
+            key = get_random_string(32, "abcdefghijklmnopqrstuvwxyz0123456789")
+            sessions.append(Session(session_key=key, session_data=store.encode(data), expire_date=timezone.now() + timezone.timedelta(hours=6)))
+            clients.append({"user_id": str(u.pk), "session": key})
+        Session.objects.bulk_create(sessions)
+    else:
+        users = []
+        for i in range(a.users):
+            email = f"lt_{i}@loadtest.invalid"
+            u = User.objects.filter(email=email).first() or User.objects.create_user(
+                email=email, username=f"lt{i}user", password="unused-Loadtest-1!", role="CUSTOMER")
+            u.mark_email_verified()
+            users.append(u)
 
-    clients = []
-    for u in users:
-        s = SessionStore()
-        s[SESSION_KEY] = str(u.pk)
-        s[BACKEND_SESSION_KEY] = "django.contrib.auth.backends.ModelBackend"
-        s[HASH_SESSION_KEY] = u.get_session_auth_hash()
-        s.set_expiry(60 * 60 * 6)
-        s.create()
-        clients.append({"user_id": str(u.pk), "session": s.session_key})
+        clients = []
+        for u in users:
+            s = SessionStore()
+            s[SESSION_KEY] = str(u.pk)
+            s[BACKEND_SESSION_KEY] = "django.contrib.auth.backends.ModelBackend"
+            s[HASH_SESSION_KEY] = u.get_session_auth_hash()
+            s.set_expiry(60 * 60 * 6)
+            s.create()
+            clients.append({"user_id": str(u.pk), "session": s.session_key})
 
     dms = []
     for i in range(0, len(users) - 1, 2):

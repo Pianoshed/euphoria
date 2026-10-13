@@ -86,7 +86,8 @@ DATABASES["default"]["ATOMIC_REQUESTS"] = False
 #  1. In-process pool (needs psycopg 3 + `psycopg[pool]`, Django 5.1+). Used automatically when installed:
 #     CONN_MAX_AGE is forced to 0 and at most DB_POOL_MAX_SIZE (default 10) connections are open PER PROCESS,
 #     so (processes x pool size) must stay below the Postgres max_connections. Set DB_POOL_MAX_SIZE=0 to disable.
-#  2. PgBouncer in front of Postgres: DB_USE_PGBOUNCER=1 (the pooler owns reuse, so CONN_MAX_AGE=0).
+#  2. PgBouncer in front of Postgres: DB_USE_PGBOUNCER=1. Use it TOGETHER with option 1: the in-app pool keeps a few
+#     connections to PgBouncer open (cheap for sockets), PgBouncer multiplexes all processes onto few Postgres connections.
 #  3. Neither: CONN_MAX_AGE=60 as before. WARNING: under ASGI every HTTP request runs in its own thread, so
 #     those connections are never reused or closed and pile up (measured: 60 concurrent requests left 60 open).
 # Do NOT set CONN_MAX_AGE=0 without 1 or 2: every chat-socket database call would then open a brand-new
@@ -98,13 +99,26 @@ try:
     _POOL_AVAILABLE = True
 except ImportError:
     _POOL_AVAILABLE = False
-_db_pool_max = 0 if _USE_PGBOUNCER else env.int("DB_POOL_MAX_SIZE", default=10 if _POOL_AVAILABLE else 0)
+try:
+    import psycopg  # noqa: F401
+    _PSYCOPG3 = True
+except ImportError:
+    _PSYCOPG3 = False
+_db_pool_max = env.int("DB_POOL_MAX_SIZE", default=10 if _POOL_AVAILABLE else 0)  # also in front of PgBouncer
 if _db_pool_max and not _POOL_AVAILABLE:
     raise ImportError("DB_POOL_MAX_SIZE is set but psycopg 3 / psycopg_pool is not installed. pip install 'psycopg[binary,pool]'")
 _DB_CONN_MAX_AGE_DEFAULT = 0 if (_USE_PGBOUNCER or _db_pool_max) else 60
 DATABASES["default"]["CONN_MAX_AGE"] = env.int("DB_CONN_MAX_AGE", default=_DB_CONN_MAX_AGE_DEFAULT)
 if _db_pool_max:
     DATABASES["default"]["CONN_MAX_AGE"] = 0  # Django refuses CONN_MAX_AGE together with a pool
+if _USE_PGBOUNCER and not _db_pool_max:
+    import warnings
+
+    warnings.warn(
+        "DB_USE_PGBOUNCER=1 without the in-app pool: every chat-socket database call opens a new connection "
+        "to PgBouncer, which makes WebSockets very slow. Install 'psycopg[binary,pool]' and keep DB_POOL_MAX_SIZE > 0.",
+        RuntimeWarning,
+    )
 if "postgresql" in DATABASES["default"].get("ENGINE", "") and not (_db_pool_max or _USE_PGBOUNCER):
     import warnings
 
@@ -133,6 +147,11 @@ if "postgresql" in DATABASES["default"].get("ENGINE", ""):
         }
     if _USE_PGBOUNCER:
         DATABASES["default"]["DISABLE_SERVER_SIDE_CURSORS"] = True
+        if _PSYCOPG3:
+            # psycopg 3 prepares a statement on the server after 5 runs; in PgBouncer transaction mode the next
+            # run may land on a different server connection ("prepared statement does not exist"). PgBouncer
+            # older than 1.21 cannot track prepared statements at all, so switch them off.
+            _db_opts["prepare_threshold"] = None
         # Startup `options` are rejected by PgBouncer transaction mode. Set the same timeouts per role instead:
         #   ALTER ROLE <app_user> SET statement_timeout='30s';
         #   ALTER ROLE <app_user> SET idle_in_transaction_session_timeout='30s';

@@ -56,7 +56,10 @@ def create_booking(customer, *, service_id, note_from_customer="", scheduled_for
         raise DomainError("Quantity must be at least 1.")
 
     try:
-        service = Service.objects.select_for_update().select_related("provider", "provider__privacy", "category").get(id=service_id)
+        # of=("self",): lock only the service row. Without it Postgres refuses the query ("FOR UPDATE cannot be
+        # applied to the nullable side of an outer join", because of provider__privacy / category), so every
+        # booking failed on Postgres while passing on SQLite.
+        service = Service.objects.select_for_update(of=("self",)).select_related("provider", "provider__privacy", "category").get(id=service_id)
     except Service.DoesNotExist as exc:
         raise DomainError("Service not found.") from exc
 
