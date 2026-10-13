@@ -587,7 +587,7 @@ function ThoughtSheet({ onClose, onPosted }) {
 function Composer({ onClose, onPosted }) {
   const [text, setText] = useState('');
   // Each photo is shrunk ONCE, right when it is picked (one at a time), so posting is instant and only small
-  // blobs stay in memory: {id, blob (<=1280px), thumb (160px url)}.
+  // blobs stay in memory: {id, blob (<=1280px), thumb (240px url)}.
   const [photos, setPhotos] = useState([]);
   const [secs, setSecs] = useState(DEFAULT_SLIDE_SECONDS);
   const [music, setMusic] = useState(null);
@@ -633,9 +633,10 @@ function Composer({ onClose, onPosted }) {
   });
   useEffect(() => { if (n < 2) setMusic(null); }, [n]); // music only goes with a slideshow
 
+  const canPost = n > 0 || text.trim().length > 0;
   const submit = async (close) => {
     setErr('');
-    if (!n && !text.trim()) return setErr('Add a photo or some text.');
+    if (!canPost) return setErr('Add a photo or write something first.');
     try {
       const fd = new FormData();
       fd.append('text', text.trim());
@@ -657,83 +658,129 @@ function Composer({ onClose, onPosted }) {
       setBusy('');
     }
   };
+  const postLabel = busy || (isShow ? `Post slideshow · ${total}s` : n === 1 ? 'Post photo' : 'Post status');
+
   return (
     <Overlay sheet label="New status" onClose={onClose}>
       {(close) => (
-        <div className="sq-sheet">
+        <div className="sq-sheet sq-compose">
           <span className="sq-grab" aria-hidden="true" />
-          <h2>New status</h2>
-          <div className="sq-field">
-            <input type="text" maxLength={140} placeholder="Say something (optional)" value={text}
-              onChange={(e) => setText(e.target.value)} />
-            <small className="sq-counter">{text.length}/140</small>
-          </div>
-          {n > 0 && (
-            <ul className="sq-thumbs" aria-label="Your photos, in play order">
-              {photos.map((p, k) => (
-                <li key={p.id}>
-                  <img src={p.thumb} alt={`Photo ${k + 1}`} />
-                  <button type="button" className="sq-x sq-x--dark" aria-label={`Remove photo ${k + 1}`} onClick={() => removeAt(k)}><Icon name="x" size={14} /></button>
-                  {isShow && (
-                    <span className="sq-thumbs__move">
-                      <button type="button" disabled={k === 0} aria-label="Move earlier" onClick={() => move(k, -1)}>‹</button>
-                      <button type="button" disabled={k === n - 1} aria-label="Move later" onClick={() => move(k, 1)}>›</button>
-                    </span>
-                  )}
-                </li>
-              ))}
-            </ul>
-          )}
-          {n < MAX_SLIDES && (
-            <label className="sq-drop">
-              <span className="sq-drop__ico" aria-hidden="true"><Icon name="camera" size={22} /></span>
-              <b>{n ? 'Add more photos' : 'Add photos'}</b>
-              <small>{n ? `${n}/${MAX_SLIDES} · add at least 2 for a slideshow with music` : `One photo, or up to ${MAX_SLIDES} for a slideshow with music`}</small>
+          <header className="sq-compose__head">
+            <div>
+              <h2>New status</h2>
+              <p>Shared with your friend trees · gone in 24h</p>
+            </div>
+            <button type="button" className="sq-x sq-x--soft" onClick={close} disabled={!!busy} aria-label="Close"><Icon name="x" size={18} /></button>
+          </header>
+
+          {/* ---- 1. photos ---- */}
+          {n === 0 ? (
+            <label className="sq-hero-drop">
+              <span className="sq-hero-drop__ico" aria-hidden="true"><Icon name="camera" size={28} /></span>
+              <b>Pick your photos</b>
+              <small>Add one photo, or up to {MAX_SLIDES} to make a slideshow</small>
+              <span className="sq-hero-drop__tags" aria-hidden="true">
+                <em>1–{MAX_SLIDES} photos</em><em>♪ free music</em><em>{MAX_STATUS_SECONDS}s max</em>
+              </span>
               <input type="file" accept="image/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
             </label>
+          ) : (
+            <section className="sq-step">
+              <h3><i>1</i>Photos <small>{n}/{MAX_SLIDES}{isShow ? ' · tap ‹ › to reorder' : ''}</small></h3>
+              <ul className="sq-thumbs" aria-label="Your photos, in play order">
+                {photos.map((p, k) => (
+                  <li key={p.id}>
+                    <img src={p.thumb} alt={`Photo ${k + 1}`} />
+                    <span className="sq-thumbs__no" aria-hidden="true">{k + 1}</span>
+                    <button type="button" className="sq-x sq-x--dark" aria-label={`Remove photo ${k + 1}`} onClick={() => removeAt(k)}><Icon name="x" size={14} /></button>
+                    {isShow && (
+                      <span className="sq-thumbs__move">
+                        <button type="button" disabled={k === 0} aria-label="Move earlier" onClick={() => move(k, -1)}>‹</button>
+                        <button type="button" disabled={k === n - 1} aria-label="Move later" onClick={() => move(k, 1)}>›</button>
+                      </span>
+                    )}
+                  </li>
+                ))}
+                {n < MAX_SLIDES && (
+                  <li className="sq-thumbs__addwrap">
+                    <label className="sq-thumbs__add" aria-label="Add more photos">
+                      <Icon name="plus" size={20} /><small>Add</small>
+                      <input type="file" accept="image/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
+                    </label>
+                  </li>
+                )}
+              </ul>
+              {n === 1 && <p className="sq-nudge">Add 1 more photo to unlock <b>slideshow styles</b> and <b>music</b>.</p>}
+            </section>
           )}
+
+          {/* ---- 2. look ---- */}
           {isShow && (
-            <div className="sq-trim">
-              <p className="sq-trim__read">{n} photos × {eachSecs}s <b>({total}s)</b></p>
-              {maxSecs > MIN_SLIDE_SECONDS && (
-                <label>
-                  <span>Each photo</span>
-                  <input type="range" min={MIN_SLIDE_SECONDS} max={maxSecs} step={1} value={eachSecs}
-                    onChange={(e) => setSecs(Number(e.target.value))} aria-label="Seconds per photo" />
-                </label>
-              )}
-              <small className="sq-hint">The whole slideshow never runs longer than {MAX_STATUS_SECONDS}s.</small>
-            </div>
-          )}
-          {isShow && (
-            <div className="sq-look">
-              <ShowPreview photos={photos} slideMs={eachSecs * 1000} template={template} canvas={canvas} />
-              <div className="sq-look__opts">
-                <b>Style</b>
-                <div className="sq-picks" role="radiogroup" aria-label="Slideshow style">
-                  {SHOW_TEMPLATES.map((t) => (
-                    <button key={t.id} type="button" role="radio" aria-checked={template === t.id}
-                      className={`sq-pick${template === t.id ? ' is-on' : ''}`} style={{ '--c': 'var(--color-primary)' }}
-                      onClick={() => setTemplate(t.id)}>{t.label}</button>
-                  ))}
-                </div>
-                <b>Canvas</b>
-                <div className="sq-picks" role="radiogroup" aria-label="Slideshow canvas">
-                  {SHOW_CANVASES.map((c) => (
-                    <button key={c.id} type="button" role="radio" aria-checked={canvas === c.id}
-                      className={`sq-pick${canvas === c.id ? ' is-on' : ''}`} style={{ '--c': 'var(--color-primary)' }}
-                      onClick={() => setCanvas(c.id)}>{c.label}</button>
-                  ))}
+            <section className="sq-step">
+              <h3><i>2</i>Look <small>live preview</small></h3>
+              <div className="sq-look">
+                <ShowPreview photos={photos} slideMs={eachSecs * 1000} template={template} canvas={canvas} />
+                <div className="sq-look__opts">
+                  <b>Style</b>
+                  <div className="sq-tiles" role="radiogroup" aria-label="Slideshow style">
+                    {SHOW_TEMPLATES.map((t) => (
+                      <button key={t.id} type="button" role="radio" aria-checked={template === t.id}
+                        className={`sq-tile${template === t.id ? ' is-on' : ''}`} onClick={() => setTemplate(t.id)}>
+                        <span className="sq-tile__ico" aria-hidden="true">{{ fade: '◐', drift: '⤢', slide: '➜', pop: '✦' }[t.id]}</span>{t.label}
+                      </button>
+                    ))}
+                  </div>
+                  <b>Canvas</b>
+                  <div className="sq-tiles" role="radiogroup" aria-label="Slideshow canvas">
+                    {SHOW_CANVASES.map((c) => (
+                      <button key={c.id} type="button" role="radio" aria-checked={canvas === c.id}
+                        className={`sq-tile${canvas === c.id ? ' is-on' : ''}`} onClick={() => setCanvas(c.id)}>
+                        <span className={`sq-tile__sw sq-tile__sw--${c.id}`} aria-hidden="true"><i /></span>{c.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+              <div className="sq-time">
+                <div className="sq-time__bar" role="img" aria-label={`${total} of ${MAX_STATUS_SECONDS} seconds used`}><span style={{ width: `${(total / MAX_STATUS_SECONDS) * 100}%` }} /></div>
+                <p><b>{total}s</b> of {MAX_STATUS_SECONDS}s · {n} photos × {eachSecs}s</p>
+                {maxSecs > MIN_SLIDE_SECONDS ? (
+                  <label>
+                    <span>Time per photo</span>
+                    <input type="range" min={MIN_SLIDE_SECONDS} max={maxSecs} step={1} value={eachSecs}
+                      onChange={(e) => setSecs(Number(e.target.value))} aria-label="Seconds per photo" />
+                  </label>
+                ) : (
+                  <small className="sq-hint">With {n} photos each one shows {MIN_SLIDE_SECONDS}s so the show fits in {MAX_STATUS_SECONDS}s.</small>
+                )}
+              </div>
+            </section>
           )}
-          {isShow && <MusicPicker value={music} onChange={setMusic} />}
-          <p className="sq-hint">Only people in your friend trees will see it. Photos are shrunk before upload, slideshows run up to {MAX_STATUS_SECONDS}s, and it disappears after 24 hours.</p>
+
+          {/* ---- 3. music ---- */}
+          {isShow && (
+            <section className="sq-step">
+              <h3><i>3</i>Music <small>optional</small></h3>
+              <MusicPicker value={music} onChange={setMusic} />
+            </section>
+          )}
+
+          {/* ---- caption ---- */}
+          <section className="sq-step">
+            <h3><i>{isShow ? 4 : n === 1 ? 2 : 1}</i>{n ? 'Caption' : 'Or just write something'} <small>optional</small></h3>
+            <div className="sq-field">
+              <input type="text" maxLength={140} placeholder={n ? 'Say something about it…' : 'What\'s on your mind?'} value={text}
+                onChange={(e) => setText(e.target.value)} />
+              <small className="sq-counter">{text.length}/140</small>
+            </div>
+          </section>
+
           {err && <p className="sq-err" role="alert">{err}</p>}
-          <div className="sq-row">
-            <button type="button" className="sq-ghost" disabled={!!busy} onClick={close}>Cancel</button>
-            <button type="button" className="sq-cta" disabled={!!busy} onClick={() => submit(close)}>{busy || 'Post for 24 hours'}</button>
+          <div className="sq-foot">
+            <div className="sq-row">
+              <button type="button" className="sq-ghost" disabled={!!busy} onClick={close}>Cancel</button>
+              <button type="button" className="sq-cta" disabled={!!busy || !canPost} onClick={() => submit(close)}>{postLabel}</button>
+            </div>
           </div>
         </div>
       )}
@@ -757,11 +804,47 @@ function ShowPreview({ photos, slideMs, template, canvas }) {
   );
 }
 
+// The free catalogue is small, so under the search box we suggest 2 random tracks (and "Shuffle" for 2 more).
+// Suggestions come from searching a random mood word; the pool is kept for the whole page visit so nothing is refetched.
+const MUSIC_SEEDS = ['lofi', 'chill', 'acoustic', 'piano', 'ambient', 'jazz', 'upbeat', 'guitar', 'happy', 'instrumental'];
+const randomOrder = (list) => {
+  const a = list.slice();
+  for (let i = a.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+};
+const suggestStore = { queue: [], tried: new Set() };
+async function randomSuggestions(avoid) {
+  const take = (count) => {
+    const out = [];
+    while (out.length < count && suggestStore.queue.length) {
+      const t = suggestStore.queue.shift();
+      if (!avoid.has(t.id) && !out.some((o) => o.id === t.id)) out.push(t);
+    }
+    return out;
+  };
+  let out = take(2);
+  for (let tries = 0; out.length < 2 && tries < 3; tries += 1) {
+    let left = MUSIC_SEEDS.filter((w) => !suggestStore.tried.has(w));
+    if (!left.length) { suggestStore.tried.clear(); left = MUSIC_SEEDS; }
+    const seed = randomOrder(left)[0];
+    suggestStore.tried.add(seed);
+    try {
+      const data = await api.searchMusic(seed);
+      const known = new Set([...suggestStore.queue.map((t) => t.id), ...out.map((t) => t.id)]);
+      suggestStore.queue.push(...randomOrder(data.results || []).filter((t) => !known.has(t.id)));
+    } catch { /* music service down: try the next word */ }
+    out = out.concat(take(2 - out.length));
+  }
+  return out;
+}
+
 // Search free-to-use tracks (CC0 / public domain / CC-BY). Only {provider, id} is ever sent back to the server.
 function MusicPicker({ value, onChange }) {
   const [q, setQ] = useState('');
   const [results, setResults] = useState([]);
   const [state, setState] = useState('idle'); // idle | loading | done
+  const [sugg, setSugg] = useState([]);
+  const [suggBusy, setSuggBusy] = useState(true);
   const [playing, setPlaying] = useState(null);
   const audio = useRef(null);
   const stopPreview = useCallback(() => {
@@ -770,6 +853,16 @@ function MusicPicker({ value, onChange }) {
     setPlaying(null);
   }, []);
   useEffect(() => stopPreview, [stopPreview]);
+
+  const suggestRef = useRef(sugg);
+  suggestRef.current = sugg;
+  const reroll = useCallback(async () => {
+    setSuggBusy(true);
+    const next = await randomSuggestions(new Set(suggestRef.current.map((t) => t.id)));
+    setSugg(next);
+    setSuggBusy(false);
+  }, []);
+  useEffect(() => { reroll(); }, [reroll]);
 
   useEffect(() => {
     const term = q.trim();
@@ -801,37 +894,50 @@ function MusicPicker({ value, onChange }) {
   };
   const pick = (t) => { stopPreview(); onChange(t); setQ(''); setResults([]); setState('idle'); };
 
+  const row = (t) => (
+    <li key={`${t.provider}-${t.id}`} className="sq-track">
+      <button type="button" className={`sq-track__play${playing === t.id ? ' is-on' : ''}`} onClick={() => preview(t)}
+        aria-label={playing === t.id ? `Stop ${t.title}` : `Preview ${t.title}`}>
+        <Icon name={playing === t.id ? 'x' : 'play'} size={14} />
+      </button>
+      <span className="sq-track__txt"><strong>{t.title}</strong><small>{t.artist || 'Unknown artist'}</small></span>
+      <button type="button" className="sq-track__use" onClick={() => pick(t)}>Use</button>
+    </li>
+  );
+
+  if (value) {
+    return (
+      <div className="sq-music-pick">
+        <div className="sq-track sq-track--on">
+          <span className="sq-track__ico" aria-hidden="true">♪</span>
+          <span className="sq-track__txt"><strong>{value.title}</strong><small>{value.artist || 'Unknown artist'} · plays with your slideshow</small></span>
+          <button type="button" className="sq-ghost sq-cta--sm" onClick={() => onChange(null)}>Change</button>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="sq-music-pick">
-      <b className="sq-music-pick__title">♪ Music <small>(optional)</small></b>
-      {value ? (
-        <div className="sq-track sq-track--on">
-          <span className="sq-track__txt"><strong>{value.title}</strong><small>{value.artist || 'Unknown artist'}</small></span>
-          <button type="button" className="sq-ghost sq-cta--sm" onClick={() => onChange(null)}>Remove</button>
-        </div>
-      ) : (
+      <input type="search" placeholder="Search free music (lofi, afrobeat, piano…)" value={q} maxLength={60}
+        onChange={(e) => setQ(e.target.value)} aria-label="Search music" />
+      {q.trim().length >= 2 ? (
         <>
-          <input type="search" placeholder="Search free music (e.g. lofi, afrobeat)" value={q} maxLength={60}
-            onChange={(e) => setQ(e.target.value)} aria-label="Search music" />
           {state === 'loading' && <small className="sq-hint">Searching…</small>}
-          {state === 'done' && results.length === 0 && <small className="sq-hint">No free tracks found. Try another word, or post without music.</small>}
-          {results.length > 0 && (
-            <ul className="sq-tracks">
-              {results.map((t) => (
-                <li key={`${t.provider}-${t.id}`} className="sq-track">
-                  <button type="button" className="sq-track__play" onClick={() => preview(t)} aria-label={playing === t.id ? `Stop ${t.title}` : `Preview ${t.title}`}>
-                    <Icon name={playing === t.id ? 'x' : 'play'} size={14} />
-                  </button>
-                  <button type="button" className="sq-track__txt" onClick={() => pick(t)}>
-                    <strong>{t.title}</strong><small>{t.artist || 'Unknown artist'}</small>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <small className="sq-hint">Free-to-use tracks only. The artist is credited in the status.</small>
+          {state === 'done' && results.length === 0 && <small className="sq-hint">No free tracks for that. Try another word, or pick a suggestion.</small>}
+          {results.length > 0 && <ul className="sq-tracks">{results.map(row)}</ul>}
         </>
+      ) : (
+        <div className="sq-suggest">
+          <div className="sq-suggest__head">
+            <b>Suggested for you</b>
+            <button type="button" className="sq-shuffle" onClick={reroll} disabled={suggBusy}><Icon name="shuffle" size={13} />Shuffle</button>
+          </div>
+          {suggBusy && sugg.length === 0 && <small className="sq-hint">Finding tracks…</small>}
+          {!suggBusy && sugg.length === 0 && <small className="sq-hint">Couldn't load suggestions. Search above, or post without music.</small>}
+          {sugg.length > 0 && <ul className="sq-tracks">{sugg.map(row)}</ul>}
+        </div>
       )}
+      <small className="sq-hint">Free-to-use tracks only. The artist is credited on your status.</small>
     </div>
   );
 }
