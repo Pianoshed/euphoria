@@ -409,6 +409,10 @@ STATUS_SLIDE_QUALITY = env.int("STATUS_SLIDE_QUALITY", default=70)
 MUSIC_ALLOWED_LICENSES = env.list("MUSIC_ALLOWED_LICENSES", default=["cc0", "pdm", "by"])
 # Optional second catalogue. Jamendo's free API is NON-commercial: only set this after agreeing commercial terms.
 JAMENDO_CLIENT_ID = env("JAMENDO_CLIENT_ID", default="")
+# Optional but recommended: free Openverse API credentials (https://api.openverse.org/v1/#tag/auth). Without them the
+# whole server shares Openverse's anonymous limit (20 requests/minute, 200/day); with them the limits are far higher.
+OPENVERSE_CLIENT_ID = env("OPENVERSE_CLIENT_ID", default="")
+OPENVERSE_CLIENT_SECRET = env("OPENVERSE_CLIENT_SECRET", default="")
 
 
 # --- Email ---

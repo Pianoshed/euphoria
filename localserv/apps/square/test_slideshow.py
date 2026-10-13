@@ -275,6 +275,32 @@ class SlideshowStatus(SquareBackend):
         self.assertEqual(params["category"], "music")
 
     @mock.patch("apps.square.music.requests.get")
+    def test_search_never_asks_openverse_for_more_than_20_per_page(self, get):
+        get.return_value = _resp({"results": [OPENVERSE_TRACK]})
+        self.cl["a"].get(f"{BASE}/music/", {"q": "lazy"})
+        self.assertLessEqual(get.call_args.kwargs["params"]["page_size"], 20)  # anonymous max; 21+ is a 400
+
+    @mock.patch("apps.square.music.requests.get")
+    def test_suggestions_are_two_random_tracks_from_a_shared_cached_pool(self, get):
+        get.return_value = _resp({"results": [{**OPENVERSE_TRACK, "id": f"t{i}"} for i in range(6)]})
+        first = self.cl["a"].get(f"{BASE}/music/suggest/").json()["results"]
+        self.assertEqual(len(first), 2)
+        calls = get.call_count
+        again = self.cl["b"].get(f"{BASE}/music/suggest/", {"exclude": ",".join(t["id"] for t in first)}).json()["results"]
+        self.assertEqual(len(again), 2)
+        self.assertFalse({t["id"] for t in first} & {t["id"] for t in again})  # Shuffle shows new ones
+        self.assertEqual(get.call_count, calls)  # second person served from the pool, no new catalogue call
+
+    @mock.patch("apps.square.music.requests.get")
+    def test_suggestions_survive_outage_and_do_not_hammer_the_catalogue(self, get):
+        import requests
+        get.side_effect = requests.Timeout()
+        self.assertEqual(self.cl["a"].get(f"{BASE}/music/suggest/").json()["results"], [])
+        calls = get.call_count
+        self.assertEqual(self.cl["a"].get(f"{BASE}/music/suggest/").json()["results"], [])
+        self.assertEqual(get.call_count, calls)  # failure remembered for a minute
+
+    @mock.patch("apps.square.music.requests.get")
     def test_music_search_survives_provider_outage(self, get):
         import requests
         get.side_effect = requests.Timeout()

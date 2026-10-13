@@ -16,6 +16,7 @@ commercial, By-ND because a slideshow edits/mixes the track, By-SA to avoid shar
 CC-BY requires credit, so every track carries `credit`, which the status viewer must display.
 """
 import logging
+import random
 import re
 
 import requests
@@ -32,6 +33,10 @@ MAX_SECONDS = 600  # ignore very long tracks: slideshows are at most 48s, no poi
 OPENVERSE = "https://api.openverse.org/v1/audio/"
 JAMENDO = "https://api.jamendo.com/v3.0/tracks/"
 HEADERS = {"User-Agent": "Euphoria/1.0 (status music picker)"}
+OPENVERSE_MAX_PAGE = 20  # anonymous clients may ask for at most 20 per page; more is a 400 (and then no music at all)
+OPENVERSE_TOKEN = "https://api.openverse.org/v1/auth_tokens/token/"
+SUGGEST_SEEDS = ("lofi", "chill", "acoustic", "piano", "ambient", "jazz", "upbeat", "guitar", "happy", "instrumental")
+POOL_KEY, POOL_TTL = "square:music:pool", 6 * 60 * 60
 
 
 def allowed_licenses():
@@ -107,8 +112,29 @@ def _jamendo_track(r):
     }
 
 
-def _get(url, params):
-    resp = requests.get(url, params=params, headers=HEADERS, timeout=TIMEOUT)
+def _openverse_auth():
+    """Optional free Openverse API credentials (OPENVERSE_CLIENT_ID / OPENVERSE_CLIENT_SECRET). Anonymous clients get
+    only 20 requests/minute and 200/day for the whole server; a registered client gets far more."""
+    cid, secret = getattr(settings, "OPENVERSE_CLIENT_ID", ""), getattr(settings, "OPENVERSE_CLIENT_SECRET", "")
+    if not (cid and secret):
+        return {}
+    token = cache.get("square:music:ov-token")
+    if not token:
+        try:
+            r = requests.post(OPENVERSE_TOKEN, data={"grant_type": "client_credentials", "client_id": cid,
+                                                     "client_secret": secret}, headers=HEADERS, timeout=TIMEOUT)
+            r.raise_for_status()
+            body = r.json()
+            token = body["access_token"]
+            cache.set("square:music:ov-token", token, max(60, int(body.get("expires_in", 600)) - 120))
+        except (requests.RequestException, ValueError, KeyError):
+            logger.warning("Openverse token request failed; continuing anonymously", exc_info=True)
+            return {}
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _get(url, params, auth=None):
+    resp = requests.get(url, params=params, headers={**HEADERS, **(auth or {})}, timeout=TIMEOUT)
     resp.raise_for_status()
     return resp.json()
 
@@ -127,7 +153,7 @@ def search(query, provider="openverse", limit=15):
     try:
         if provider == "openverse":
             data = _get(OPENVERSE, {"q": query, "category": "music", "license_type": "commercial,modification",
-                                    "page_size": min(limit * 2, 40), "mature": "false"})
+                                    "page_size": OPENVERSE_MAX_PAGE, "mature": "false"}, _openverse_auth())
             tracks = [t for t in map(_openverse_track, data.get("results", [])) if t]
         else:
             data = _get(JAMENDO, {"client_id": settings.JAMENDO_CLIENT_ID, "format": "json", "search": query,
@@ -152,7 +178,7 @@ def get_track(provider, track_id):
         return hit
     try:
         if provider == "openverse":
-            track = _openverse_track(_get(f"{OPENVERSE}{track_id}/", {}))
+            track = _openverse_track(_get(f"{OPENVERSE}{track_id}/", {}, _openverse_auth()))
         else:
             rows = _get(JAMENDO, {"client_id": settings.JAMENDO_CLIENT_ID, "format": "json", "id": track_id,
                                   "audioformat": "mp32", "include": "licenses"}).get("results", [])
@@ -164,3 +190,34 @@ def get_track(provider, track_id):
         raise ValidationError({"music": ["That track can't be used. Pick another one."]})
     cache.set(key, track, TRACK_TTL)
     return track
+
+
+def _pool():
+    """A small shared pool of playable tracks for the "suggested" picks, built from a few random mood words and kept for
+    6 hours. Every user is served from it, so suggestions cost ~3 catalogue calls per 6 hours instead of several per
+    person (the free catalogue is rate-limited per server). A failed build is remembered for a minute, not retried per click."""
+    pool = cache.get(POOL_KEY)
+    if pool:
+        return pool
+    if cache.get(POOL_KEY + ":fail"):
+        return []
+    seen, pool = set(), []
+    for word in random.sample(SUGGEST_SEEDS, 3):
+        for t in search(word, "openverse", limit=OPENVERSE_MAX_PAGE):
+            if t["id"] not in seen:
+                seen.add(t["id"])
+                pool.append(t)
+    if pool:
+        cache.set(POOL_KEY, pool, POOL_TTL)
+    else:
+        cache.set(POOL_KEY + ":fail", 1, 60)
+    return pool
+
+
+def suggest(count=2, exclude=()):
+    """`count` random tracks from the pool, never one in `exclude` (so Shuffle always shows something new)."""
+    skip = set(exclude)
+    left = [t for t in _pool() if t["id"] not in skip]
+    if len(left) < count:  # nearly everything was already shown: start over rather than show nothing
+        left = _pool()
+    return random.sample(left, min(count, len(left)))

@@ -216,6 +216,17 @@ class MusicSearchView(_Base):
                          "results": music.search(request.query_params.get("q"), provider)})
 
 
+class MusicSuggestView(_Base):
+    """GET [?exclude=id1,id2] -> 2 random free tracks for the "suggested" picks under the search box.
+    Served from a pool shared by everyone and refreshed every 6 hours (see music._pool)."""
+
+    throttle_scope = "music_search"
+
+    def get(self, request):
+        exclude = [x for x in (request.query_params.get("exclude") or "").split(",") if x][:20]
+        return Response({"results": music.suggest(2, exclude)})
+
+
 class StatusReactView(_Base):
     def post(self, request, status_id):
         s = _visible_statuses(request.user).filter(pk=status_id).first()

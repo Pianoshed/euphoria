@@ -22,6 +22,10 @@ A slideshow item has `kind: "slideshow"`, `cover` (360x360 SQUARE crop, centred 
 Only CC0 / public domain / CC-BY tracks (commercial-use OK). **CC-BY requires showing `credit`** while the track plays
 (e.g. a small "♪ credit" line in the viewer, linking to `source_url`).
 
+## Suggested tracks (GET /api/square/music/suggest/?exclude=id1,id2)
+`{results: [2 random tracks, same shape as /music/]}`. Served from a pool shared by all users and rebuilt every 6 hours
+(about 3 catalogue calls per rebuild). Send the ids already shown in `exclude` for a fresh pair on "Shuffle".
+
 ## Viewer tips for smooth playback
 - Show `cover` instantly, then preload slide 1-2 with `new Image().src = url; await img.decode()`; keep preloading n+1.
 - Use `<audio preload="auto" src=music.url>`; start it on the first tap/open (autoplay rules), loop it, fade out at the end.
@@ -31,6 +35,6 @@ Only CC0 / public domain / CC-BY tracks (commercial-use OK). **CC-BY requires sh
 
 ## Env vars
 `STATUS_SLIDE_MAX_SIDE` (1280), `STATUS_SLIDE_QUALITY` (70), `MUSIC_ALLOWED_LICENSES` (cc0,pdm,by),
-`MEDIA_CACHE_CONTROL` (public, max-age=86400, immutable), `JAMENDO_CLIENT_ID` (off by default; Jamendo's free API is non-commercial).
+`MEDIA_CACHE_CONTROL` (public, max-age=86400, immutable), `OPENVERSE_CLIENT_ID` + `OPENVERSE_CLIENT_SECRET` (optional, free: raises Openverse's anonymous limit of 20 req/min, 200/day shared by the whole server), `JAMENDO_CLIENT_ID` (off by default; Jamendo's free API is non-commercial).
 After deploy: `python manage.py migrate` (adds 0004_slideshow_status and 0005_slideshow_template_canvas). Existing buckets: objects uploaded before this change
 keep their old headers; only new uploads get the Cache-Control.
