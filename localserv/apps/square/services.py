@@ -8,13 +8,14 @@ from django.db import connection
 from django.db.models import Q
 from django.utils import timezone
 
-from .models import Status
+from .models import Status, StatusSlide
 
 logger = logging.getLogger("apps")
 
 
 def purge_expired(batch_size: int = 500) -> int:
-    """Hard-delete every status older than STATUS_RETENTION_HOURS (default 24h): its file, its row, and
+    """Hard-delete every status older than STATUS_RETENTION_HOURS (default 24h): its file(s) (single file, slideshow
+    cover and every slide), its row, and
     (via CASCADE) its reactions and "seen" marks. Queries already hide expired rows; this frees disk and DB.
 
     A row is purged when EITHER its expires_at has passed OR it was created more than the retention window
@@ -26,16 +27,18 @@ def purge_expired(batch_size: int = 500) -> int:
     storage = Status._meta.get_field("file").storage
     total = 0
     while True:
-        batch = list(Status.objects.filter(due).values_list("pk", "file")[:batch_size])
+        batch = list(Status.objects.filter(due).values_list("pk", "file", "cover")[:batch_size])
         if not batch:
             return total
-        for _pk, name in batch:
-            if name:
-                try:
-                    storage.delete(name)
-                except OSError:
-                    logger.warning("Could not delete status file %s", name, exc_info=True)
-        Status.objects.filter(pk__in=[pk for pk, _ in batch]).delete()
+        pks = [pk for pk, _f, _c in batch]
+        names = [n for _pk, f, c in batch for n in (f, c) if n]
+        names += list(StatusSlide.objects.filter(status_id__in=pks).values_list("file", flat=True))  # slideshow pictures
+        for name in names:
+            try:
+                storage.delete(name)
+            except OSError:
+                logger.warning("Could not delete status file %s", name, exc_info=True)
+        Status.objects.filter(pk__in=pks).delete()
         total += len(batch)
 
 

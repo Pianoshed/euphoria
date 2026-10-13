@@ -485,3 +485,68 @@
 .sq-tsum__chips{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
 .sq-tsum__chips li{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:999px;border:1px solid color-mix(in srgb,var(--c) 30%,transparent);background:color-mix(in srgb,var(--c) 10%,transparent);color:var(--c);font-size:var(--t-cap);font-weight:700}
 .sq-tsum__chips b{padding-left:2px;font-weight:800}
+
+/* ---------- slideshow statuses: viewer ---------- */
+.sq-bar--seg{display:flex;gap:3px;background:transparent;overflow:visible}
+.sq-bar--seg b{flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:4px;overflow:hidden}
+.sq-music{position:absolute;top:58px;left:14px;right:14px;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:var(--t-cap)}
+.sq-music a,.sq-music>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none;text-shadow:0 1px 4px rgba(0,0,0,.7)}
+.sq-music a:hover{text-decoration:underline}
+.sq-music button{flex:none;border:0;border-radius:99px;padding:4px 10px;font:inherit;font-weight:600;color:#fff;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);cursor:pointer}
+
+/* ---------- slideshow statuses: composer ---------- */
+.sq-thumbs{display:flex;gap:8px;margin:0;padding:2px 0 8px;list-style:none;overflow-x:auto;overscroll-behavior-x:contain}
+.sq-thumbs li{position:relative;flex:none;width:72px;height:72px;border-radius:12px;overflow:hidden;background:#000;box-shadow:var(--sq-shadow-sm)}
+.sq-thumbs img{display:block;width:100%;height:100%;object-fit:cover}
+.sq-thumbs .sq-x--dark{top:3px;right:3px;width:22px;height:22px}
+.sq-thumbs__move{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;padding:0 2px;background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.sq-thumbs__move button{border:0;background:transparent;color:#fff;font-size:1.15rem;line-height:1.2;min-width:26px;min-height:24px;cursor:pointer}
+.sq-thumbs__move button:disabled{opacity:.3;cursor:default}
+.sq-music-pick{display:grid;gap:8px}
+.sq-music-pick__title small{font-weight:400;color:var(--color-ink-soft)}
+.sq-tracks{display:grid;gap:6px;margin:0;padding:0;list-style:none;max-height:210px;overflow-y:auto;overscroll-behavior:contain}
+.sq-track{display:flex;align-items:center;gap:8px}
+.sq-track--on{justify-content:space-between;padding:8px 10px;border:1.5px solid var(--color-primary);border-radius:12px}
+.sq-track__play{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;border:0;background:var(--color-neutral-soft);color:var(--color-ink);cursor:pointer}
+.sq-track__txt{flex:1;min-width:0;display:grid;gap:1px;text-align:left;border:0;background:transparent;padding:4px 0;font:inherit;color:inherit;cursor:pointer}
+.sq-track__txt strong,.sq-track__txt small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sq-track__txt small{font-size:var(--t-cap);color:var(--color-ink-soft)}
+.sq-music-pick input[type=search]{width:100%;box-sizing:border-box}
+
+/* ---------- slideshow display: canvases (the stage) and templates (the motion) ---------- */
+.sq-show{position:absolute;inset:0;overflow:hidden;display:grid;place-items:center;background:#0b0818;isolation:isolate;--sq-ms:var(--slide-ms,3000ms)}
+.sq-show .sq-show__bg{position:absolute;inset:-12%;width:124%;height:124%;max-width:none;object-fit:cover;filter:blur(26px) brightness(.62) saturate(1.2);z-index:0}
+.sq-show .sq-show__card{position:absolute;inset:0;display:grid;place-items:center;z-index:1;will-change:transform,opacity}
+.sq-show .sq-show__img{display:block;width:100%;height:100%;object-fit:contain}
+/* Full: the photo covers the whole stage */
+.sq-show--fill .sq-show__img{object-fit:cover}
+/* Polaroid: a white card, slightly tilted, on a soft brand gradient */
+.sq-show--frame{background:radial-gradient(circle at 25% 15%,#8a3de0 0,transparent 55%),linear-gradient(160deg,#2b1a63,#0b0818)}
+.sq-show--frame .sq-show__card{inset:9% 9% 14%;padding:3.5% 3.5% 9%;background:#fff;border-radius:4px;box-shadow:0 14px 34px rgba(0,0,0,.45);rotate:-2deg;box-sizing:border-box}
+.sq-show--frame .sq-show__img{background:#eee}
+/* Dark: the photo (never cropped) on near-black with a soft vignette */
+.sq-show--night::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(0,0,0,.55))}
+
+@keyframes sq-fx-fade{from{opacity:0}to{opacity:1}}
+@keyframes sq-fx-drift{from{opacity:0;transform:scale(1)}8%{opacity:1}to{opacity:1;transform:scale(1.12) translate(-1.5%,-1%)}}
+@keyframes sq-fx-slide{from{opacity:0;transform:translateX(9%)}to{opacity:1;transform:none}}
+@keyframes sq-fx-pop{0%{opacity:0;transform:scale(.86)}60%{opacity:1;transform:scale(1.03)}100%{opacity:1;transform:none}}
+.sq-fx--fade .sq-show__card{animation:sq-fx-fade .45s ease-out both}
+.sq-fx--drift .sq-show__card{animation:sq-fx-drift var(--sq-ms) linear both}
+.sq-fx--slide .sq-show__card{animation:sq-fx-slide .5s var(--sq-ease) both}
+.sq-fx--pop .sq-show__card{animation:sq-fx-pop .55s var(--sq-spring) both}
+@media (prefers-reduced-motion:reduce){.sq-show .sq-show__card{animation:sq-fx-fade .3s ease-out both}}
+/* keep the header/footer gradients and the progress bar above the stage */
+.sq-stage .sq-show{z-index:0}
+
+/* composer: live preview next to the pickers */
+.sq-look{display:grid;grid-template-columns:112px 1fr;gap:12px;align-items:start}
+.sq-showprev{position:relative;width:112px;aspect-ratio:9/16;border-radius:14px;overflow:hidden;background:#0b0818;box-shadow:var(--sq-shadow)}
+.sq-look__opts{display:grid;gap:6px;align-content:start;min-width:0;font-size:var(--t-sub)}
+.sq-look__opts b{font-size:var(--t-sub)}
+@media (max-width:360px){.sq-look{grid-template-columns:1fr}.sq-showprev{margin:0 auto}}
+
+/* story ring: the cover is already a square crop, so it just fills the circle; the count pill sits at the top centre,
+   where a circle has the most room (corners are clipped) */
+.sq-ring i img{object-position:50% 40%}
+.sq-ring__count{position:absolute;z-index:1;top:3px;left:50%;transform:translateX(-50%);max-width:80%;padding:1px 5px;border-radius:99px;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);color:#fff;font-size:9px;font-weight:700;line-height:1.3;white-space:nowrap}

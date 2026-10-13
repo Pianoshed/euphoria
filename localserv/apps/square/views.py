@@ -14,9 +14,9 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsActiveAccount
 
-from . import media, services
+from . import media, music, services
 from .models import (REACTION_EMOJI, Circle, FriendTree, FriendTreeMember, Status, StatusReaction,
-                     StatusView, Thought, ThoughtReaction)
+                     StatusSlide, StatusView, Thought, ThoughtReaction)
 
 MAX_STATUSES_PER_DAY = 20
 MAX_THOUGHTS_PER_DAY = 30
@@ -34,12 +34,25 @@ def _who(u):
     return {"id": str(u.id), "name": name or u.username}
 
 
+def _abs(request, f):
+    """Absolute URL of a stored file. Bucket links are already absolute; local-disk ones get the host added."""
+    return request.build_absolute_uri(f.url) if f else None
+
+
 def _seen_ids(request, statuses):
     """Ids (among `statuses`) that the current user has already watched. One query for the whole list."""
     ids = [s.pk for s in statuses]
     if not ids:
         return set()
     return set(StatusView.objects.filter(user=request.user, status_id__in=ids).values_list("status_id", flat=True))
+
+
+def _music_public(m):
+    """What viewers need to play and credit a track (CC-BY needs the credit line shown)."""
+    if not m:
+        return None
+    keys = ("title", "artist", "url", "duration", "credit", "license", "license_url", "source_url")
+    return {k: m.get(k) for k in keys}
 
 
 def _status(request, s, seen=None):
@@ -51,7 +64,14 @@ def _status(request, s, seen=None):
     return {
         "seen": watched,
         "id": str(s.id), "kind": s.kind, "text": s.text, "duration": s.duration_seconds,
-        "file": request.build_absolute_uri(s.file.url) if s.file else None,
+        "file": _abs(request, s.file),
+        "cover": _abs(request, s.cover),
+        "slide_seconds": s.slide_seconds,
+        "template": (s.template or media.DEFAULT_TEMPLATE) if s.kind == Status.Kind.SLIDESHOW else None,
+        "canvas": (s.canvas or media.DEFAULT_CANVAS) if s.kind == Status.Kind.SLIDESHOW else None,
+        "slides": [{"url": _abs(request, sl.file), "w": sl.width, "h": sl.height} for sl in s.slides.all()]
+                  if s.kind == Status.Kind.SLIDESHOW else None,
+        "music": _music_public(s.music),
         "created_at": s.created_at, "expires_at": s.expires_at, "user": _who(s.user),
         "likes": len(rs),
         "my_reaction": next((r.emoji for r in rs if r.user_id == request.user.id), None),
@@ -103,7 +123,8 @@ class StatusListCreateView(_Base):
     def get(self, request):
         services.purge_in_background()  # free stand-in for a cron job; runs at most every 15 min
         qs = list(_visible_statuses(request.user)
-                  .select_related("user__profile").prefetch_related("reactions").order_by("-created_at")[:100])
+                  .select_related("user__profile").prefetch_related("reactions", "slides")
+                  .order_by("-created_at")[:100])
         seen = _seen_ids(request, qs)
         return Response([_status(request, s, seen) for s in qs])
 
@@ -113,11 +134,27 @@ class StatusListCreateView(_Base):
             raise ValidationError({"detail": "You've reached today's status limit."})
         text = (request.data.get("text") or "").strip()[:140]
         f = request.FILES.get("file")
-        if not f and not text:
+        photos = request.FILES.getlist("slides")
+        if photos and f:
+            raise ValidationError({"detail": "Send either a slideshow or a single photo/video, not both."})
+        if not f and not photos and not text:
             raise ValidationError({"detail": "Add a photo, a video or some text."})
         s = Status(user=request.user, text=text, kind=Status.Kind.TEXT)
         content = name = None
-        if f:
+        slides = cover = None
+        if photos:
+            # Cheap checks first (timing, look, music), then validate + compress EVERYTHING, so a bad 7th photo
+            # never leaves six stored ones behind and a bad option never costs any image work.
+            s.kind = Status.Kind.SLIDESHOW
+            s.slide_seconds = media.parse_slide_seconds(request.data.get("slide_seconds"), len(photos))
+            s.template = media.parse_choice(request.data.get("template"), media.TEMPLATES, media.DEFAULT_TEMPLATE, "template")
+            s.canvas = media.parse_choice(request.data.get("canvas"), media.CANVASES, media.DEFAULT_CANVAS, "canvas")
+            s.music = self._music(request.data.get("music"))
+            slides, cover = media.process_slides(photos)
+            s.duration_seconds = s.slide_seconds * len(slides)
+        elif request.data.get("music"):
+            raise ValidationError({"music": ["Music can only be added to a slideshow."]})
+        elif f:
             ctype = (getattr(f, "content_type", "") or "").lower()
             if ctype.startswith("image/"):
                 s.kind, content, name = Status.Kind.IMAGE, media.process_image(f), "s.jpg"
@@ -126,11 +163,57 @@ class StatusListCreateView(_Base):
                 s.kind, name = Status.Kind.VIDEO, f"s.{ext}"
             else:
                 raise ValidationError({"file": ["Choose a photo or a video."]})
-        s.save()
-        if content:
-            s.file.save(name, content, save=True)
-        s = Status.objects.select_related("user__profile").prefetch_related("reactions").get(pk=s.pk)
+        saved = []  # storage names written so far, removed again if anything below fails
+        try:
+            with transaction.atomic():
+                s.save()
+                if content:
+                    s.file.save(name, content, save=True)
+                    saved.append(s.file.name)
+                if slides:
+                    s.cover.save("c.webp", cover, save=True)
+                    saved.append(s.cover.name)
+                    for i, (blob, w, h) in enumerate(slides):
+                        sl = StatusSlide(status=s, position=i, width=w, height=h)
+                        sl.file.save("s.webp", blob, save=False)
+                        saved.append(sl.file.name)
+                        sl.save()
+        except BaseException:
+            storage = Status._meta.get_field("file").storage
+            for n in saved:
+                try:
+                    storage.delete(n)
+                except Exception:
+                    pass
+            raise
+        s = Status.objects.select_related("user__profile").prefetch_related("reactions", "slides").get(pk=s.pk)
         return Response(_status(request, s), status=http.HTTP_201_CREATED)
+
+    @staticmethod
+    def _music(raw):
+        """Optional {"provider": "openverse", "id": "..."} (dict or JSON string). Returns the verified track."""
+        if raw in (None, "", "null"):
+            return None
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw)
+            except ValueError:
+                raw = None
+        if not isinstance(raw, dict):
+            raise ValidationError({"music": ["Pick a track from the music list."]})
+        return music.get_track(raw.get("provider"), raw.get("id"))
+
+
+class MusicSearchView(_Base):
+    """GET ?q=lofi[&provider=openverse] -> free, legally reusable tracks the status can use as background music.
+    Results are cached for 30 minutes; if the outside catalogue is down the list is simply empty."""
+
+    throttle_scope = "music_search"
+
+    def get(self, request):
+        provider = request.query_params.get("provider") or "openverse"
+        return Response({"providers": music.providers(), "provider": provider,
+                         "results": music.search(request.query_params.get("q"), provider)})
 
 
 class StatusReactView(_Base):
@@ -139,7 +222,7 @@ class StatusReactView(_Base):
         if s is None:  # same answer for "gone" and "not someone in your trees"
             raise NotFound("Status not found.")
         _toggle(StatusReaction, "status", s, request.user, request.data.get("emoji"))
-        s = Status.objects.select_related("user__profile").prefetch_related("reactions").get(pk=s.pk)
+        s = Status.objects.select_related("user__profile").prefetch_related("reactions", "slides").get(pk=s.pk)
         return Response(_status(request, s))
 
 
@@ -190,7 +273,8 @@ class TrendingView(_Base):
         since = now - timedelta(hours=24)
         seen = _visible_statuses(request.user)
         top_s = (seen.annotate(n=Count("reactions")).filter(n__gt=0)
-                 .select_related("user__profile").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
+                 .select_related("user__profile").prefetch_related("reactions", "slides")
+                 .order_by("-n", "-created_at")[:5])
         top_t = (Thought.objects.filter(created_at__gte=since).annotate(n=Count("reactions")).filter(n__gt=0)
                  .select_related("user__profile").prefetch_related("reactions").order_by("-n", "-created_at")[:5])
         tally = {}

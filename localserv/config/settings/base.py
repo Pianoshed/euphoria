@@ -241,7 +241,8 @@ if _media_bucket:
         raise ImportError("MEDIA_S3_BUCKET is set but django-storages is missing: pip install 'django-storages[s3]'") from exc
     STORAGES = {
         "default": {
-            "BACKEND": "storages.backends.s3.S3Storage",
+            # Same as storages' S3Storage, but keeps signed links stable between API calls so caches can hit.
+            "BACKEND": "apps.common.storage.CachedSignedUrlS3Storage",
             "OPTIONS": {
                 "bucket_name": _media_bucket,
                 "access_key": env("MEDIA_S3_ACCESS_KEY_ID"),
@@ -252,6 +253,11 @@ if _media_bucket:
                 "querystring_auth": env.bool("MEDIA_S3_SIGNED_URLS", default=True),
                 "querystring_expire": env.int("MEDIA_S3_URL_EXPIRE_SECONDS", default=3600),
                 "file_overwrite": False,  # never replace someone else's file with the same name
+                # Every upload gets a unique random name and is never changed, so browsers/CDNs may keep it for
+                # the life of the status (24h). Saves bandwidth and makes slides appear instantly on re-open.
+                "object_parameters": {
+                    "CacheControl": env("MEDIA_CACHE_CONTROL", default="public, max-age=86400, immutable"),
+                },
                 "default_acl": None,
             },
         },
@@ -303,6 +309,7 @@ REST_FRAMEWORK = {
         "chat_read": "600/min",  # reads on the chat list/message views (writes use chat_write / messages)
         "moderation_write": "60/hour",
         "ice_servers": "30/min",
+        "music_search": "30/min",  # status music picker: each miss calls an outside catalogue
     },
     "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "EXCEPTION_HANDLER": "apps.common.exception_handler.api_exception_handler",
@@ -393,6 +400,15 @@ STATUS_RETENTION_HOURS = env.int("STATUS_RETENTION_HOURS", default=24)
 # (only "image" and "audio"); add "image" / "audio" here (comma-separated) to expire those as well.
 CHAT_MEDIA_RETENTION_DAYS = env.int("CHAT_MEDIA_RETENTION_DAYS", default=14)
 CHAT_MEDIA_PURGE_KINDS = env.list("CHAT_MEDIA_PURGE_KINDS", default=["video"])
+
+# --- Slideshow statuses (apps.square) ---
+# Photos are re-encoded as WebP: longest side and quality below (smaller = cheaper bucket, softer picture).
+STATUS_SLIDE_MAX_SIDE = env.int("STATUS_SLIDE_MAX_SIDE", default=1280)
+STATUS_SLIDE_QUALITY = env.int("STATUS_SLIDE_QUALITY", default=70)
+# Background music is only *linked* (never copied to the bucket). Licences allowed: cc0, pdm (public domain), by.
+MUSIC_ALLOWED_LICENSES = env.list("MUSIC_ALLOWED_LICENSES", default=["cc0", "pdm", "by"])
+# Optional second catalogue. Jamendo's free API is NON-commercial: only set this after agreeing commercial terms.
+JAMENDO_CLIENT_ID = env("JAMENDO_CLIENT_ID", default="")
 
 
 # --- Email ---

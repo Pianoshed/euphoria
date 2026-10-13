@@ -1,10 +1,14 @@
 import { apiFetch } from './client';
 
 export const listStatuses = () => apiFetch('/api/square/statuses/');
-// formData: text?, file?, duration? (seconds, videos only)
+// formData: text?  +  EITHER file (one photo)  OR  slides (2-7 photos, repeat the field) with
+// slide_seconds? and music? (JSON string {provider,id} from searchMusic). Videos are no longer uploaded.
 export const createStatus = (formData) => apiFetch('/api/square/statuses/', { method: 'POST', body: formData });
 export const reactStatus = (id, emoji) =>
   apiFetch(`/api/square/statuses/${id}/react/`, { method: 'POST', body: { emoji } });
+
+// Free-to-use (CC0 / public domain / CC-BY) tracks for slideshow music. Nothing is stored on our side.
+export const searchMusic = (q) => apiFetch('/api/square/music/', { query: { q } });
 
 // Marks a status as watched (saved on the server so it survives refreshes and other devices).
 export const markSeen = (id) => apiFetch(`/api/square/statuses/${id}/seen/`, { method: 'POST' });

@@ -5,7 +5,8 @@ import { Icon } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
 import { BRAND_NAME } from '../../brand';
 import * as api from '../../api/square';
-import { shrinkImage, shrinkVideo, MAX_VIDEO_SECONDS } from './shrinkMedia';
+import { shrinkImage, MAX_STATUS_SECONDS, MAX_SLIDES, MIN_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, maxSlideSeconds,
+  SHOW_TEMPLATES, SHOW_CANVASES, DEFAULT_TEMPLATE, DEFAULT_CANVAS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
 import { CIRCLES, SHARED, circleMeta, fruitFor, hasLabels, labelFor, saveLocalLabels } from './circles';
 import './square.css';
@@ -105,19 +106,95 @@ function Overlay({ onClose, label, sheet, children }) {
   );
 }
 
-/* ---------- status viewer (tap right = next, left = back, auto-advances) ---------- */
+/* One photo of a slideshow on its canvas, with its template's motion. Used by the viewer and by the composer preview,
+   so what you pick is exactly what people see. The look names match the backend (blur/fill/frame/night, fade/drift/slide/pop). */
+function SlideStage({ url, slideMs, template = DEFAULT_TEMPLATE, canvas = DEFAULT_CANVAS }) {
+  return (
+    <div className={`sq-show sq-show--${canvas} sq-fx--${template}`} style={{ '--slide-ms': `${slideMs}ms` }}>
+      {canvas === 'blur' && <img className="sq-show__bg" src={url} alt="" aria-hidden="true" decoding="async" />}
+      <div key={url} className="sq-show__card">
+        <img className="sq-show__img" src={url} alt="" decoding="async" />
+      </div>
+    </div>
+  );
+}
+
+/* ---------- status viewer (tap right = next, left = back, auto-advances; nothing plays longer than 15s) ---------- */
+let soundOff = false; // remembered while the page is open, so muting once sticks for the next statuses
+
 function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   const isVideo = status.kind === 'video';
-  const ms = isVideo ? Math.min(status.duration || MAX_VIDEO_SECONDS, MAX_VIDEO_SECONDS) * 1000 : 6000;
+  const slides = useMemo(() => (status.kind === 'slideshow' ? (status.slides || []) : []), [status]);
+  const isShow = slides.length > 0;
+  // Each photo shows slide_seconds, but the whole show is clamped to 15s even if the server sent more.
+  const slideMs = isShow ? Math.min((status.slide_seconds || DEFAULT_SLIDE_SECONDS) * 1000, (MAX_STATUS_SECONDS * 1000) / slides.length) : 0;
+  const ms = isShow ? slideMs * slides.length
+    : isVideo ? Math.min(status.duration || MAX_STATUS_SECONDS, MAX_STATUS_SECONDS) * 1000 : 6000;
   const advance = useRef();
   advance.current = () => (onNext ? onNext() : close());
   useEffect(() => {
     const t = setTimeout(() => advance.current(), ms + 300);
     return () => clearTimeout(t);
   }, [status.id, ms]);
+
+  // Slideshow: step through the photos, and keep the next one decoded so there is no flash between them.
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (!isShow) return undefined;
+    const t = setInterval(() => setI((k) => Math.min(k + 1, slides.length - 1)), slideMs);
+    return () => clearInterval(t);
+  }, [isShow, slideMs, slides.length]);
+  useEffect(() => {
+    const next = slides[i + 1];
+    if (next) { const img = new Image(); img.src = next.url; img.decode?.().catch(() => {}); }
+  }, [i, slides]);
+
+  // Music streams from the catalogue's own servers (never stored by us). It starts when the viewer opens (a tap),
+  // loops if the track is shorter than the show, fades out at the end, and the show plays silently if it fails.
+  const track = isShow ? status.music : null;
+  const audioRef = useRef(null);
+  const [sound, setSound] = useState(soundOff ? 'off' : 'on'); // 'on' | 'off' | 'blocked'
+  useEffect(() => {
+    if (!track?.url) return undefined;
+    const a = new Audio();
+    a.preload = 'auto';
+    a.loop = true;
+    a.volume = 0.85;
+    a.muted = soundOff;
+    a.src = track.url;
+    audioRef.current = a;
+    a.play()?.catch(() => setSound('blocked'));
+    a.onerror = () => setSound('off');
+    let fadeTimer;
+    const fadeStart = setTimeout(() => {
+      fadeTimer = setInterval(() => { a.volume = Math.max(0, a.volume - 0.1); }, 80);
+    }, Math.max(0, ms - 900));
+    return () => {
+      clearTimeout(fadeStart); clearInterval(fadeTimer);
+      a.onerror = null; a.pause(); a.removeAttribute('src'); a.load();
+      audioRef.current = null;
+    };
+  }, [status.id, track?.url, ms]);
+  const toggleSound = () => {
+    const a = audioRef.current;
+    if (!a) return;
+    if (sound === 'blocked') { a.play().then(() => setSound('on')).catch(() => {}); return; }
+    soundOff = sound === 'on';
+    a.muted = soundOff;
+    setSound(soundOff ? 'off' : 'on');
+  };
+
   return (
     <div className="sq-stage">
-      <div className="sq-bar"><span key={status.id} style={{ animationDuration: `${ms}ms` }} /></div>
+      {isShow ? (
+        <div className="sq-bar sq-bar--seg">
+          {slides.map((_, k) => (
+            <b key={k}>{k < i ? <span style={{ width: '100%', animation: 'none' }} /> : k === i ? <span key={`${status.id}-${i}`} style={{ animationDuration: `${slideMs}ms` }} /> : null}</b>
+          ))}
+        </div>
+      ) : (
+        <div className="sq-bar"><span key={status.id} style={{ animationDuration: `${ms}ms` }} /></div>
+      )}
       <div className="sq-vhead">
         <div className="sq-vwho">
           <span className="sq-av sq-av--sm">{initial(status.user.name)}</span>
@@ -130,8 +207,19 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
       </div>
       {status.kind === 'image' && <img src={status.file} alt="" />}
       {isVideo && <video src={status.file} autoPlay playsInline controls={false} onEnded={() => advance.current()} />}
+      {isShow && <SlideStage url={slides[i].url} slideMs={slideMs} template={status.template || DEFAULT_TEMPLATE} canvas={status.canvas || DEFAULT_CANVAS} />}
       {status.kind === 'text' && <p className="sq-big">{status.text}</p>}
       {status.kind !== 'text' && status.text && <p className="sq-cap">{status.text}</p>}
+      {track && (
+        <div className="sq-music">
+          {track.source_url
+            ? <a href={track.source_url} target="_blank" rel="noopener noreferrer" title={track.credit}>♪ {track.credit}</a>
+            : <span title={track.credit}>♪ {track.credit}</span>}
+          <button type="button" onClick={toggleSound} aria-label={sound === 'on' ? 'Mute music' : 'Play music'}>
+            {sound === 'on' ? 'Sound on' : sound === 'blocked' ? 'Tap for sound' : 'Muted'}
+          </button>
+        </div>
+      )}
       {onPrev && <button type="button" className="sq-tap sq-tap--l" aria-label="Previous status" onClick={onPrev} />}
       <button type="button" className="sq-tap sq-tap--r" aria-label={onNext ? 'Next status' : 'Close'} onClick={() => advance.current()} />
       <div className="sq-vfoot"><Reactions mine={status.my_reaction} onPick={(e) => onReact(status, e)} /></div>
@@ -498,61 +586,74 @@ function ThoughtSheet({ onClose, onPosted }) {
 
 function Composer({ onClose, onPosted }) {
   const [text, setText] = useState('');
-  const [file, setFile] = useState(null);
+  // Each photo is shrunk ONCE, right when it is picked (one at a time), so posting is instant and only small
+  // blobs stay in memory: {id, blob (<=1280px), thumb (160px url)}.
+  const [photos, setPhotos] = useState([]);
+  const [secs, setSecs] = useState(DEFAULT_SLIDE_SECONDS);
+  const [music, setMusic] = useState(null);
+  const [template, setTemplate] = useState(DEFAULT_TEMPLATE);
+  const [canvas, setCanvas] = useState(DEFAULT_CANVAS);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
-  const preview = useMemo(() => (file ? URL.createObjectURL(file) : ''), [file]);
-  useEffect(() => () => { if (preview) URL.revokeObjectURL(preview); }, [preview]);
-  const isImg = file?.type.startsWith('image/');
-  const isVid = file?.type.startsWith('video/');
+  const n = photos.length;
+  const isShow = n >= 2;
+  const maxSecs = maxSlideSeconds(n);
+  const eachSecs = Math.min(secs, maxSecs);
+  const total = isShow ? n * eachSecs : 0;
 
-  // Which part of a video to post: where it starts and how long it runs (never more than 15s).
-  const [vidLen, setVidLen] = useState(0);
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimLen, setTrimLen] = useState(MAX_VIDEO_SECONDS);
-  const vidRef = useRef(null);
-  const pickFile = (f) => { setFile(f); setVidLen(0); setTrimStart(0); setTrimLen(MAX_VIDEO_SECONDS); };
-  const maxLenFor = (start, total) => Math.max(1, Math.min(MAX_VIDEO_SECONDS, Math.floor(total - start)));
-  const onVidMeta = (e) => {
-    const total = e.currentTarget.duration;
-    if (!Number.isFinite(total)) return;
-    setVidLen(total);
-    setTrimStart(0);
-    setTrimLen(maxLenFor(0, total));
+  const photosRef = useRef(photos);
+  photosRef.current = photos;
+  useEffect(() => () => photosRef.current.forEach((p) => URL.revokeObjectURL(p.thumb)), []);
+
+  const addFiles = async (list) => {
+    const files = Array.from(list || []).filter((f) => f.type.startsWith('image/'));
+    if (!files.length) return setErr('Choose photos (videos are not supported anymore).');
+    setErr('');
+    const room = MAX_SLIDES - photosRef.current.length;
+    if (files.length > room) setErr(`A slideshow can have up to ${MAX_SLIDES} photos (${MAX_STATUS_SECONDS}s at most).`);
+    try {
+      for (const f of files.slice(0, Math.max(0, room))) {
+        setBusy('Preparing photos…');
+        const blob = await shrinkImage(f);
+        const thumb = URL.createObjectURL(await shrinkImage(blob, 240, 0.65));
+        setPhotos((cur) => [...cur, { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, blob, thumb }]);
+      }
+    } catch (e) {
+      setErr(e.message || 'Could not read that photo.');
+    }
+    setBusy('');
   };
-  const changeStart = (value) => {
-    const start = Number(value);
-    setTrimStart(start);
-    setTrimLen((len) => Math.min(len, maxLenFor(start, vidLen)));
-    if (vidRef.current) vidRef.current.currentTime = start;
-  };
-  // Loop the preview inside the chosen window so you see exactly what will be posted.
-  const onPreviewTime = (e) => {
-    const el = e.currentTarget;
-    if (el.currentTime >= trimStart + trimLen || el.currentTime < trimStart - 0.3) el.currentTime = trimStart;
-  };
-  const fmt = (n) => `${Math.floor(n / 60)}:${String(Math.floor(n % 60)).padStart(2, '0')}`;
+  const removeAt = (k) => setPhotos((cur) => { URL.revokeObjectURL(cur[k].thumb); return cur.filter((_, x) => x !== k); });
+  const move = (k, d) => setPhotos((cur) => {
+    const to = k + d;
+    if (to < 0 || to >= cur.length) return cur;
+    const next = cur.slice();
+    [next[k], next[to]] = [next[to], next[k]];
+    return next;
+  });
+  useEffect(() => { if (n < 2) setMusic(null); }, [n]); // music only goes with a slideshow
 
   const submit = async (close) => {
     setErr('');
-    if (!file && !text.trim()) return setErr('Add a photo, a video or some text.');
+    if (!n && !text.trim()) return setErr('Add a photo or some text.');
     try {
       const fd = new FormData();
       fd.append('text', text.trim());
-      if (isImg) {
-        setBusy('Shrinking photo…');
-        fd.append('file', await shrinkImage(file), 'status.jpg');
-      } else if (isVid) {
-        setBusy(`Trimming video (${trimLen}s)…`);
-        const { blob, duration } = await shrinkVideo(file, { start: trimStart, seconds: trimLen });
-        fd.append('file', blob, 'status.webm');
-        fd.append('duration', String(duration));
-      } else if (file) return setErr('Choose a photo or a video.');
+      if (n === 1) {
+        fd.append('file', photos[0].blob, 'status.jpg');
+      } else if (n >= 2) {
+        fd.append('slide_seconds', String(eachSecs));
+        fd.append('template', template);
+        fd.append('canvas', canvas);
+        if (music) fd.append('music', JSON.stringify({ provider: music.provider, id: music.id }));
+        photos.forEach((p, k) => fd.append('slides', p.blob, `slide${k}.jpg`));
+      }
       setBusy('Posting…');
       onPosted(await api.createStatus(fd));
       close();
     } catch (e) {
-      setErr(e.body?.file?.[0] || e.body?.detail || e.message || 'Could not post. Try again.');
+      const b = e.body || {};
+      setErr(b.slides?.[0] || b.template?.[0] || b.canvas?.[0] || b.music?.[0] || b.slide_seconds?.[0] || b.file?.[0] || b.detail || e.message || 'Could not post. Try again.');
       setBusy('');
     }
   };
@@ -567,44 +668,68 @@ function Composer({ onClose, onPosted }) {
               onChange={(e) => setText(e.target.value)} />
             <small className="sq-counter">{text.length}/140</small>
           </div>
-          {preview ? (
-            <div className="sq-preview">
-              {isImg && <img src={preview} alt="Selected" />}
-              {isVid && <video ref={vidRef} src={preview} muted playsInline autoPlay loop controls
-                onLoadedMetadata={onVidMeta} onTimeUpdate={onPreviewTime} />}
-              {!isImg && !isVid && <p className="sq-hint">Unsupported file</p>}
-              <button type="button" className="sq-x sq-x--dark" aria-label="Remove file" onClick={() => pickFile(null)}><Icon name="x" size={16} /></button>
-            </div>
-          ) : (
+          {n > 0 && (
+            <ul className="sq-thumbs" aria-label="Your photos, in play order">
+              {photos.map((p, k) => (
+                <li key={p.id}>
+                  <img src={p.thumb} alt={`Photo ${k + 1}`} />
+                  <button type="button" className="sq-x sq-x--dark" aria-label={`Remove photo ${k + 1}`} onClick={() => removeAt(k)}><Icon name="x" size={14} /></button>
+                  {isShow && (
+                    <span className="sq-thumbs__move">
+                      <button type="button" disabled={k === 0} aria-label="Move earlier" onClick={() => move(k, -1)}>‹</button>
+                      <button type="button" disabled={k === n - 1} aria-label="Move later" onClick={() => move(k, 1)}>›</button>
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {n < MAX_SLIDES && (
             <label className="sq-drop">
               <span className="sq-drop__ico" aria-hidden="true"><Icon name="camera" size={22} /></span>
-              <b>Add a photo or video</b>
-              <small>Tap to choose from your phone</small>
-              <input type="file" accept="image/*,video/*" onChange={(e) => pickFile(e.target.files[0] || null)} />
+              <b>{n ? 'Add more photos' : 'Add photos'}</b>
+              <small>{n ? `${n}/${MAX_SLIDES} · add at least 2 for a slideshow with music` : `One photo, or up to ${MAX_SLIDES} for a slideshow with music`}</small>
+              <input type="file" accept="image/*" multiple onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
             </label>
           )}
-          {isVid && vidLen >= 1 && (
+          {isShow && (
             <div className="sq-trim">
-              <p className="sq-trim__read">
-                Playing {fmt(trimStart)} – {fmt(trimStart + trimLen)} <b>({trimLen}s)</b>
-                <span> of {fmt(vidLen)}</span>
-              </p>
-              {vidLen > 1 && (
+              <p className="sq-trim__read">{n} photos × {eachSecs}s <b>({total}s)</b></p>
+              {maxSecs > MIN_SLIDE_SECONDS && (
                 <label>
-                  <span>Start at</span>
-                  <input type="range" min={0} max={Math.max(0, Math.floor(vidLen) - 1)} step={1} value={trimStart}
-                    onChange={(e) => changeStart(e.target.value)} aria-label="Start time in seconds" />
+                  <span>Each photo</span>
+                  <input type="range" min={MIN_SLIDE_SECONDS} max={maxSecs} step={1} value={eachSecs}
+                    onChange={(e) => setSecs(Number(e.target.value))} aria-label="Seconds per photo" />
                 </label>
               )}
-              <label>
-                <span>Length</span>
-                <input type="range" min={1} max={maxLenFor(trimStart, vidLen)} step={1} value={trimLen}
-                  onChange={(e) => setTrimLen(Number(e.target.value))} aria-label="Length in seconds" />
-              </label>
-              <small className="sq-hint">Pick any part of the video. The longest clip is {MAX_VIDEO_SECONDS}s.</small>
+              <small className="sq-hint">The whole slideshow never runs longer than {MAX_STATUS_SECONDS}s.</small>
             </div>
           )}
-          <p className="sq-hint">Only people in your friend trees will see it. Photos are shrunk, videos up to {MAX_VIDEO_SECONDS}s (you choose which part), and it disappears after 24 hours.</p>
+          {isShow && (
+            <div className="sq-look">
+              <ShowPreview photos={photos} slideMs={eachSecs * 1000} template={template} canvas={canvas} />
+              <div className="sq-look__opts">
+                <b>Style</b>
+                <div className="sq-picks" role="radiogroup" aria-label="Slideshow style">
+                  {SHOW_TEMPLATES.map((t) => (
+                    <button key={t.id} type="button" role="radio" aria-checked={template === t.id}
+                      className={`sq-pick${template === t.id ? ' is-on' : ''}`} style={{ '--c': 'var(--color-primary)' }}
+                      onClick={() => setTemplate(t.id)}>{t.label}</button>
+                  ))}
+                </div>
+                <b>Canvas</b>
+                <div className="sq-picks" role="radiogroup" aria-label="Slideshow canvas">
+                  {SHOW_CANVASES.map((c) => (
+                    <button key={c.id} type="button" role="radio" aria-checked={canvas === c.id}
+                      className={`sq-pick${canvas === c.id ? ' is-on' : ''}`} style={{ '--c': 'var(--color-primary)' }}
+                      onClick={() => setCanvas(c.id)}>{c.label}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+          {isShow && <MusicPicker value={music} onChange={setMusic} />}
+          <p className="sq-hint">Only people in your friend trees will see it. Photos are shrunk before upload, slideshows run up to {MAX_STATUS_SECONDS}s, and it disappears after 24 hours.</p>
           {err && <p className="sq-err" role="alert">{err}</p>}
           <div className="sq-row">
             <button type="button" className="sq-ghost" disabled={!!busy} onClick={close}>Cancel</button>
@@ -613,6 +738,101 @@ function Composer({ onClose, onPosted }) {
         </div>
       )}
     </Overlay>
+  );
+}
+
+// Loops the chosen photos in a small phone-shaped box with the picked style + canvas (uses the tiny thumbnails only).
+function ShowPreview({ photos, slideMs, template, canvas }) {
+  const [i, setI] = useState(0);
+  const count = photos.length;
+  useEffect(() => {
+    const t = setInterval(() => setI((k) => (k + 1) % count), slideMs);
+    return () => clearInterval(t);
+  }, [count, slideMs]);
+  const p = photos[i % count];
+  return (
+    <div className="sq-showprev" aria-label="Preview of your slideshow">
+      <SlideStage url={p.thumb} slideMs={slideMs} template={template} canvas={canvas} />
+    </div>
+  );
+}
+
+// Search free-to-use tracks (CC0 / public domain / CC-BY). Only {provider, id} is ever sent back to the server.
+function MusicPicker({ value, onChange }) {
+  const [q, setQ] = useState('');
+  const [results, setResults] = useState([]);
+  const [state, setState] = useState('idle'); // idle | loading | done
+  const [playing, setPlaying] = useState(null);
+  const audio = useRef(null);
+  const stopPreview = useCallback(() => {
+    const a = audio.current;
+    if (a) { a.pause(); a.removeAttribute('src'); a.load(); audio.current = null; }
+    setPlaying(null);
+  }, []);
+  useEffect(() => stopPreview, [stopPreview]);
+
+  useEffect(() => {
+    const term = q.trim();
+    if (term.length < 2) { setResults([]); setState('idle'); return undefined; }
+    let live = true;
+    setState('loading');
+    const t = setTimeout(async () => {
+      try {
+        const data = await api.searchMusic(term);
+        if (live) { setResults(data.results || []); setState('done'); }
+      } catch {
+        if (live) { setResults([]); setState('done'); }
+      }
+    }, 450);
+    return () => { live = false; clearTimeout(t); };
+  }, [q]);
+
+  const preview = (t) => {
+    if (playing === t.id) return stopPreview();
+    stopPreview();
+    const a = new Audio(t.url); // only fetched when you tap play
+    a.volume = 0.8;
+    a.onended = stopPreview;
+    a.onerror = stopPreview;
+    audio.current = a;
+    setPlaying(t.id);
+    a.play().catch(stopPreview);
+    setTimeout(() => { if (audio.current === a) stopPreview(); }, MAX_STATUS_SECONDS * 1000); // a preview never runs past 15s either
+  };
+  const pick = (t) => { stopPreview(); onChange(t); setQ(''); setResults([]); setState('idle'); };
+
+  return (
+    <div className="sq-music-pick">
+      <b className="sq-music-pick__title">♪ Music <small>(optional)</small></b>
+      {value ? (
+        <div className="sq-track sq-track--on">
+          <span className="sq-track__txt"><strong>{value.title}</strong><small>{value.artist || 'Unknown artist'}</small></span>
+          <button type="button" className="sq-ghost sq-cta--sm" onClick={() => onChange(null)}>Remove</button>
+        </div>
+      ) : (
+        <>
+          <input type="search" placeholder="Search free music (e.g. lofi, afrobeat)" value={q} maxLength={60}
+            onChange={(e) => setQ(e.target.value)} aria-label="Search music" />
+          {state === 'loading' && <small className="sq-hint">Searching…</small>}
+          {state === 'done' && results.length === 0 && <small className="sq-hint">No free tracks found. Try another word, or post without music.</small>}
+          {results.length > 0 && (
+            <ul className="sq-tracks">
+              {results.map((t) => (
+                <li key={`${t.provider}-${t.id}`} className="sq-track">
+                  <button type="button" className="sq-track__play" onClick={() => preview(t)} aria-label={playing === t.id ? `Stop ${t.title}` : `Preview ${t.title}`}>
+                    <Icon name={playing === t.id ? 'x' : 'play'} size={14} />
+                  </button>
+                  <button type="button" className="sq-track__txt" onClick={() => pick(t)}>
+                    <strong>{t.title}</strong><small>{t.artist || 'Unknown artist'}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <small className="sq-hint">Free-to-use tracks only. The artist is credited in the status.</small>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -899,7 +1119,7 @@ export default function Square() {
               return (
                 <button key={s.id} type="button" className={`sq-ring${seen[s.id] ? ' sq-ring--seen' : ''}`} onClick={() => open(s)}>
                   <i>
-                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'video' ? <><video src={`${s.file}#t=0.5`} muted playsInline preload="metadata" controls={false} disablePictureInPicture aria-hidden="true" tabIndex={-1} /><span className="sq-ring__play" aria-hidden="true"><Icon name="play" size={12} /></span></> : initial(s.user.name)}
+                    {s.kind === 'image' ? <img src={s.file} alt="" /> : s.kind === 'slideshow' ? <><img src={s.cover || s.slides?.[0]?.url} alt="" loading="lazy" decoding="async" /><span className="sq-ring__count" aria-hidden="true">{s.music ? '♪ ' : ''}{s.slides?.length || ''}</span></> : s.kind === 'video' ? <><video src={`${s.file}#t=0.5`} muted playsInline preload="metadata" controls={false} disablePictureInPicture aria-hidden="true" tabIndex={-1} /><span className="sq-ring__play" aria-hidden="true"><Icon name="play" size={12} /></span></> : initial(s.user.name)}
                     {c && <em className="sq-badge" aria-hidden="true" style={{ '--c': c.color }}><Icon name={c.icon} size={11} strokeWidth={2.2} /></em>}
                   </i>
                   <small className="sq-ring__name">{s.user.id === user?.id ? 'You' : s.user.name}</small>
@@ -972,7 +1192,7 @@ export default function Square() {
             <h2><Icon name="flame" size={16} />Most liked statuses</h2>
             {trendingStatuses.length === 0 && <p className="sq-hint">Nothing yet.</p>}
             <ol className="sq-rank">{trendingStatuses.map((s, i) => (
-              <li key={s.id}><i aria-hidden="true">{i + 1}</i><button type="button" onClick={() => open(s)}><strong>{s.user.name}</strong> {s.text || (s.kind === 'video' ? 'Video' : 'Photo')}</button><b><Icon name="heart" size={13} />{s.likes}</b></li>
+              <li key={s.id}><i aria-hidden="true">{i + 1}</i><button type="button" onClick={() => open(s)}><strong>{s.user.name}</strong> {s.text || (s.kind === 'slideshow' ? 'Slideshow' : s.kind === 'video' ? 'Video' : 'Photo')}</button><b><Icon name="heart" size={13} />{s.likes}</b></li>
             ))}</ol>
           </div>
           <div className="sq-card">

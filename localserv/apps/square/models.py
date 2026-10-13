@@ -15,9 +15,13 @@ REACTION_EMOJI = ["🔥", "😂", "❤️", "😮", "👏"]
 def status_upload_path(instance, filename):
     # Extension comes from OUR sniffed type (see media.py), never the client's filename.
     ext = os.path.splitext(filename)[1].lower()
-    if ext not in (".jpg", ".webm", ".mp4"):
+    if ext not in (".jpg", ".webp", ".webm", ".mp4"):
         ext = ".jpg"
     return f"square_status/{instance.user_id}/{uuid.uuid4().hex}{ext}"
+
+
+def slide_upload_path(instance, filename):
+    return f"square_status/{instance.status.user_id}/{uuid.uuid4().hex}.webp"
 
 
 def default_expiry():
@@ -25,24 +29,51 @@ def default_expiry():
 
 
 class Status(BaseModel):
-    """A 24-hour picture, short video (max 15s) or text status. Hidden by every query once
-    expires_at passes; files are deleted by services.purge_expired()."""
+    """A 24-hour picture, slideshow, short video (max 15s) or text status. Hidden by every query once
+    expires_at passes; files are deleted by services.purge_expired().
+
+    A slideshow keeps its pictures in StatusSlide rows (2-7 small WebP files, 15 s in total) and, optionally, a music
+    *reference* in `music` (title, artist, licence, stream URL of a free/CC track). The audio itself is never
+    copied into our bucket."""
 
     class Kind(models.TextChoices):
         TEXT = "text", "Text"
         IMAGE = "image", "Image"
         VIDEO = "video", "Video"
+        SLIDESHOW = "slideshow", "Slideshow"
 
     user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="+")
-    kind = models.CharField(max_length=5, choices=Kind.choices, default=Kind.TEXT)
+    kind = models.CharField(max_length=10, choices=Kind.choices, default=Kind.TEXT)
     text = models.CharField(max_length=140, blank=True)
     file = models.FileField(upload_to=status_upload_path, blank=True)
     duration_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Slideshow only. `cover` is a ~360px thumbnail of slide 1 so the status list/ring never downloads full slides.
+    cover = models.FileField(upload_to=status_upload_path, blank=True)
+    slide_seconds = models.PositiveSmallIntegerField(null=True, blank=True)
+    music = models.JSONField(null=True, blank=True)
+    # Slideshow look: motion between photos and the stage they sit on (names validated in media.TEMPLATES / CANVASES).
+    template = models.CharField(max_length=12, blank=True, default="")
+    canvas = models.CharField(max_length=12, blank=True, default="")
     expires_at = models.DateTimeField(default=default_expiry)
 
     class Meta(BaseModel.Meta):
         db_table = "square_status"
         indexes = [models.Index(fields=["expires_at"])]
+
+
+class StatusSlide(BaseModel):
+    """One picture of a slideshow status. Deleted (row + file) with its status."""
+
+    status = models.ForeignKey(Status, on_delete=models.CASCADE, related_name="slides")
+    position = models.PositiveSmallIntegerField()
+    file = models.FileField(upload_to=slide_upload_path)
+    width = models.PositiveSmallIntegerField()
+    height = models.PositiveSmallIntegerField()
+
+    class Meta(BaseModel.Meta):
+        db_table = "square_status_slide"
+        ordering = ["position"]
+        constraints = [models.UniqueConstraint(fields=["status", "position"], name="unique_status_slide_position")]
 
 
 class StatusReaction(BaseModel):
