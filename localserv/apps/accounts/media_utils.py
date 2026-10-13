@@ -36,7 +36,7 @@ def process_avatar_upload(uploaded_file) -> ContentFile:
     try:
         img = Image.open(uploaded_file)
         img.verify()  # raises if the file isn't a genuine image
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValidationError({"avatar": ["This file is not a valid image."]}) from exc
 
     # Re-open: verify() leaves the file object unusable for further ops.
@@ -44,6 +44,8 @@ def process_avatar_upload(uploaded_file) -> ContentFile:
     img = Image.open(uploaded_file)
     # Phones store portrait shots sideways plus an EXIF "rotate me" flag. We strip EXIF below,
     # so apply the rotation first or the saved photo comes out sideways / upside down.
+    # Shrink first (the EXIF orientation tag survives thumbnail()), so a huge photo is never fully decoded.
+    img.thumbnail((AVATAR_SIZE * 2, AVATAR_SIZE * 2))
     img = ImageOps.exif_transpose(img)
     if img.mode in ("RGBA", "LA", "P"):
         # Flatten transparency onto white (a plain convert("RGB") turns it black).

@@ -1,7 +1,10 @@
 import logging
+import threading
 from datetime import timedelta
 
 from django.conf import settings
+from django.core.cache import cache
+from django.db import connection
 from django.db.models import Q
 from django.utils import timezone
 
@@ -34,3 +37,29 @@ def purge_expired(batch_size: int = 500) -> int:
                     logger.warning("Could not delete status file %s", name, exc_info=True)
         Status.objects.filter(pk__in=[pk for pk, _ in batch]).delete()
         total += len(batch)
+
+
+def purge_in_background(every_seconds: int = 900) -> None:
+    """Free replacement for a paid cron job. Call this from a frequently used view: at most once per
+    `every_seconds` (shared across all processes through the cache) it starts a background thread that
+    deletes expired statuses (files + rows) and old chat videos. Never blocks or breaks the request."""
+    try:
+        if not cache.add("purge_expired_media:lock", 1, every_seconds):
+            return  # someone already ran it recently
+    except Exception:  # cache down: skip this time, try again on a later request
+        return
+
+    def _run():
+        try:
+            purge_expired()
+            from apps.chat import services as chat_services  # lazy import avoids a circular import
+
+            chat_services.purge_old_chat_media(
+                days=settings.CHAT_MEDIA_RETENTION_DAYS, kinds=settings.CHAT_MEDIA_PURGE_KINDS
+            )
+        except Exception:
+            logger.exception("Background media purge failed")
+        finally:
+            connection.close()  # this thread opened its own DB connection; don't leak it
+
+    threading.Thread(target=_run, name="purge-expired-media", daemon=True).start()

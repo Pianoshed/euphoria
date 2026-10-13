@@ -14,7 +14,7 @@ from rest_framework.views import APIView
 
 from apps.common.permissions import IsActiveAccount
 
-from . import media
+from . import media, services
 from .models import (REACTION_EMOJI, Circle, FriendTree, FriendTreeMember, Status, StatusReaction,
                      StatusView, Thought, ThoughtReaction)
 
@@ -101,6 +101,7 @@ class _Base(APIView):
 
 class StatusListCreateView(_Base):
     def get(self, request):
+        services.purge_in_background()  # free stand-in for a cron job; runs at most every 15 min
         qs = list(_visible_statuses(request.user)
                   .select_related("user__profile").prefetch_related("reactions").order_by("-created_at")[:100])
         seen = _seen_ids(request, qs)

@@ -1,6 +1,11 @@
 import re
 
 from django.core.exceptions import ValidationError
+from PIL import Image
+
+# Memory guard: Pillow warns above this many pixels and raises DecompressionBombError above 2x this.
+# 30 MP -> hard error at ~60 MP (about 180 MB decoded). Every upload path imports this module.
+Image.MAX_IMAGE_PIXELS = 30_000_000
 
 USERNAME_RE = re.compile(r"^[a-zA-Z0-9_.-]{3,30}$")
 

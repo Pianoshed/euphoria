@@ -31,13 +31,14 @@ def process_message_attachment(uploaded_file) -> ContentFile:
     try:
         img = Image.open(uploaded_file)
         img.verify()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValidationError({"attachment": ["This file is not a valid image."]}) from exc
 
     uploaded_file.seek(0)
     img = Image.open(uploaded_file)
-    img = img.convert("RGB")
+    # Shrink BEFORE converting so a huge image is never fully decoded in memory.
     img.thumbnail((MAX_DIMENSION, MAX_DIMENSION))
+    img = img.convert("RGB")
 
     buffer = io.BytesIO()
     img.save(buffer, format="JPEG", quality=85)

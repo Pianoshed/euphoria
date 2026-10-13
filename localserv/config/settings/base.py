@@ -198,7 +198,9 @@ CHANNEL_LAYERS = {
 
 # --- Password hashing: Argon2 first ---
 PASSWORD_HASHERS = [
-    "django.contrib.auth.hashers.Argon2PasswordHasher",
+    # Light Argon2: the stock hasher uses ~100 MB of RAM per login, which can crash a small instance.
+    # Existing hashes still verify and are upgraded on the user's next login.
+    "apps.common.hashers.LightArgon2PasswordHasher",
     "django.contrib.auth.hashers.PBKDF2PasswordHasher",
 ]
 

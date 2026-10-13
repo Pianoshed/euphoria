@@ -24,11 +24,14 @@ def process_image(uploaded_file) -> ContentFile:
     uploaded_file.seek(0)
     try:
         Image.open(uploaded_file).verify()
-    except (UnidentifiedImageError, OSError) as exc:
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError) as exc:
         raise ValidationError({"file": ["This file is not a valid image."]}) from exc
     uploaded_file.seek(0)
-    img = Image.open(uploaded_file).convert("RGB")
+    img = Image.open(uploaded_file)
+    # Shrink BEFORE converting: thumbnail() lets Pillow decode JPEGs at reduced size, so a huge photo
+    # is never held in memory at full resolution (convert() first would decode every pixel).
     img.thumbnail((MAX_IMAGE_SIDE, MAX_IMAGE_SIDE))
+    img = img.convert("RGB")
     buf = io.BytesIO()
     img.save(buf, format="JPEG", quality=72, optimize=True)
     return ContentFile(buf.getvalue())
