@@ -489,10 +489,6 @@
 /* ---------- slideshow statuses: viewer ---------- */
 .sq-bar--seg{display:flex;gap:3px;background:transparent;overflow:visible}
 .sq-bar--seg b{flex:1;height:3px;background:rgba(255,255,255,.3);border-radius:4px;overflow:hidden}
-.sq-music{position:absolute;top:58px;left:14px;right:14px;z-index:4;display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:var(--t-cap)}
-.sq-music a,.sq-music>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none;text-shadow:0 1px 4px rgba(0,0,0,.7)}
-.sq-music a:hover{text-decoration:underline}
-.sq-music button{flex:none;border:0;border-radius:99px;padding:4px 10px;font:inherit;font-weight:600;color:#fff;background:rgba(0,0,0,.45);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);cursor:pointer}
 
 /* ---------- slideshow display: canvases (the stage) and templates (the motion) ---------- */
 .sq-show{position:absolute;inset:0;overflow:hidden;display:grid;place-items:center;background:#0b0818;isolation:isolate;--sq-ms:var(--slide-ms,3000ms)}
@@ -633,3 +629,35 @@
 
 .sq-suggest .sq-shuffle{background:var(--color-neutral-soft);color:var(--color-ink)}
 .sq-suggest .sq-shuffle:disabled{opacity:.5;cursor:default}
+
+
+/* ---- viewer buttons: credit pill (left) + round glass rail under the close button (right) ---- */
+.sq-music{position:absolute;top:64px;left:14px;max-width:calc(100% - 78px);z-index:4;display:flex;align-items:center;gap:8px;padding:6px 12px 6px 10px;border-radius:99px;background:rgba(0,0,0,.42);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 0 0 1px rgba(255,255,255,.14) inset;color:#fff;font-size:var(--t-cap);line-height:1.2}
+.sq-music a,.sq-music>span:last-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#fff;text-decoration:none}
+.sq-music a:hover{text-decoration:underline}
+.sq-music.is-off,.sq-music.is-failed{opacity:.7}
+.sq-eq{display:flex;align-items:flex-end;gap:2px;height:12px;flex:none}
+.sq-eq i{width:3px;height:100%;border-radius:2px;background:#fff;transform-origin:bottom;transform:scaleY(.3);animation:sq-eq .9s ease-in-out infinite}
+.sq-eq i:nth-child(2){animation-delay:-.3s}
+.sq-eq i:nth-child(3){animation-delay:-.6s}
+.sq-music:not(.is-on) .sq-eq i{animation:none}
+@keyframes sq-eq{0%,100%{transform:scaleY(.25)}50%{transform:scaleY(1)}}
+.sq-rail{position:absolute;top:68px;right:10px;z-index:5;display:flex;flex-direction:column;gap:10px}
+.sq-rbtn{position:relative;display:grid;place-items:center;flex:none;width:38px;height:38px;padding:0;border:0;border-radius:50%;color:#fff;background:rgba(0,0,0,.42);-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px);box-shadow:0 0 0 1px rgba(255,255,255,.14) inset;cursor:pointer;transition:transform .15s,background .2s}
+.sq-rbtn:active{transform:scale(.88)}
+.sq-rbtn:disabled{opacity:.45;cursor:default}
+.sq-rbtn:focus-visible{outline:2px solid #fff;outline-offset:2px}
+.sq-rbtn.is-off{background:rgba(255,255,255,.22)}
+.sq-rbtn.is-blocked{background:var(--sq-brand,#E76A52)}
+.sq-rbtn__ping{position:absolute;inset:0;border-radius:50%;border:2px solid #fff;animation:sq-ping 1.4s ease-out infinite;pointer-events:none}
+@keyframes sq-ping{from{opacity:.8;transform:scale(1)}to{opacity:0;transform:scale(1.6)}}
+.sq-note{position:absolute;left:50%;bottom:78px;transform:translateX(-50%);z-index:6;padding:7px 14px;border-radius:99px;background:rgba(0,0,0,.7);color:#fff;font-size:var(--t-cap);white-space:nowrap;animation:sq-rise .25s ease-out both}
+.sq-rbtn--mini{position:absolute;left:6px;bottom:6px;z-index:5;width:28px;height:28px}
+
+/* ---- site logo watermark on every slideshow (the logo file has a black background, 'screen' removes it) ---- */
+.sq-wm{position:absolute;right:12px;bottom:18px;z-index:3;width:min(64px,26%);pointer-events:none;mix-blend-mode:screen}
+.sq-stage .sq-wm img{display:block;width:100%;height:auto;object-fit:contain}
+.sq-wm b{display:block;text-align:right;color:#fff;font-weight:800;font-size:.8rem;letter-spacing:.02em;text-shadow:0 1px 4px rgba(0,0,0,.6)}
+.sq-showprev .sq-wm{right:6px;bottom:8px;width:34%}
+.sq-showprev .sq-wm img{display:block;width:100%;height:auto}
+@media (prefers-reduced-motion:reduce){.sq-eq i,.sq-rbtn__ping{animation:none}}

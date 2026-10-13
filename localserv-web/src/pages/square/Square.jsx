@@ -3,11 +3,12 @@ import { Link } from 'react-router-dom';
 import PeoplePicker from '../../components/PeoplePicker';
 import { Icon } from '../../components/icons';
 import { useAuth } from '../../context/AuthContext';
-import { BRAND_NAME } from '../../brand';
+import { BRAND_NAME, BRAND_ASSETS } from '../../brand';
 import * as api from '../../api/square';
 import { shrinkImage, MAX_STATUS_SECONDS, MAX_SLIDES, MIN_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, maxSlideSeconds,
   SHOW_TEMPLATES, SHOW_CANVASES, DEFAULT_TEMPLATE, DEFAULT_CANVAS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
+import { statusFrameBlob, statusFileName } from './statusImage';
 import { CIRCLES, SHARED, circleMeta, fruitFor, hasLabels, labelFor, saveLocalLabels } from './circles';
 import './square.css';
 
@@ -108,6 +109,17 @@ function Overlay({ onClose, label, sheet, children }) {
 
 /* One photo of a slideshow on its canvas, with its template's motion. Used by the viewer and by the composer preview,
    so what you pick is exactly what people see. The look names match the backend (blur/fill/frame/night, fade/drift/slide/pop). */
+// Small site logo in the corner of every slideshow (viewer + composer preview). The dark-surface logo has a black
+// background, so mix-blend-mode: screen (see square.css) makes it disappear; if the file is missing it falls back to text.
+function Watermark() {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className="sq-wm" aria-hidden="true">
+      {failed ? <b>hiclr</b> : <img src={BRAND_ASSETS.logoDark} alt="" decoding="async" draggable="false" onError={() => setFailed(true)} />}
+    </span>
+  );
+}
+
 function SlideStage({ url, slideMs, template = DEFAULT_TEMPLATE, canvas = DEFAULT_CANVAS }) {
   return (
     <div className={`sq-show sq-show--${canvas} sq-fx--${template}`} style={{ '--slide-ms': `${slideMs}ms` }}>
@@ -115,38 +127,49 @@ function SlideStage({ url, slideMs, template = DEFAULT_TEMPLATE, canvas = DEFAUL
       <div key={url} className="sq-show__card">
         <img className="sq-show__img" src={url} alt="" decoding="async" />
       </div>
+      <Watermark />
     </div>
   );
 }
 
 /* ---------- status viewer (tap right = next, left = back, auto-advances; nothing plays longer than 15s) ---------- */
 let soundOff = false; // remembered while the page is open, so muting once sticks for the next statuses
+const MUSIC_VOL = 0.85;
 // One shared <audio>, unlocked inside the tap that opens a status. Browsers (iOS Safari especially) only let an element
 // play sound if it was started from a tap; a fresh Audio() created later in an effect (or by the auto-advance timer) is blocked.
+// With a track url the real music starts right here, inside the tap, instead of waiting for the viewer to mount.
 let sharedAudio = null;
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-function primeAudio() {
+function primeAudio(url) {
   try {
     if (!sharedAudio) sharedAudio = new Audio();
-    sharedAudio.muted = true;
-    sharedAudio.src = SILENT_WAV;
-    const p = sharedAudio.play();
+    const a = sharedAudio;
+    a.loop = true;
+    a.preload = 'auto';
+    a.volume = MUSIC_VOL;
+    if (url) { a.muted = soundOff; a.src = url; } else { a.muted = true; a.src = SILENT_WAV; }
+    const p = a.play();
     if (p && p.catch) p.catch(() => {});
-  } catch { /* the viewer falls back to the "Tap for sound" button */ }
+  } catch { /* the viewer falls back to the speaker button */ }
 }
 
 function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
+  const { user } = useAuth();
   const isVideo = status.kind === 'video';
   const slides = useMemo(() => (status.kind === 'slideshow' ? (status.slides || []) : []), [status]);
   const isShow = slides.length > 0;
+  const template = SHOW_TEMPLATES.some((t) => t.id === status.template) ? status.template : DEFAULT_TEMPLATE;
   // Each photo shows slide_seconds, but the whole show is clamped to 15s even if the server sent more.
   const slideMs = isShow ? Math.min((status.slide_seconds || DEFAULT_SLIDE_SECONDS) * 1000, (MAX_STATUS_SECONDS * 1000) / slides.length) : 0;
   const ms = isShow ? slideMs * slides.length
     : isVideo ? Math.min(status.duration || MAX_STATUS_SECONDS, MAX_STATUS_SECONDS) * 1000 : 6000;
   const advance = useRef();
   advance.current = () => (onNext ? onNext() : close());
+  const holding = useRef(false); // true while a share sheet is open: the auto-advance waits instead of closing it
   useEffect(() => {
-    const t = setTimeout(() => advance.current(), ms + 300);
+    let t;
+    const tick = () => { if (holding.current) t = setTimeout(tick, 800); else advance.current(); };
+    t = setTimeout(tick, ms + 300);
     return () => clearTimeout(t);
   }, [status.id, ms]);
 
@@ -162,8 +185,9 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
     if (next) { const img = new Image(); img.src = next.url; img.decode?.().catch(() => {}); }
   }, [i, slides]);
 
-  // Music streams from the catalogue's own servers (never stored by us). It starts when the viewer opens (a tap),
-  // loops if the track is shorter than the show, fades out at the end, and the show plays silently if it fails.
+  // Music streams from the catalogue's own servers (never stored by us). primeAudio() already started it inside the tap
+  // that opened the status; this effect only takes over (same element, same src = no restart), loops if the track is
+  // shorter than the show, fades out at the end, and the show plays silently if it fails.
   const track = isShow ? status.music : null;
   const audioRef = useRef(null);
   const [sound, setSound] = useState(soundOff ? 'off' : 'on'); // 'on' | 'off' | 'blocked' | 'failed'
@@ -171,16 +195,17 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
     if (!track?.url) return undefined;
     if (!sharedAudio) sharedAudio = new Audio();
     const a = sharedAudio;
-    a.pause();
     a.onerror = () => { console.warn('Status music failed to load', a.error && a.error.code, track.url); setSound('failed'); };
     a.preload = 'auto';
     a.loop = true;
-    a.volume = 0.85;
+    a.volume = MUSIC_VOL;
     a.muted = soundOff;
-    a.src = track.url;
+    if (a.getAttribute('src') !== track.url) { a.src = track.url; a.currentTime = 0; }
     audioRef.current = a;
-    const p = a.play();
-    if (p && p.catch) p.catch((err) => { if (err && err.name === 'NotAllowedError') setSound('blocked'); });
+    if (a.paused) {
+      const p = a.play();
+      if (p && p.catch) p.catch((err) => { if (err && err.name === 'NotAllowedError') setSound('blocked'); });
+    }
     let fadeTimer;
     const fadeStart = setTimeout(() => {
       fadeTimer = setInterval(() => { a.volume = Math.max(0, a.volume - 0.1); }, 80);
@@ -194,11 +219,41 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
   const toggleSound = () => {
     const a = audioRef.current;
     if (!a || sound === 'failed') return;
-    if (sound === 'blocked') { a.play().then(() => setSound('on')).catch(() => {}); return; }
+    if (sound === 'blocked') { a.muted = soundOff; a.play().then(() => setSound(soundOff ? 'off' : 'on')).catch(() => {}); return; }
     soundOff = sound === 'on';
     a.muted = soundOff;
     setSound(soundOff ? 'off' : 'on');
   };
+
+  // Share: the slide on screen, drawn on its canvas with the site logo watermark. Only on your own statuses
+  // (friends-only content shouldn't be re-shared by whoever happens to see it); set canSend = isShow || image to open it to viewers.
+  const isMine = !!user && String(status.user.id) === String(user.id);
+  const canSend = isMine && (isShow || status.kind === 'image');
+  const [note, setNote] = useState('');
+  const noteTimer = useRef();
+  const flash = (m) => { setNote(m); clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNote(''), 2200); };
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
+  const shareStatus = async () => {
+    if (holding.current) return;
+    holding.current = true;
+    try {
+      const src = isShow ? slides[i].url : status.file;
+      const blob = await statusFrameBlob(src, isShow ? (status.canvas || DEFAULT_CANVAS) : 'blur');
+      const file = new File([blob], statusFileName(status), { type: blob.type });
+      if (navigator.canShare?.({ files: [file] })) {
+        await navigator.share({ files: [file], title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
+      } else {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = file.name; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 2000);
+        flash('Picture saved');
+      }
+    } catch (e) { if (e?.name !== 'AbortError') flash('Could not make the picture'); }
+    holding.current = false;
+  };
+
+  const soundLabel = sound === 'failed' ? 'Music unavailable' : sound === 'blocked' ? 'Tap the speaker to play' : track?.credit;
 
   return (
     <div className="sq-stage">
@@ -223,19 +278,34 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext }) {
       </div>
       {status.kind === 'image' && <img src={status.file} alt="" />}
       {isVideo && <video src={status.file} autoPlay playsInline controls={false} onEnded={() => advance.current()} />}
-      {isShow && <SlideStage url={slides[i].url} slideMs={slideMs} template={status.template || DEFAULT_TEMPLATE} canvas={status.canvas || DEFAULT_CANVAS} />}
+      {isShow && <SlideStage url={slides[i].url} slideMs={slideMs} template={template} canvas={status.canvas || DEFAULT_CANVAS} />}
       {status.kind === 'text' && <p className="sq-big">{status.text}</p>}
       {status.kind !== 'text' && status.text && <p className="sq-cap">{status.text}</p>}
       {track && (
-        <div className="sq-music">
-          {track.source_url
-            ? <a href={track.source_url} target="_blank" rel="noopener noreferrer" title={track.credit}>♪ {track.credit}</a>
-            : <span title={track.credit}>♪ {track.credit}</span>}
-          <button type="button" onClick={toggleSound} aria-label={sound === 'on' ? 'Mute music' : 'Play music'}>
-            {sound === 'on' ? 'Sound on' : sound === 'blocked' ? 'Tap for sound' : sound === 'failed' ? 'Music unavailable' : 'Muted'}
-          </button>
+        <div className={`sq-music is-${sound}`}>
+          <span className="sq-eq" aria-hidden="true"><i /><i /><i /></span>
+          {track.source_url && sound !== 'failed' && sound !== 'blocked'
+            ? <a href={track.source_url} target="_blank" rel="noopener noreferrer" title={track.credit}>{soundLabel}</a>
+            : <span title={track.credit}>{soundLabel}</span>}
         </div>
       )}
+      {(track || canSend) && (
+        <div className="sq-rail">
+          {track && (
+            <button type="button" className={`sq-rbtn is-${sound}`} onClick={toggleSound} disabled={sound === 'failed'}
+              aria-label={sound === 'on' ? 'Mute music' : sound === 'failed' ? 'Music unavailable' : 'Play music'} aria-pressed={sound === 'on'}>
+              <Icon name={sound === 'off' || sound === 'failed' ? 'volumeOff' : 'volume'} size={18} />
+              {sound === 'blocked' && <i className="sq-rbtn__ping" aria-hidden="true" />}
+            </button>
+          )}
+          {canSend && (
+            <button type="button" className="sq-rbtn" onClick={shareStatus} aria-label="Share this status as a picture">
+              <Icon name="share" size={18} />
+            </button>
+          )}
+        </div>
+      )}
+      {note && <div className="sq-note" role="status">{note}</div>}
       {onPrev && <button type="button" className="sq-tap sq-tap--l" aria-label="Previous status" onClick={onPrev} />}
       <button type="button" className="sq-tap sq-tap--r" aria-label={onNext ? 'Next status' : 'Close'} onClick={() => advance.current()} />
       <div className="sq-vfoot"><Reactions mine={status.my_reaction} onPick={(e) => onReact(status, e)} /></div>
@@ -647,7 +717,32 @@ function Composer({ onClose, onPosted }) {
     [next[k], next[to]] = [next[to], next[k]];
     return next;
   });
-  useEffect(() => { if (n < 2) setMusic(null); }, [n]); // music only goes with a slideshow
+  // The chosen track plays under the live preview, so you hear exactly what viewers will. It is started inside the "Use" tap
+  // (iOS only allows sound from a tap) and stops when it is removed, when the show drops below 2 photos, or on close.
+  const prevAudio = useRef(null);
+  const prevOffRef = useRef(false);
+  const [prevOff, setPrevOff] = useState(false);
+  const stopPrev = useCallback(() => {
+    const a = prevAudio.current;
+    if (a) { a.pause(); a.removeAttribute('src'); a.load(); prevAudio.current = null; }
+  }, []);
+  const chooseMusic = (t) => {
+    stopPrev();
+    setMusic(t);
+    if (t?.url) {
+      const a = new Audio(t.url);
+      a.loop = true; a.volume = MUSIC_VOL; a.muted = prevOffRef.current;
+      prevAudio.current = a;
+      a.play().catch(() => {});
+    }
+  };
+  const togglePrevSound = () => {
+    prevOffRef.current = !prevOffRef.current;
+    setPrevOff(prevOffRef.current);
+    if (prevAudio.current) prevAudio.current.muted = prevOffRef.current;
+  };
+  useEffect(() => stopPrev, [stopPrev]);
+  useEffect(() => { if (n < 2) { setMusic(null); stopPrev(); } }, [n, stopPrev]); // music only goes with a slideshow
 
   const canPost = n > 0 || text.trim().length > 0;
   const submit = async (close) => {
@@ -735,7 +830,7 @@ function Composer({ onClose, onPosted }) {
             <section className="sq-step">
               <h3><i>2</i>Look <small>live preview</small></h3>
               <div className="sq-look">
-                <ShowPreview photos={photos} slideMs={eachSecs * 1000} template={template} canvas={canvas} />
+                <ShowPreview photos={photos} slideMs={eachSecs * 1000} template={template} canvas={canvas} hasMusic={!!music} off={prevOff} onToggleSound={togglePrevSound} />
                 <div className="sq-look__opts">
                   <b>Style</b>
                   <div className="sq-tiles" role="radiogroup" aria-label="Slideshow style">
@@ -777,7 +872,7 @@ function Composer({ onClose, onPosted }) {
           {isShow && (
             <section className="sq-step">
               <h3><i>3</i>Music <small>optional</small></h3>
-              <MusicPicker value={music} onChange={setMusic} />
+              <MusicPicker value={music} onChange={chooseMusic} />
             </section>
           )}
 
@@ -805,7 +900,7 @@ function Composer({ onClose, onPosted }) {
 }
 
 // Loops the chosen photos in a small phone-shaped box with the picked style + canvas (uses the tiny thumbnails only).
-function ShowPreview({ photos, slideMs, template, canvas }) {
+function ShowPreview({ photos, slideMs, template, canvas, hasMusic, off, onToggleSound }) {
   const [i, setI] = useState(0);
   const count = photos.length;
   useEffect(() => {
@@ -816,6 +911,12 @@ function ShowPreview({ photos, slideMs, template, canvas }) {
   return (
     <div className="sq-showprev" aria-label="Preview of your slideshow">
       <SlideStage url={p.thumb} slideMs={slideMs} template={template} canvas={canvas} />
+      {hasMusic && (
+        <button type="button" className="sq-rbtn sq-rbtn--mini" onClick={onToggleSound} aria-pressed={!off}
+          aria-label={off ? 'Play the music in this preview' : 'Mute the music in this preview'}>
+          <Icon name={off ? 'volumeOff' : 'volume'} size={14} />
+        </button>
+      )}
     </div>
   );
 }
@@ -1066,7 +1167,7 @@ export default function Square() {
   /* ----- actions ----- */
   const swap = (setList) => (item) => setList((cur) => cur.map((x) => (x.id === item.id ? item : x)));
   const open = (s) => {
-    primeAudio(); // inside the tap, so the music in this status is allowed to play
+    primeAudio(s.kind === 'slideshow' ? s.music?.url : null); // inside the tap: unlocks audio and starts this status's music at once
     setSeen((x) => { const n = { ...x, [s.id]: true }; if (user) writeSeen(user.id, n); return n; });
     if (!s.seen && s.user.id !== user?.id) api.markSeen(s.id).catch(() => { /* local copy still marks it */ });
     setViewing(s); setDrawer(null);
