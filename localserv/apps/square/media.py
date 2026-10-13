@@ -29,7 +29,8 @@ COVER_SIDE = 360  # the cover is a SQUARE this size, cropped to fit the round st
 
 # How a slideshow is *displayed*. Only these names are stored; the app draws them (see Square.jsx / square.css).
 #   template = the motion between photos, canvas = the stage the photo sits on.
-TEMPLATES = ("fade", "drift", "slide", "pop")      # crossfade, slow zoom (Ken Burns), slide in, pop in
+TEMPLATES = ("fade", "drift", "slide", "pop",       # crossfade, slow zoom (Ken Burns), slide, pop
+             "cinema", "burst", "spin", "flip", "curtain", "flash", "swing", "zoomout")  # dramatic in/out; names <= 12 chars (model max_length)
 CANVASES = ("blur", "fill", "frame", "night")    # blurred backdrop, full-bleed, polaroid card, dark
 DEFAULT_TEMPLATE, DEFAULT_CANVAS = "fade", "blur"
 
