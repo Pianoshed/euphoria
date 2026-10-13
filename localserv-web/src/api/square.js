@@ -10,6 +10,10 @@ export const reactStatus = (id, emoji) =>
 // Free-to-use (CC0 / public domain / CC-BY) tracks for slideshow music. Nothing is stored on our side.
 export const searchMusic = (q) => apiFetch('/api/square/music/', { query: { q } });
 
+// 2 random free tracks (shared server-side pool). `exclude` = ids already shown, so Shuffle gives a new pair.
+export const suggestMusic = (exclude = []) =>
+  apiFetch('/api/square/music/suggest/', { query: { exclude: exclude.join(',') } });
+
 // Marks a status as watched (saved on the server so it survives refreshes and other devices).
 export const markSeen = (id) => apiFetch(`/api/square/statuses/${id}/seen/`, { method: 'POST' });
 

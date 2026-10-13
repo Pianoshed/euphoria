@@ -804,40 +804,6 @@ function ShowPreview({ photos, slideMs, template, canvas }) {
   );
 }
 
-// The free catalogue is small, so under the search box we suggest 2 random tracks (and "Shuffle" for 2 more).
-// Suggestions come from searching a random mood word; the pool is kept for the whole page visit so nothing is refetched.
-const MUSIC_SEEDS = ['lofi', 'chill', 'acoustic', 'piano', 'ambient', 'jazz', 'upbeat', 'guitar', 'happy', 'instrumental'];
-const randomOrder = (list) => {
-  const a = list.slice();
-  for (let i = a.length - 1; i > 0; i -= 1) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
-  return a;
-};
-const suggestStore = { queue: [], tried: new Set() };
-async function randomSuggestions(avoid) {
-  const take = (count) => {
-    const out = [];
-    while (out.length < count && suggestStore.queue.length) {
-      const t = suggestStore.queue.shift();
-      if (!avoid.has(t.id) && !out.some((o) => o.id === t.id)) out.push(t);
-    }
-    return out;
-  };
-  let out = take(2);
-  for (let tries = 0; out.length < 2 && tries < 3; tries += 1) {
-    let left = MUSIC_SEEDS.filter((w) => !suggestStore.tried.has(w));
-    if (!left.length) { suggestStore.tried.clear(); left = MUSIC_SEEDS; }
-    const seed = randomOrder(left)[0];
-    suggestStore.tried.add(seed);
-    try {
-      const data = await api.searchMusic(seed);
-      const known = new Set([...suggestStore.queue.map((t) => t.id), ...out.map((t) => t.id)]);
-      suggestStore.queue.push(...randomOrder(data.results || []).filter((t) => !known.has(t.id)));
-    } catch { /* music service down: try the next word */ }
-    out = out.concat(take(2 - out.length));
-  }
-  return out;
-}
-
 // Search free-to-use tracks (CC0 / public domain / CC-BY). Only {provider, id} is ever sent back to the server.
 function MusicPicker({ value, onChange }) {
   const [q, setQ] = useState('');
@@ -845,6 +811,7 @@ function MusicPicker({ value, onChange }) {
   const [state, setState] = useState('idle'); // idle | loading | done
   const [sugg, setSugg] = useState([]);
   const [suggBusy, setSuggBusy] = useState(true);
+  const [suggFailed, setSuggFailed] = useState(false);
   const [playing, setPlaying] = useState(null);
   const audio = useRef(null);
   const stopPreview = useCallback(() => {
@@ -858,8 +825,15 @@ function MusicPicker({ value, onChange }) {
   suggestRef.current = sugg;
   const reroll = useCallback(async () => {
     setSuggBusy(true);
-    const next = await randomSuggestions(new Set(suggestRef.current.map((t) => t.id)));
-    setSugg(next);
+    setSuggFailed(false);
+    try {
+      // The server picks 2 random tracks from a pool it shares between everyone; we say which ones we already showed.
+      const data = await api.suggestMusic(suggestRef.current.map((t) => t.id));
+      setSugg(data.results || []);
+    } catch {
+      setSugg([]);
+      setSuggFailed(true); // a real error (offline / backend not updated), as opposed to "no tracks"
+    }
     setSuggBusy(false);
   }, []);
   useEffect(() => { reroll(); }, [reroll]);
@@ -930,10 +904,14 @@ function MusicPicker({ value, onChange }) {
         <div className="sq-suggest">
           <div className="sq-suggest__head">
             <b>Suggested for you</b>
-            <button type="button" className="sq-shuffle" onClick={reroll} disabled={suggBusy}><Icon name="shuffle" size={13} />Shuffle</button>
+            <button type="button" className="sq-shuffle" onClick={reroll} disabled={suggBusy}><Icon name="shuffle" size={13} />{suggFailed ? 'Retry' : 'Shuffle'}</button>
           </div>
           {suggBusy && sugg.length === 0 && <small className="sq-hint">Finding tracks…</small>}
-          {!suggBusy && sugg.length === 0 && <small className="sq-hint">Couldn't load suggestions. Search above, or post without music.</small>}
+          {!suggBusy && sugg.length === 0 && (
+            <small className="sq-hint">
+              {suggFailed ? 'Could not reach the music service. Tap Shuffle to retry, or post without music.' : 'No free tracks right now. Try a search above, or post without music.'}
+            </small>
+          )}
           {sugg.length > 0 && <ul className="sq-tracks">{sugg.map(row)}</ul>}
         </div>
       )}
