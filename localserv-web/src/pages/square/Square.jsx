@@ -8,7 +8,7 @@ import * as api from '../../api/square';
 import { shrinkImage, MAX_STATUS_SECONDS, MAX_SLIDES, MIN_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, maxSlideSeconds,
   SHOW_TEMPLATES, SHOW_CANVASES, DEFAULT_TEMPLATE, DEFAULT_CANVAS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
-import { statusFrameBlob, statusFileName } from './statusImage';
+import { statusCollageBlob, statusFileName } from './statusImage';
 import { CIRCLES, SHARED, circleMeta, fruitFor, hasLabels, labelFor, saveLocalLabels } from './circles';
 import './square.css';
 
@@ -236,24 +236,37 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
   const noteTimer = useRef();
   const flash = (m) => { setNote(m); clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNote(''), 2200); };
   useEffect(() => () => clearTimeout(noteTimer.current), []);
+  const picRef = useRef(null); // the finished picture, kept so a second tap shares instantly (a share must start right after a tap)
+  const save = (blob, name) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    flash('Picture saved');
+  };
   const shareStatus = async () => {
     if (holding.current) return;
     holding.current = true;
     try {
-      const src = isShow ? slides[i].url : status.file;
-      const blob = await statusFrameBlob(src, isShow ? (status.canvas || DEFAULT_CANVAS) : 'blur');
+      if (!picRef.current) {
+        // everything goes out through the collage designs: 1 photo alone, 2..8 as one random layout
+        picRef.current = await statusCollageBlob(isShow ? slides.map((x) => x.url) : [status.file]);
+      }
+      const blob = picRef.current;
       const file = new File([blob], statusFileName(status), { type: blob.type });
       if (navigator.canShare?.({ files: [file] })) {
-        await navigator.share({ files: [file], title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
-      } else {
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = file.name; a.click();
-        setTimeout(() => URL.revokeObjectURL(url), 2000);
-        flash('Picture saved');
-      }
-    } catch (e) { if (e?.name !== 'AbortError') flash('Could not make the picture'); }
-    holding.current = false;
+        try {
+          await navigator.share({ files: [file], title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
+        } catch (e) {
+          if (e?.name === 'AbortError') return;
+          if (e?.name === 'NotAllowedError') flash('Picture ready. Tap share again'); // the tap expired while the picture was drawn
+          else save(blob, file.name);
+        }
+      } else save(blob, file.name);
+    } catch (e) {
+      console.warn('Status picture failed', e);
+      flash(e?.message === 'cors' ? 'Pictures are blocked by the media server' : 'Could not make the picture');
+    } finally { holding.current = false; }
   };
 
   const soundLabel = sound === 'failed' ? 'Music unavailable' : sound === 'blocked' ? 'Tap the speaker to play' : track?.credit;
