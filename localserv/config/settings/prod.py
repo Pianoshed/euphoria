@@ -117,7 +117,7 @@ for _name, _origins in {
 # --- 2. CORS: your own frontend only, API paths only -------------------
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
-CORS_URLS_REGEX = r"^/api/.*$"
+CORS_URLS_REGEX = r"^/(api|media)/.*$"  # /media/ too: the status collage reads photos from a canvas
 
 # --- 3. Cookies / HTTPS (most of this is already above; kept so it's explicit) ---
 SESSION_COOKIE_SECURE = True

@@ -69,10 +69,16 @@ const SERVICES = [
   { to: '/wallet', icon: 'wallet', label: 'Wallet' },
 ];
 
-// "Updates last opened" per person: credits that landed after it are flagged New.
-const seenKey = (uid) => `hf-updates-seen-v2:${uid}`;
-const readSeen = (uid) => { try { return Number(localStorage.getItem(seenKey(uid))) || Date.now() - DAY; } catch { return Date.now() - DAY; } };
-const writeSeen = (uid, t) => { try { localStorage.setItem(seenKey(uid), String(t)); } catch { /* private mode */ } };
+// Which notifications I have already opened, per person, kept in this browser so it survives reloads.
+// An entry is "<key>|<title>": when something new happens (a 2nd message, another credit) the title changes, so it is unread again.
+const readKey = (uid) => `hf-read-v1:${uid}`;
+const loadRead = (uid) => { try { return JSON.parse(localStorage.getItem(readKey(uid)) || '{}') || {}; } catch { return {}; } };
+const saveRead = (uid, map) => {
+  try {
+    const keep = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 300); // newest 300 only
+    localStorage.setItem(readKey(uid), JSON.stringify(Object.fromEntries(keep)));
+  } catch { /* private mode */ }
+};
 
 // Statuses already watched on the Square page (same storage key it writes), merged with the server's own flag.
 const sqSeenKey = (uid) => `sq-seen-v1:${uid}`;
@@ -184,20 +190,21 @@ function PromoModal({ onClose, onDone }) {
 }
 
 /** One line: icon, words, time. Opens a receipt, or goes to the right page. */
-function UpdateRow({ item, onReceipt }) {
+function UpdateRow({ item, onReceipt, onRead }) {
   const body = (
     <>
       <span className="hf-ico" data-tint={item.tone} aria-hidden="true"><Icon name={item.icon} size={17} /></span>
       <span className="hf-row__text"><strong>{item.title}</strong><small>{item.text}</small></span>
       <span className="hf-row__meta">
         {item.time && <time>{ago(item.time)}</time>}
-        {item.hot && <i className="hf-pip" aria-label="New" />}
+        {item.hot && <i className="hf-pip" aria-label="Unread" />}
       </span>
     </>
   );
+  const cls = `hf-row ${item.hot ? 'is-hot' : 'is-read'}`;
   return item.receipt
-    ? <button type="button" className={`hf-row${item.hot ? ' is-hot' : ''}`} onClick={() => onReceipt(item.receipt)}>{body}</button>
-    : <Link to={item.to} className={`hf-row${item.hot ? ' is-hot' : ''}`}>{body}</Link>;
+    ? <button type="button" className={cls} onClick={() => { onRead(item.sig); onReceipt(item.receipt); }}>{body}</button>
+    : <Link to={item.to} className={cls} onClick={() => onRead(item.sig)}>{body}</Link>;
 }
 
 export default function HomeFeed() {
@@ -222,7 +229,7 @@ export default function HomeFeed() {
   const [balance, setBalance] = useState(null);       // paid wallet balance
   const [promo, setPromo] = useState(null);           // { promotional_balance, ... } or null while unknown
   const [promoCredits, setPromoCredits] = useState([]);
-  const [seenAt, setSeenAt] = useState(() => readSeen(uid));
+  const [readMap, setReadMap] = useState(() => loadRead(uid));
   const [drawer, setDrawer] = useState(null);         // 'updates' | 'explore' | null
   const [receipt, setReceipt] = useState(null);
   const [promoOpen, setPromoOpen] = useState(false);
@@ -287,7 +294,15 @@ export default function HomeFeed() {
     if (firstRun.current) { firstRun.current = false; return; }
     loadPulse();
   }, [alerts.messages, alerts.missedCalls, loadPulse]);
-  useEffect(() => { setSeenAt(readSeen(uid)); }, [uid]);
+  useEffect(() => { setReadMap(loadRead(uid)); }, [uid]);
+  const markRead = useCallback((...sigs) => {
+    setReadMap((prev) => {
+      const next = { ...prev };
+      sigs.flat().forEach((g) => { if (g) next[g] = Date.now(); });
+      saveRead(uid, next);
+      return next;
+    });
+  }, [uid]);
 
   // ---------- derived ----------
   const unreadChats = (chats || []).filter((c) => c.unread_count > 0);
@@ -332,7 +347,7 @@ export default function HomeFeed() {
       const [icon, title] = creditHeadline(e.entry_type);
       const at = stamp(e.created_at);
       items.push({
-        key: `w${e.id}`, rank: 0, icon, tone: 'mint', hot: at > seenAt, receipt: e, at,
+        key: `w${e.id}`, rank: 0, icon, tone: 'mint', hot: true, receipt: e, at,
         title: `${title} +${formatNaira(e.amount)}`, text: `${e.note || ledgerLabel(e.entry_type)} · View receipt`, time: e.created_at,
       });
     });
@@ -386,9 +401,12 @@ export default function HomeFeed() {
       key: `sq-t${t.id}`, rank: 8, drawerOnly: true, icon: 'thought', tone: 'lilac', hot: false, to: '/square', at: stamp(t.created_at),
       title: `${t.user.name} shared a thought`, text: t.text, time: t.created_at,
     }));
-    return items.sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank || b.at - a.at);
+    // unread = needs attention AND I have not opened it yet (remembered in this browser)
+    return items
+      .map((u) => { const sig = `${u.key}|${u.title}`; return { ...u, sig, hot: u.hot && !readMap[sig] }; })
+      .sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank || b.at - a.at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [recentCredits, expiring, hosting, mine, alerts.messages, alerts.missedCalls, unreadChats.length, names, friendStatuses, friendThoughts, friends, unseenFriendPeople.length, sqSeen, seenAt]);
+  }, [readMap, recentCredits, expiring, hosting, mine, alerts.messages, alerts.missedCalls, unreadChats.length, names, friendStatuses, friendThoughts, friends, unseenFriendPeople.length, sqSeen]);
 
   const needsYou = updates.filter((u) => u.hot && !u.drawerOnly);
   const topNeeds = needsYou.slice(0, 3);
@@ -400,7 +418,6 @@ export default function HomeFeed() {
         : 'Nothing urgent right now.';
 
   const closeDrawer = () => {
-    if (drawer === 'updates') { const t = Date.now(); writeSeen(uid, t); setSeenAt(t); }
     setDrawer(null);
   };
 
@@ -476,7 +493,7 @@ export default function HomeFeed() {
                   : null}
               </header>
               {topNeeds.length > 0
-                ? <div className="hf-list">{topNeeds.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} />)}</div>
+                ? <div className="hf-list">{topNeeds.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} onRead={markRead} />)}</div>
                 : <p className="hf-hint"><Icon name="check" size={15} />You&rsquo;re all caught up.</p>}
             </section>
 
@@ -533,7 +550,10 @@ export default function HomeFeed() {
       {drawer === 'updates' && (
         <Drawer title="Updates" icon="bell" onClose={closeDrawer}>
           {updates.length === 0 && <p className="hf-hint">Messages, calls, plan updates and wallet credits will show up here as they happen.</p>}
-          <div className="hf-list">{updates.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} />)}</div>
+          {hotCount > 0 && (
+            <button type="button" className="hf-markall" onClick={() => markRead(updates.map((u) => u.sig))}>Mark all as read</button>
+          )}
+          <div className="hf-list">{updates.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} onRead={markRead} />)}</div>
 
           <h3 className="hf-drawer__sub">Your money</h3>
           <dl className="hf-money">
