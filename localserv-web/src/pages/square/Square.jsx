@@ -236,39 +236,49 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
   const noteTimer = useRef();
   const flash = (m) => { setNote(m); clearTimeout(noteTimer.current); noteTimer.current = setTimeout(() => setNote(''), 2200); };
   useEffect(() => () => clearTimeout(noteTimer.current), []);
-  const picRef = useRef(null); // the finished picture, kept so a second tap shares instantly (a share must start right after a tap)
+  // The picture is built in the background as soon as your own status opens, so by the time you tap share it is
+  // ready (and the share sheet opens at once, inside your tap). Until then the button is disabled and pulses.
+  const picRef = useRef(null);
+  const [pic, setPic] = useState('idle'); // 'idle' | 'loading' | 'ready' | 'error'
+  const picErr = useRef('');
+  const buildPic = useCallback(() => {
+    let off = false;
+    picRef.current = null;
+    setPic('loading');
+    statusCollageBlob(isShow ? slides.map((x) => x.url) : [status.file])
+      .then((b) => { if (!off) { picRef.current = b; setPic('ready'); } })
+      .catch((e) => { console.warn('Status picture failed', e); if (!off) { picErr.current = e?.message || ''; setPic('error'); } });
+    return () => { off = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status.id, isShow]);
+  useEffect(() => (canSend ? buildPic() : undefined), [canSend, buildPic]);
+
   const save = (blob, name) => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url; a.download = name; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 2000);
-    flash('Picture saved');
   };
   const shareStatus = async () => {
-    if (holding.current) return;
+    if (holding.current || pic === 'loading') return;
+    if (!picRef.current) { // last try failed: tell why, and build it again for the next tap
+      const m = picErr.current;
+      flash(m === 'cors' ? 'Photo server blocked it (CORS)'
+        : m.startsWith('http-') ? `Photo link failed (${m.slice(5)})`
+          : m === 'decode' ? 'A photo could not be read' : 'Could not make the picture. Trying again');
+      buildPic();
+      return;
+    }
     holding.current = true;
     try {
-      if (!picRef.current) {
-        // everything goes out through the collage designs: 1 photo alone, 2..8 as one random layout
-        picRef.current = await statusCollageBlob(isShow ? slides.map((x) => x.url) : [status.file]);
-      }
       const blob = picRef.current;
       const file = new File([blob], statusFileName(status), { type: blob.type });
+      save(blob, file.name); // the button always saves a copy to the phone too
       if (navigator.canShare?.({ files: [file] })) {
         try {
           await navigator.share({ files: [file], title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
-        } catch (e) {
-          if (e?.name === 'AbortError') return;
-          if (e?.name === 'NotAllowedError') flash('Picture ready. Tap share again'); // the tap expired while the picture was drawn
-          else save(blob, file.name);
-        }
-      } else save(blob, file.name);
-    } catch (e) {
-      console.warn('Status picture failed', e);
-      const m = e?.message || '';
-      flash(m === 'cors' ? 'Photo server blocked it (CORS)'
-        : m.startsWith('http-') ? `Photo link failed (${m.slice(5)})`
-          : m === 'decode' ? 'A photo could not be read' : 'Could not make the picture');
+        } catch (e) { if (e?.name !== 'AbortError') flash('Picture saved'); }
+      } else flash('Picture saved');
     } finally { holding.current = false; }
   };
 
@@ -318,7 +328,8 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
             </button>
           )}
           {canSend && (
-            <button type="button" className="sq-rbtn" onClick={shareStatus} aria-label="Share this status as a picture">
+            <button type="button" className={`sq-rbtn${pic === 'loading' ? ' is-busy' : ''}`} onClick={shareStatus} disabled={pic === 'loading'} aria-busy={pic === 'loading'}
+              aria-label={pic === 'loading' ? 'Getting the picture ready' : 'Share and save this status as a picture'} title={pic === 'loading' ? 'Getting the picture ready…' : 'Share and save'}>
               <Icon name="share" size={18} />
             </button>
           )}

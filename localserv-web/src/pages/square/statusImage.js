@@ -14,7 +14,7 @@ const loadImg = (src) => new Promise((resolve, reject) => {
 
 // fetch() as a blob first: a cross-origin <img> would taint the canvas and toBlob() would throw. This needs the media
 // host to send Access-Control-Allow-Origin (same as any CDN image you draw on a canvas).
-async function loadPhoto(url) {
+async function fetchPhotoBlob(url) {
   // Photos are cached for a day ("immutable"). A copy cached by a plain <img> has no CORS headers, and a CORS fetch
   // can be handed that copy and fail even when the bucket is set up right, so on failure try once more bypassing the cache.
   let res;
@@ -25,9 +25,19 @@ async function loadPhoto(url) {
     }
   }
   if (!res.ok) { console.warn('Status picture: photo request failed', res.status, url.split('?')[0]); throw new Error(`http-${res.status}`); }
-  const obj = URL.createObjectURL(await res.blob());
+  return res.blob();
+}
+
+// Decode a blob to something drawable. createImageBitmap decodes off the main thread (faster, no jank); old browsers use <img>.
+async function decodePhoto(blob) {
+  try {
+    if (typeof createImageBitmap === 'function') return await createImageBitmap(blob);
+  } catch { /* fall through to <img> */ }
+  const obj = URL.createObjectURL(blob);
   try { return await loadImg(obj); } catch (e) { console.warn('Status picture: a photo could not be decoded', e); throw new Error('decode'); } finally { setTimeout(() => URL.revokeObjectURL(obj), 4000); }
 }
+
+async function loadPhoto(url) { return decodePhoto(await fetchPhotoBlob(url)); }
 
 function place(ctx, img, x, y, w, h, mode) {
   const k = (mode === 'cover' ? Math.max : Math.min)(w / img.width, h / img.height);
@@ -113,8 +123,8 @@ export async function statusFrameBlob(url, canvasKind = 'blur') {
   return toJpeg(c);
 }
 
-const toJpeg = (c) => new Promise((resolve, reject) => {
-  c.toBlob((b) => { c.width = c.height = 0; if (b) resolve(b); else reject(new Error('blob')); }, 'image/jpeg', 0.88);
+const toJpeg = (c, q = 0.88) => new Promise((resolve, reject) => {
+  c.toBlob((b) => { c.width = c.height = 0; if (b) resolve(b); else reject(new Error('blob')); }, 'image/jpeg', q);
 });
 
 // ---- Collage designs ----------------------------------------------------------------------------------------------
@@ -158,50 +168,88 @@ function rr(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
+// Phone-sized sheet: 720x1280 is about 4x fewer pixels than 1080x1920, so it draws and uploads quickly and still
+// looks sharp on a phone. The collage sits above a clear strip that holds the logo, so the mark is big and obvious
+// but never covers a photo.
+const CW = 720;
+const CH = 1280;
+const STRIP = 150;
+
+function collageMark(ctx, logo) {
+  const cx = CW / 2;
+  const cy = CH - STRIP / 2 + 6;
+  if (logo) {
+    let w = 330;
+    let h = w * (logo.height / logo.width);
+    if (h > STRIP - 40) { h = STRIP - 40; w = h * (logo.width / logo.height); }
+    ctx.save();
+    ctx.globalCompositeOperation = 'screen'; // the dark-surface logo has a black background; 'screen' makes it vanish
+    ctx.drawImage(logo, cx - w / 2, cy - h / 2, w, h);
+    ctx.restore();
+  } else {
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = '800 72px system-ui, -apple-system, sans-serif';
+    ctx.fillText('hiclr', cx, cy);
+    ctx.restore();
+  }
+}
+
 // All the photos of a status on ONE picture (so one share carries the lot), random layout + colours, logo watermark.
-// Memory: photos are fetched, drawn and released one at a time (never all decoded together), and the only big
-// buffer is the single 1080x1920 canvas (~8 MB). The result is a ~300-600 KB jpeg.
+// Speed: the photos download at the same time (they are small, ~100 KB each); the only big buffer is one 720x1280 canvas.
 export async function statusCollageBlob(urls) {
   const list = urls.slice(0, 8);
   const n = list.length;
   const pal = pick(PALETTES);
-  const margin = pick([24, 40, 60]);
-  const gap = pick([10, 18, 26]);
-  const radius = pick([0, 28, 52]);
-  const top = margin;
-  const area = { x: margin, y: top, w: W - margin * 2, h: H - top - 190 }; // the bottom strip is left clear for the logo
+  const margin = pick([16, 26, 38]);
+  const gap = pick([8, 12, 18]);
+  const radius = pick([0, 20, 36]);
+  const area = { x: margin, y: margin, w: CW - margin * 2, h: CH - margin - STRIP };
   const layout = pick(LAYOUTS[n] || LAYOUTS[8]);
 
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const ctx = c.getContext('2d');
-  const bg = ctx.createLinearGradient(0, 0, W * 0.4, H);
-  bg.addColorStop(0, pal.bg[0]); bg.addColorStop(1, pal.bg[1]);
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-  const gx = Math.random() > 0.5 ? W * 0.15 : W * 0.85;
-  const glow = ctx.createRadialGradient(gx, H * 0.1, 0, gx, H * 0.1, W * 0.95);
-  glow.addColorStop(0, pal.glow); glow.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
-
+  // start everything that needs the network now, then draw as the bytes arrive
   const logoP = loadImg(BRAND_ASSETS.logoDark).catch(() => null);
+  const blobsP = list.map((u) => fetchPhotoBlob(u));
+  blobsP.forEach((p) => p.catch(() => {})); // errors are reported below, in order
+
+  const c = document.createElement('canvas');
+  c.width = CW; c.height = CH;
+  const ctx = c.getContext('2d');
+  const bg = ctx.createLinearGradient(0, 0, CW * 0.4, CH);
+  bg.addColorStop(0, pal.bg[0]); bg.addColorStop(1, pal.bg[1]);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, CW, CH);
+  const gx = Math.random() > 0.5 ? CW * 0.15 : CW * 0.85;
+  const glow = ctx.createRadialGradient(gx, CH * 0.1, 0, gx, CH * 0.1, CW * 0.95);
+  glow.addColorStop(0, pal.glow); glow.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, CW, CH);
+
   for (let k = 0; k < n; k += 1) {
-    const img = await loadPhoto(list[k]); // sequential on purpose
+    const img = await decodePhoto(await blobsP[k]); // one decoded photo in memory at a time
     const [ux, uy, uw, uh] = layout[k];
     const x = area.x + ux * area.w + gap / 2 * (ux > 0.001 ? 1 : 0);
     const y = area.y + uy * area.h + gap / 2 * (uy > 0.001 ? 1 : 0);
     const w = uw * area.w - gap / 2 * ((ux > 0.001 ? 1 : 0) + (ux + uw < 0.999 ? 1 : 0));
     const h = uh * area.h - gap / 2 * ((uy > 0.001 ? 1 : 0) + (uy + uh < 0.999 ? 1 : 0));
     ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 24; ctx.shadowOffsetY = 8;
+    ctx.shadowColor = 'rgba(0,0,0,.4)'; ctx.shadowBlur = 16; ctx.shadowOffsetY = 5;
     rr(ctx, x, y, w, h, radius); ctx.fillStyle = '#000'; ctx.fill();
     ctx.shadowColor = 'transparent';
     rr(ctx, x, y, w, h, radius); ctx.clip();
-    place(ctx, img, x, y, w, h, 'cover');
+    if (n === 1) { // a lone photo is shown whole (not cropped), on a blurred copy of itself
+      const t = document.createElement('canvas');
+      t.width = 36; t.height = Math.max(8, Math.round(36 * (h / w)));
+      place(t.getContext('2d'), img, 0, 0, t.width, t.height, 'cover');
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(t, x, y, w, h);
+      ctx.fillStyle = 'rgba(8,6,20,.35)'; ctx.fillRect(x, y, w, h);
+      place(ctx, img, x, y, w, h, 'contain');
+    } else place(ctx, img, x, y, w, h, 'cover');
     ctx.restore();
-    img.src = ''; // drop the decoded bitmap before the next one loads
+    if (img.close) img.close(); else img.src = ''; // free the decoded photo before the next one
   }
-  watermark(ctx, await logoP, false);
-  return toJpeg(c);
+  collageMark(ctx, await logoP);
+  return toJpeg(c, 0.86);
 }
 
 export const statusFileName = (status) => `hiclr-status-${status.id}.jpg`;
