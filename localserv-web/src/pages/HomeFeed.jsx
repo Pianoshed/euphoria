@@ -72,7 +72,12 @@ const SERVICES = [
 // Which notifications I have already opened, per person, kept in this browser so it survives reloads.
 // An entry is "<key>|<title>": when something new happens (a 2nd message, another credit) the title changes, so it is unread again.
 const readKey = (uid) => `hf-read-v1:${uid}`;
-const loadRead = (uid) => { try { return JSON.parse(localStorage.getItem(readKey(uid)) || '{}') || {}; } catch { return {}; } };
+const loadRead = (uid) => {
+  try {
+    const all = JSON.parse(localStorage.getItem(readKey(uid)) || '{}') || {};
+    return Object.fromEntries(Object.entries(all).filter(([, t]) => Date.now() - Number(t) < 14 * DAY)); // forget old marks
+  } catch { return {}; }
+};
 const saveRead = (uid, map) => {
   try {
     const keep = Object.entries(map).sort((a, b) => b[1] - a[1]).slice(0, 300); // newest 300 only
@@ -314,7 +319,16 @@ export default function HomeFeed() {
     return last ? (last.body === null ? 'Message deleted' : last.body || (last.attachment_type === 'audio' ? 'Voice message' : 'Photo')) : 'Nothing yet. Say hi.';
   };
 
-  const recentCredits = useMemo(() => ledger.filter((e) => Date.now() - stamp(e.created_at) < 7 * DAY).slice(0, 5), [ledger]);
+  // Same credit twice (e.g. a refund written as two ledger rows, or the same top-up amount again) = ONE notification with a count.
+  const recentCredits = useMemo(() => {
+    const groups = new Map(); // ledger is newest first, so the first of each kind is the newest
+    ledger.filter((e) => Date.now() - stamp(e.created_at) < 7 * DAY).forEach((e) => {
+      const k = `${creditHeadline(e.entry_type)[1]}|${num(e.amount)}|${e.note || ''}`;
+      const g = groups.get(k);
+      if (g) g.count += 1; else groups.set(k, { ...e, count: 1 });
+    });
+    return [...groups.values()].slice(0, 5);
+  }, [ledger]);
   const expiring = useMemo(() => promoCredits.filter((c) => num(c.remaining_amount) > 0 && c.expires_at && daysLeft(c.expires_at) <= 7), [promoCredits]);
   const bonus = promo ? num(promo.promotional_balance) : null;
   const nextPlan = mine[0] || null;
@@ -348,7 +362,7 @@ export default function HomeFeed() {
       const at = stamp(e.created_at);
       items.push({
         key: `w${e.id}`, rank: 0, icon, tone: 'mint', hot: true, receipt: e, at,
-        title: `${title} +${formatNaira(e.amount)}`, text: `${e.note || ledgerLabel(e.entry_type)} · View receipt`, time: e.created_at,
+        title: `${title} +${formatNaira(e.amount)}${e.count > 1 ? ` ×${e.count}` : ''}`, text: `${e.note || ledgerLabel(e.entry_type)} · View receipt`, time: e.created_at,
       });
     });
     if (expiring.length) {
@@ -363,7 +377,8 @@ export default function HomeFeed() {
       key: `h${b.id}`, rank: 1, live: true, icon: 'hand', tone: 'gold', hot: true, to: `/bookings/${b.id}`, at: stamp(b.created_at),
       title: `${b.customer?.username || b.customer_username || 'Someone'} wants to join`, text: b.service_title, time: b.created_at,
     }));
-    mine.forEach((b) => {
+    const hostingIds = new Set(hosting.slice(0, 2).map((b) => String(b.id)));
+    mine.filter((b) => !hostingIds.has(String(b.id))).forEach((b) => {
       const c = BOOKING_COPY[b.status];
       const hot = b.status === 'ACCEPTED';
       items.push({
@@ -392,9 +407,11 @@ export default function HomeFeed() {
       });
     }
     // the full Square feed lives in the drawer: one row per friend status, then friends' thoughts
-    friendStatuses.slice(0, 6).forEach((x) => items.push({
+    const onePerFriend = new Map();
+    friendStatuses.filter(isSeen).forEach((x) => { if (!onePerFriend.has(String(x.user.id))) onePerFriend.set(String(x.user.id), x); });
+    [...onePerFriend.values()].slice(0, 6).forEach((x) => items.push({
       key: `sq-s${x.id}`, rank: 7, drawerOnly: true, icon: x.kind === 'video' ? 'film' : x.kind === 'image' ? 'image' : 'tree', tone: 'sky',
-      hot: !isSeen(x), to: '/square', at: stamp(x.created_at),
+      hot: false, to: '/square', at: stamp(x.created_at),
       title: `${x.user.name} posted a status`, text: `${statusLabel(x)} · ${friends.get(String(x.user.id))}`, time: x.created_at,
     }));
     friendThoughts.forEach((t) => items.push({
@@ -402,7 +419,9 @@ export default function HomeFeed() {
       title: `${t.user.name} shared a thought`, text: t.text, time: t.created_at,
     }));
     // unread = needs attention AND I have not opened it yet (remembered in this browser)
+    const weekAgo = Date.now() - 7 * DAY;
     return items
+      .filter((u) => !(u.at > 0) || u.at >= weekAgo) // undated rows (missed calls, expiring bonus) stay; dated ones go after a week
       .map((u) => { const sig = `${u.key}|${u.title}`; return { ...u, sig, hot: u.hot && (u.live || !readMap[sig]) }; })
       .sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank || b.at - a.at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
