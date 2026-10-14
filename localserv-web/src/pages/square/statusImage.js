@@ -15,15 +15,18 @@ const loadImg = (src) => new Promise((resolve, reject) => {
 // fetch() as a blob first: a cross-origin <img> would taint the canvas and toBlob() would throw. This needs the media
 // host to send Access-Control-Allow-Origin (same as any CDN image you draw on a canvas).
 async function loadPhoto(url) {
+  // Photos are cached for a day ("immutable"). A copy cached by a plain <img> has no CORS headers, and a CORS fetch
+  // can be handed that copy and fail even when the bucket is set up right, so on failure try once more bypassing the cache.
   let res;
-  try { res = await fetch(url, { mode: 'cors', credentials: 'omit' }); } catch (e) {
-    // almost always a missing Access-Control-Allow-Origin header on the media host
-    console.warn('Status picture: media host blocked the fetch (CORS?)', url, e);
-    throw new Error('cors');
+  try { res = await fetch(url, { mode: 'cors', credentials: 'omit' }); } catch (e1) {
+    try { res = await fetch(url, { mode: 'cors', credentials: 'omit', cache: 'reload' }); } catch (e2) {
+      console.warn('Status picture: the media host blocked the fetch (CORS rule missing on the bucket?)', url.split('?')[0], e2);
+      throw new Error('cors');
+    }
   }
-  if (!res.ok) throw new Error('image');
+  if (!res.ok) { console.warn('Status picture: photo request failed', res.status, url.split('?')[0]); throw new Error(`http-${res.status}`); }
   const obj = URL.createObjectURL(await res.blob());
-  try { return await loadImg(obj); } finally { setTimeout(() => URL.revokeObjectURL(obj), 4000); }
+  try { return await loadImg(obj); } catch (e) { console.warn('Status picture: a photo could not be decoded', e); throw new Error('decode'); } finally { setTimeout(() => URL.revokeObjectURL(obj), 4000); }
 }
 
 function place(ctx, img, x, y, w, h, mode) {

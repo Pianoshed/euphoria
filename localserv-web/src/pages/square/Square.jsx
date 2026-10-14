@@ -265,7 +265,10 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
       } else save(blob, file.name);
     } catch (e) {
       console.warn('Status picture failed', e);
-      flash(e?.message === 'cors' ? 'Pictures are blocked by the media server' : 'Could not make the picture');
+      const m = e?.message || '';
+      flash(m === 'cors' ? 'Photo server blocked it (CORS)'
+        : m.startsWith('http-') ? `Photo link failed (${m.slice(5)})`
+          : m === 'decode' ? 'A photo could not be read' : 'Could not make the picture');
     } finally { holding.current = false; }
   };
 
