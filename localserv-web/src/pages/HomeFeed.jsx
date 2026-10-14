@@ -355,12 +355,12 @@ export default function HomeFeed() {
       const total = expiring.reduce((s, c) => s + num(c.remaining_amount), 0);
       const soonest = Math.min(...expiring.map((c) => daysLeft(c.expires_at)));
       items.push({
-        key: 'expiring', rank: 1, icon: 'clock', tone: 'gold', hot: true, to: '/wallet', at: Date.now(),
+        key: 'expiring', rank: 1, live: true, icon: 'clock', tone: 'gold', hot: true, to: '/wallet', at: Date.now(),
         title: `${formatNaira(total)} bonus expiring`, text: soonest <= 0 ? 'Use it today on a plan' : `Use it within ${plural(soonest, 'day', 'days')} on a plan`, time: null,
       });
     }
     hosting.slice(0, 2).forEach((b) => items.push({
-      key: `h${b.id}`, rank: 1, icon: 'hand', tone: 'gold', hot: true, to: `/bookings/${b.id}`, at: stamp(b.created_at),
+      key: `h${b.id}`, rank: 1, live: true, icon: 'hand', tone: 'gold', hot: true, to: `/bookings/${b.id}`, at: stamp(b.created_at),
       title: `${b.customer?.username || b.customer_username || 'Someone'} wants to join`, text: b.service_title, time: b.created_at,
     }));
     mine.forEach((b) => {
@@ -374,19 +374,19 @@ export default function HomeFeed() {
     if (alerts.messages > 0) {
       const who = unreadChats.slice(0, 2).map(chatName).filter((n) => n !== '…').join(' & ');
       items.push({
-        key: 'msgs', rank: 3, icon: 'chat', tone: 'lilac', hot: true, at: stamp(unreadChats[0]?.last_message?.created_at),
+        key: 'msgs', rank: 3, live: true, icon: 'chat', tone: 'lilac', hot: true, at: stamp(unreadChats[0]?.last_message?.created_at),
         to: unreadChats.length === 1 ? `/chat/${unreadChats[0].id}` : '/chat',
         title: plural(alerts.messages, 'new message', 'new messages'), text: who ? `From ${who}` : 'Tap to read', time: unreadChats[0]?.last_message?.created_at,
       });
     }
     if (alerts.missedCalls > 0) {
-      items.push({ key: 'calls', rank: 4, icon: 'phone', tone: 'coral', hot: true, to: '/calls', at: 0, title: plural(alerts.missedCalls, 'missed call', 'missed calls'), text: 'Since you last looked', time: null });
+      items.push({ key: 'calls', rank: 4, live: true, icon: 'phone', tone: 'coral', hot: true, to: '/calls', at: 0, title: plural(alerts.missedCalls, 'missed call', 'missed calls'), text: 'Since you last looked', time: null });
     }
     if (unseenFriendPeople.length > 0) {
       const names3 = unseenFriendPeople.slice(0, 2).join(' & ');
       const more = unseenFriendPeople.length - 2;
       items.push({
-        key: 'sq-group', rank: 3, icon: 'tree', tone: 'sky', hot: true, to: '/square', at: stamp(unseenFriendStatuses[0]?.created_at),
+        key: 'sq-group', rank: 3, live: true, icon: 'tree', tone: 'sky', hot: true, to: '/square', at: stamp(unseenFriendStatuses[0]?.created_at),
         title: `${plural(unseenFriendPeople.length, 'friend', 'friends')} posted a status`,
         text: `${names3}${more > 0 ? ` and ${more} more` : ''} on your trees`, time: unseenFriendStatuses[0]?.created_at,
       });
@@ -398,18 +398,20 @@ export default function HomeFeed() {
       title: `${x.user.name} posted a status`, text: `${statusLabel(x)} · ${friends.get(String(x.user.id))}`, time: x.created_at,
     }));
     friendThoughts.forEach((t) => items.push({
-      key: `sq-t${t.id}`, rank: 8, drawerOnly: true, icon: 'thought', tone: 'lilac', hot: false, to: '/square', at: stamp(t.created_at),
+      key: `sq-t${t.id}`, rank: 8, drawerOnly: true, icon: 'thought', tone: 'lilac', hot: true, to: '/square', at: stamp(t.created_at),
       title: `${t.user.name} shared a thought`, text: t.text, time: t.created_at,
     }));
     // unread = needs attention AND I have not opened it yet (remembered in this browser)
     return items
-      .map((u) => { const sig = `${u.key}|${u.title}`; return { ...u, sig, hot: u.hot && !readMap[sig] }; })
+      .map((u) => { const sig = `${u.key}|${u.title}`; return { ...u, sig, hot: u.hot && (u.live || !readMap[sig]) }; })
       .sort((a, b) => Number(b.hot) - Number(a.hot) || a.rank - b.rank || b.at - a.at);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readMap, recentCredits, expiring, hosting, mine, alerts.messages, alerts.missedCalls, unreadChats.length, names, friendStatuses, friendThoughts, friends, unseenFriendPeople.length, sqSeen]);
 
   const needsYou = updates.filter((u) => u.hot && !u.drawerOnly);
-  const topNeeds = needsYou.slice(0, 3);
+  const readItems = updates.filter((u) => !u.hot && !u.drawerOnly);
+  const topNeeds = [...needsYou.slice(0, 3), ...readItems].slice(0, 4); // unread first (crimson), then ones already read (plain)
+  const markable = updates.some((u) => u.hot && !u.live);
   const hotCount = needsYou.length;
 
   const lead = alerts.messages > 0 ? `${plural(alerts.messages, 'message is', 'messages are')} waiting for you.`
@@ -492,6 +494,7 @@ export default function HomeFeed() {
                   ? <button type="button" className="hf-link" onClick={() => setDrawer('updates')}>All updates<Icon name="chevron" size={14} /></button>
                   : null}
               </header>
+              {topNeeds.length > 0 && hotCount === 0 && <p className="hf-hint"><Icon name="check" size={15} />You&rsquo;re all caught up.</p>}
               {topNeeds.length > 0
                 ? <div className="hf-list">{topNeeds.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} onRead={markRead} />)}</div>
                 : <p className="hf-hint"><Icon name="check" size={15} />You&rsquo;re all caught up.</p>}
@@ -550,8 +553,8 @@ export default function HomeFeed() {
       {drawer === 'updates' && (
         <Drawer title="Updates" icon="bell" onClose={closeDrawer}>
           {updates.length === 0 && <p className="hf-hint">Messages, calls, plan updates and wallet credits will show up here as they happen.</p>}
-          {hotCount > 0 && (
-            <button type="button" className="hf-markall" onClick={() => markRead(updates.map((u) => u.sig))}>Mark all as read</button>
+          {markable && (
+            <button type="button" className="hf-markall" onClick={() => markRead(updates.filter((u) => !u.live).map((u) => u.sig))}>Mark all as read</button>
           )}
           <div className="hf-list">{updates.map((u) => <UpdateRow key={u.key} item={u} onReceipt={setReceipt} onRead={markRead} />)}</div>
 

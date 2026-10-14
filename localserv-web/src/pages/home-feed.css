@@ -320,8 +320,8 @@ body[data-backdrop='scene']::before {
 
 
 /* ---- read vs unread notifications: unread = deep crimson, read = plain ---- */
-.hf-row.is-hot, .hf-row.is-unread { background: color-mix(in srgb, #9b1239 13%, transparent); box-shadow: inset 4px 0 0 #b3123f; }
-.hf-row.is-hot:hover, .hf-row.is-hot:focus-visible { background: color-mix(in srgb, #9b1239 20%, transparent); }
+.hf-row.is-hot, .hf-row.is-unread { background: color-mix(in srgb, #9b1239 20%, transparent); box-shadow: inset 5px 0 0 #b3123f; }
+.hf-row.is-hot:hover, .hf-row.is-hot:focus-visible { background: color-mix(in srgb, #9b1239 28%, transparent); }
 :root[data-theme='dark'] .hf-row.is-hot, :root[data-theme='dark'] .hf-row.is-unread { background: color-mix(in srgb, #e11d48 24%, transparent); box-shadow: inset 4px 0 0 #fb7185; }
 :root[data-theme='dark'] .hf-row.is-hot:hover, :root[data-theme='dark'] .hf-row.is-hot:focus-visible { background: color-mix(in srgb, #e11d48 32%, transparent); }
 .hf-row.is-hot .hf-row__text strong { font-weight: 800; }
