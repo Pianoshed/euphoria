@@ -203,3 +203,5 @@ export async function statusCollageBlob(urls) {
   watermark(ctx, await logoP, false);
   return toJpeg(c);
 }
+
+export const statusFileName = (status) => `hiclr-status-${status.id}.jpg`;
