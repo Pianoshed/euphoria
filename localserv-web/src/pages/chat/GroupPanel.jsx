@@ -2,8 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './group.css';
 import './group-panel.css';
+import { canShareAny, shareText } from '../../utils/nativeFile';
 
 const MAX_MEMBERS = 20;
+// Invite links must point at the public website, not the app's own origin (https://localhost inside the Android app).
+const SITE_URL = (import.meta.env.VITE_SITE_URL || window.location.origin).replace(/\/+$/, '');
 
 /* ---- Mood colours: a quiet way to show how you feel without sending a message ---- */
 export const MOODS = {
@@ -82,7 +85,7 @@ function InviteBox({ onGetInvite, busy }) {
     setNote('');
     try {
       const code = await onGetInvite(reset);
-      setLink(`${window.location.origin}/chat/join/${code}`);
+      setLink(`${SITE_URL}/chat/join/${code}`);
       if (reset) setNote('New link made. The old one no longer works.');
     } catch (err) {
       setNote(err?.message || 'Could not make a link.');
@@ -99,7 +102,7 @@ function InviteBox({ onGetInvite, busy }) {
       setNote('Press and hold the link to copy it.');
     }
   };
-  const share = () => navigator.share({ title: 'Join my group', url: link }).catch(() => {});
+  const share = () => shareText({ title: 'Join my group', url: link }).catch(() => {});
 
   return (
     <div className="gpanel__section">
@@ -114,7 +117,7 @@ function InviteBox({ onGetInvite, busy }) {
             onFocus={(e) => e.target.select()} />
           <div className="gpanel__actions">
             <button type="button" className="btn btn--sm btn--primary" onClick={copy}>Copy</button>
-            {typeof navigator !== 'undefined' && navigator.share && (
+            {canShareAny() && (
               <button type="button" className="btn btn--sm btn--ghost" onClick={share}>Share</button>
             )}
             <button type="button" className="gpanel__link gpanel__link--danger" onClick={() => make(true)} disabled={working}>

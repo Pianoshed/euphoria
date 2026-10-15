@@ -6,6 +6,7 @@ import * as walletApi from '../api/wallet';
 import { useInboxEvent, useInboxSync } from '../hooks/useInboxSync';
 import Modal from './Modal';
 import { Icon } from './icons';
+import { canShareAny, isNative, shareText } from '../utils/nativeFile';
 import { formatNaira } from '../utils/money';
 import { creditHeadline, isCredit, ledgerLabel, receiptNumber } from '../utils/ledger';
 
@@ -46,7 +47,7 @@ export function ReceiptSheet({ entry, who }) {
   const copy = async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); } catch { /* clipboard blocked */ }
   };
-  const share = () => { navigator.share?.({ title: `${BRAND_NAME} receipt`, text }).catch(() => {}); };
+  const share = () => { shareText({ title: `${BRAND_NAME} receipt`, text }).catch(() => {}); };
 
   return (
     <div className="receipt-sheet">
@@ -65,9 +66,10 @@ export function ReceiptSheet({ entry, who }) {
       </dl>
       <p className="receipt-sheet__foot">Keep this receipt for your records. It is also listed in your wallet history.</p>
       <div className="receipt-sheet__acts">
-        <button type="button" className="rcpt-btn rcpt-btn--solid" onClick={print}>Print / Save PDF</button>
+        {/* window.print() does nothing in the Android app, so there Share is the main action */}
+        {!isNative() && <button type="button" className="rcpt-btn rcpt-btn--solid" onClick={print}>Print / Save PDF</button>}
         <button type="button" className="rcpt-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-        {typeof navigator !== 'undefined' && navigator.share && <button type="button" className="rcpt-btn" onClick={share}>Share</button>}
+        {canShareAny() && <button type="button" className={`rcpt-btn${isNative() ? ' rcpt-btn--solid' : ''}`} onClick={share}>Share</button>}
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import * as api from '../../api/square';
 import { shrinkImage, MAX_STATUS_SECONDS, MAX_SLIDES, MIN_SLIDE_SECONDS, DEFAULT_SLIDE_SECONDS, maxSlideSeconds,
   SHOW_TEMPLATES, SHOW_CANVASES, DEFAULT_TEMPLATE, DEFAULT_CANVAS } from './shrinkMedia';
 import { treeBlob, treeFileName } from './treeImage';
+import { canShareAny, canShareFile, isShareCancel, saveBlob, shareFile, shareText } from '../../utils/nativeFile';
 import { statusCollageBlob, statusFileName } from './statusImage';
 import { CIRCLES, SHARED, circleMeta, fruitFor, hasLabels, labelFor, saveLocalLabels } from './circles';
 import './square.css';
@@ -253,12 +254,7 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
   }, [status.id, isShow]);
   useEffect(() => (canSend ? buildPic() : undefined), [canSend, buildPic]);
 
-  const save = (blob, name) => {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = name; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
-  };
+  const save = (blob, name) => saveBlob(blob, name);
   const shareStatus = async () => {
     if (holding.current || pic === 'loading') return;
     if (!picRef.current) { // last try failed: tell why, and build it again for the next tap
@@ -273,12 +269,13 @@ function ViewerBody({ status, circle, close, onReact, onPrev, onNext, onDelete, 
     try {
       const blob = picRef.current;
       const file = new File([blob], statusFileName(status), { type: blob.type });
-      save(blob, file.name); // the button always saves a copy to the phone too
-      if (navigator.canShare?.({ files: [file] })) {
+      let saved = false;
+      try { saved = await save(blob, file.name); } catch { /* could not save a copy: sharing may still work */ } // the button always saves a copy to the phone too
+      if (canShareFile(file)) {
         try {
-          await navigator.share({ files: [file], title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
-        } catch (e) { if (e?.name !== 'AbortError') flash('Picture saved'); }
-      } else flash('Picture saved');
+          await shareFile(blob, file.name, { title: `${status.user.name} on ${BRAND_NAME}`, text: status.text || BRAND_NAME });
+        } catch (e) { if (!isShareCancel(e)) flash('Picture saved'); }
+      } else flash(saved ? 'Picture saved' : 'Could not save the picture');
     } finally { holding.current = false; }
   };
 
@@ -510,7 +507,7 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
     danger: true,
     onOk: () => onRemove(tree, person),
   });
-  const canShare = typeof navigator !== 'undefined' && !!navigator.share;
+  const canShare = canShareAny();
 
   // Hierarchy on my own trees: partner(s) are attached to me, then tiers hang down the trunk in order of closeness
   // (family, besties, friends...). One plain tier on trees I was tagged in (those labels are the owner's view).
@@ -524,18 +521,17 @@ function TreeSheet({ tree, meId, statusByUser, onClose, onLeave, onStatus, onMem
 
   const download = async () => {
     try {
-      const url = URL.createObjectURL(await treeBlob(tree));
-      const a = document.createElement('a');
-      a.href = url; a.download = treeFileName(tree); a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 2000);
-    } catch { pop('Could not make the image'); }
+      const saved = await saveBlob(await treeBlob(tree), treeFileName(tree));
+      if (saved) pop('Image saved');
+    } catch { pop('Could not save the image'); }
   };
   const share = async () => {
     try {
-      const file = new File([await treeBlob(tree)], treeFileName(tree), { type: 'image/png' });
-      if (navigator.canShare?.({ files: [file] })) await navigator.share({ files: [file], title: tree.title });
-      else await navigator.share({ title: tree.title, text: `${tree.title} on ${BRAND_NAME}` });
-    } catch (e) { if (e?.name !== 'AbortError') pop('Could not share'); }
+      const blob = await treeBlob(tree);
+      const file = new File([blob], treeFileName(tree), { type: 'image/png' });
+      if (canShareFile(file)) await shareFile(blob, file.name, { title: tree.title });
+      else await shareText({ title: tree.title, text: `${tree.title} on ${BRAND_NAME}` });
+    } catch (e) { if (!isShareCancel(e)) pop('Could not share'); }
   };
   const postStatus = async () => {
     setBusy('Posting…');

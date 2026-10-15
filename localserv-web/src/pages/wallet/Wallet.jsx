@@ -1,6 +1,8 @@
 import '../../styles/index.css';
 import './wallet.css';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
 import * as walletApi from '../../api/wallet';
 import { useAuth } from '../../context/AuthContext';
 import { ErrorAlert, Spinner, StatusPill } from '../../components/ui';
@@ -107,6 +109,18 @@ export default function Wallet() {
     }, 3000);
     return () => clearInterval(timer);
   }, [loadAll, returnedFromCheckout]);
+
+  // Android app: after paying in the in-app browser, refresh the balance when the user returns to the app.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+    const sub = CapApp.addListener('appStateChange', ({ isActive }) => {
+      if (isActive) {
+        loadAll();
+        window.dispatchEvent(new Event('euphoria-wallet-changed'));
+      }
+    });
+    return () => { sub.then((h) => h.remove()); };
+  }, [loadAll]);
 
   const openDialog = (name) => {
     if (WALLET_LOCKED) return;

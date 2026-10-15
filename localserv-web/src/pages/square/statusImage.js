@@ -1,5 +1,6 @@
 // Draws one slide of a status as a 1080x1920 picture with the site logo baked in as a small watermark, so a status
 // that is shared outside the app still says where it came from. Mirrors the four on-screen canvases (blur/fill/frame/night).
+import { Capacitor, CapacitorHttp } from '@capacitor/core';
 import { BRAND_ASSETS } from '../../brand';
 
 const W = 1080;
@@ -14,7 +15,26 @@ const loadImg = (src) => new Promise((resolve, reject) => {
 
 // fetch() as a blob first: a cross-origin <img> would taint the canvas and toBlob() would throw. This needs the media
 // host to send Access-Control-Allow-Origin (same as any CDN image you draw on a canvas).
+// Inside the Android app the page runs from https://localhost, so a browser fetch() to your media host is a
+// cross-origin request that needs the host's CORS rule. CapacitorHttp makes the request natively instead, where
+// CORS does not apply, so photos load even if the bucket's rule does not list the app yet.
+async function nativePhotoBlob(url) {
+  const res = await CapacitorHttp.get({ url, responseType: 'blob' });
+  if (res.status < 200 || res.status >= 300) throw new Error(`http-${res.status}`);
+  const bin = atob(res.data);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+  const h = res.headers || {};
+  return new Blob([bytes], { type: h['Content-Type'] || h['content-type'] || 'image/jpeg' });
+}
+
 async function fetchPhotoBlob(url) {
+  if (Capacitor.isNativePlatform() && /^https?:/i.test(url)) {
+    try { return await nativePhotoBlob(url); } catch (e) {
+      if (String(e?.message).startsWith('http-')) throw e;
+      console.warn('Status picture: native fetch failed, trying the browser fetch', e);
+    }
+  }
   // Photos are cached for a day ("immutable"). A copy cached by a plain <img> has no CORS headers, and a CORS fetch
   // can be handed that copy and fail even when the bucket is set up right, so on failure try once more bypassing the cache.
   let res;

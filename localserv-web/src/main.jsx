@@ -16,9 +16,13 @@ import '@fontsource/manrope/700.css';
 // Replaces the old reset / tokens / global / components / marketing-auth imports.
 import './styles/index.css';
 
+import './styles/native.css';
+import { Capacitor } from '@capacitor/core';
 import { initTheme } from './utils/theme';
 import App from './App.jsx'
 
+// Marks the page when it runs inside the Android app, so native.css can size things for a phone.
+if (Capacitor.isNativePlatform()) document.documentElement.classList.add('is-native');
 initTheme(); // set data-theme before the first paint
 
 createRoot(document.getElementById('root')).render(
